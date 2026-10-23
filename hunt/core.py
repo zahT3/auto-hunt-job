@@ -134,10 +134,13 @@ class Store:
         with self.entry_lock: entry_verifications = copy.deepcopy(self.entry_verifications)
         with self.tx() as c:
             jobs = [json.loads(r[0]) for r in c.execute('SELECT data FROM jobs ORDER BY rowid DESC')]
-            for j in jobs:
-                j['attempts'] = [json.loads(r[0]) for r in c.execute('SELECT data FROM attempts WHERE job_id=? ORDER BY rowid', (j['id'],))]
             candidate = self.meta(c, 'candidate')
             config = self.meta(c, 'config')
+            for j in jobs:
+                j['attempts'] = [json.loads(r[0]) for r in c.execute('SELECT data FROM attempts WHERE job_id=? ORDER BY rowid', (j['id'],))]
+                review = j.get('material_review') or {}
+                j['material_review_current'] = bool(review.get('snapshot') and
+                    review.get('snapshot') == self._current_material_snapshot(candidate, config, j))
             keyword = str(config.get('keyword') or '').strip().casefold()
             jobs.sort(key=lambda j:(j['status'] in ('submitted','rejected'), any(r.get('status')=='not_met' for r in (j.get('match') or {}).get('hard',[])), -(j.get('recommendation') or {}).get('priority',0), bool(keyword) and keyword not in j['title'].casefold()))
             tasks = []
@@ -147,7 +150,15 @@ class Store:
                 tasks.append(dict(title='确认求职范围', reason='岗位、城市、薪资与时限仍待确认；当前仅为开发准备', action='config'))
             for j in jobs:
                 if j['status'] in ('unknown', 'blocked', 'review'):
-                    tasks.append(dict(title=j['title'], reason=j.get('next_action', '审核材料'), job_id=j['id']))
+                    reason = j.get('next_action', '审核材料')
+                    if j['status'] == 'review' and j['material_review_current']:
+                        if (j.get('package') or {}).get('blockers'):
+                            reason = '补充必填事实或处理材料阻碍'
+                        elif any(r.get('status') == 'not_met' for r in (j.get('match') or {}).get('hard', [])):
+                            reason = '核对不符合的硬条件'
+                        elif reason in ('审核材料', '集中审核事实、缺口、披露范围和最终文件'):
+                            continue
+                    tasks.append(dict(title=j['title'], reason=reason, job_id=j['id']))
             runs = [json.loads(r[0]) for r in c.execute('SELECT data FROM runs ORDER BY rowid DESC LIMIT 30')]
             from .profile import build_profile
             from .catalog import CATALOG
@@ -221,6 +232,50 @@ class Store:
             p = self.root / 'packages' / package['id'] / filename
             result[kind] = hashlib.sha256(p.read_bytes()).hexdigest() if p.is_file() else None
         return result
+
+    def _current_material_snapshot(self, candidate, config, job):
+        """A review is current only while the saved materials and files match."""
+        package = job.get('package')
+        if not isinstance(package, dict) or not package.get('snapshot') or not package.get('files'):
+            return None
+        try:
+            directory = self.root / 'packages' / package['id']
+            if not all((directory / filename).is_file() for filename in package['files'].values()):
+                return None
+            current = self.snapshot(candidate, config, job, package)
+        except (OSError, ValueError, TypeError, KeyError, AttributeError):
+            return None
+        return current if current == package['snapshot'] else None
+
+    def review_materials(self, payload):
+        """Record that selected local material versions were viewed, not approved."""
+        ids, snapshots = payload.get('job_ids'), payload.get('snapshots')
+        if (not isinstance(ids, list) or not 1 <= len(ids) <= 50 or
+                any(not isinstance(jid, str) or not jid for jid in ids) or len(ids) != len(set(ids))):
+            raise Error('请选择 1 至 50 个不同岗位复核材料')
+        if payload.get('acknowledge_review') is not True:
+            raise Error('请明确确认已查看所选材料；这不会授权对外申请')
+        if not isinstance(snapshots, dict):
+            raise Error('缺少材料快照，请刷新后复核')
+        with self.tx() as c:
+            candidate, config = self.meta(c, 'candidate'), self.meta(c, 'config')
+            selected = []
+            # Validate the entire batch before recording any event or review.
+            for jid in ids:
+                job = self.job(c, jid)
+                current = self._current_material_snapshot(candidate, config, job)
+                if not current or snapshots.get(jid) != current:
+                    raise Error('材料、事实、条件或文件已变化，或缺少具体快照；请重新准备后复核')
+                selected.append((job, current))
+            for job, current in selected:
+                if (job.get('material_review') or {}).get('snapshot') == current:
+                    continue
+                job['material_review'] = dict(snapshot=current, reviewed_at=now(),
+                    package_id=job['package']['id'], scope='local_materials',
+                    meaning='viewed', gaps_remaining=len(job['package'].get('gaps', [])))
+                self.event(job, 'materials_reviewed', '已查看此版本本地材料；缺口仍保留，未授权披露或对外申请',
+                           dict(snapshot=current, package_id=job['package']['id']))
+                self.save(c, job)
 
     def prepare(self, jid):
         from .materials import prepare, match
@@ -574,7 +629,7 @@ class Store:
 
     def action(self,payload):
         action=payload.get('action')
-        if action=='run': self.start_run()
+        if action=='run': self.start_run(demo=self.is_demo)
         elif action=='demo': self.start_run(demo=True)
         elif action=='resume_confirm': self.confirm_resume(payload)
         elif action=='entry_verify': self.start_entry_verification(payload['job_id'])
@@ -601,6 +656,7 @@ class Store:
                 data['title']=data.get('title') or 'URL 导入岗位（标题待核对）'
             j,_=self.import_job(data); self.prepare(j['id'])
         elif action=='prepare': self.prepare(payload['job_id'])
+        elif action=='review_materials': self.review_materials(payload)
         elif action=='review': self.review(payload)
         elif action=='execute': self.execute(payload['job_id'])
         elif action=='control':

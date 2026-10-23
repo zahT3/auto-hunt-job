@@ -9,7 +9,7 @@ ROOT = Path(__file__).resolve().parents[1]
 FILES = ['README.md', 'LICENSE', 'SECURITY.md', 'CONTRIBUTING.md',
          'THIRD_PARTY_NOTICES.md', '.gitignore', 'requirements.txt',
          'requirements-executor.txt', 'run.py', 'setup.sh', 'Start.command',
-         'docs/official-sources.md', 'docs/v4-acceptance.md', 'docs/interface-design.md', 'docs/v3-acceptance.md', 'docs/search-research.md', 'docs/boss-white-screen.md', 'docs/discovery-api.md', 'docs/usage.md', 'docs/v2-acceptance.md']
+         'docs/official-sources.md', 'docs/v4-acceptance.md', 'docs/v5-ux-acceptance.md', 'docs/interface-design.md', 'docs/v3-acceptance.md', 'docs/search-research.md', 'docs/boss-white-screen.md', 'docs/discovery-api.md', 'docs/usage.md', 'docs/v2-acceptance.md']
 PATTERNS = ['hunt/*.py', 'static/*.js', 'static/*.css', 'static/*.html',
             'tests/test_*.py', 'tests/test_*.cjs', 'tests/fixtures/*.html', 'tests/fixtures/*.json',
             'examples/*.json', 'examples/*.txt', 'examples/*.py',

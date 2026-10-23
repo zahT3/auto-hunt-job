@@ -6,7 +6,7 @@
 
 - [Impeccable](https://github.com/pbakaus/impeccable)：用其信息精简、渐进展示、可访问性和动效指导改造现有界面。
 - [Motion](https://github.com/motiondivision/motion)、[AutoAnimate](https://github.com/formkit/auto-animate)：研究状态切换、列表变化和减少动态效果的方式。本轮使用原生 CSS / Web Animations 实现，没有引入这些运行依赖或复制源码。
-- 已检索 Product Design、Figma、MagicPath 插件。Product Design 可辅助后续原型审查；本轮未安装或连接，不是运行依赖。现有本地技能和浏览器测试足够完成改造。
+- 初次改造检索了 Product Design、Figma、MagicPath 插件。随后使用已安装的 Product Design 审查上传、事实确认、搜索和材料复核四步；它是开发工具，不是应用运行依赖。
 
 ## 产品行为
 
@@ -18,4 +18,4 @@
 
 ## 已验证范围
 
-1440 × 1000 桌面和 390 × 844 手机：无横向溢出、无脚本错误；本地搜索、材料标签、展开保持、设置、简历对话框、Escape 焦点恢复和手机返回均做过交互检查。23 项前端契约测试通过。未因此宣称正式投递能力或招聘平台登录成功。
+首次改造检查了 1440 × 1000 桌面和 390 × 844 手机：无横向溢出、无脚本错误；本地搜索、材料标签、展开保持、设置、简历对话框、Escape 焦点恢复和手机返回均做过交互检查，当时 23 项前端契约测试通过。后续流程审查与修复见 [v5 体验验收](v5-ux-acceptance.md)。未因此宣称正式投递能力、招聘平台登录成功或完整无障碍合规。

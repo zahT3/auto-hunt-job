@@ -64,7 +64,7 @@ BOSS 白屏调查、参考项目及官网替代路径见 [调查记录](docs/bos
 
 两种入口共用本地资料。`python -m hunt --help` 查看全部命令；支持 `web`、`resume`、`confirm`、`configure`、`scan`、`prepare`、`status`、`verify`。首次导入默认合成资料，确认事实需要逐项指定 ID。完整例子见 [使用说明](docs/usage.md#统一终端入口)。
 
-界面以机会列表、判断依据和下一步为中心，支持手机列表/详情切换、键盘操作及减少动态效果。设计取舍与开源参考见 [界面说明](docs/interface-design.md)。
+界面以机会列表、判断依据和下一步为中心，支持手机列表/详情切换、键盘操作及减少动态效果。本地材料复核与对外授权分别处理；编辑搜索条件后先保存再运行。设计取舍与开源参考见 [界面说明](docs/interface-design.md)，本轮流程检查见 [v5 体验验收](docs/v5-ux-acceptance.md)。
 
 ## 独立运行与数据
 

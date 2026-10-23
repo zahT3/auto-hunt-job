@@ -16,7 +16,7 @@ function harness(){
       elements:new Proxy({}, {get:(target,key)=>target[key]??(target[key]={value:'',checked:false})}),
       classList:{toggle(){}},listeners:{},addEventListener(name,fn){this.listeners[name]=fn;},
       querySelector(){return null;},reset(){},showModal(){this.open=true;},close(){this.open=false;},
-      scrollIntoView(){},focus(){},toggleAttribute(name,value){this[name]=value;}
+      scrollIntoView(){},focus(){this.focused=true;},setAttribute(name,value){this[name]=value;},toggleAttribute(name,value){this[name]=value;}
     });
     return nodes.get(selector);
   }
@@ -44,7 +44,7 @@ test('batch approval remains disabled for unsupported channel while material rev
   const h=harness();h.state({candidate:{facts:[]},jobs:[{id:'boss1',title:'Synthetic',company:'Test',channel:'boss',url:'https://www.zhipin.com/job_detail/test.html',application_url:'https://www.zhipin.com/',package:{id:'p',snapshot:'x',claims:[],blockers:[],gaps:[]}}]});
   h.run(`openReview(['boss1'])`);
   assert.equal(h.node('#review-confirm').disabled,true);assert.equal(h.node('#approve-batch').disabled,true);
-  assert.match(h.node('#review-content').innerHTML,/不能批准对外执行/);
+  assert.equal(h.node('#external-review').hidden,true);assert.equal(h.node('#external-review-controls').disabled,true);assert.equal(h.node('#material-review-confirm').checked,false);assert.equal(h.node('#save-material-review').disabled,true);
 });
 test('needs_ocr draft cannot be confirmed even if partial facts are present and selected',()=>{
   const h=harness();h.state({candidate_draft:{id:'d',status:'needs_ocr',candidate:{facts:[{id:'f',text:'Python',source:{reference:'page 1'}}]},profile:{}}});
@@ -148,4 +148,86 @@ test('seeing a form cannot by itself claim an authenticated session',()=>{
  assert.doesNotMatch(h.run(`applicationRoute(${JSON.stringify(job)})`),/独立会话已确认登录/);
  job.raw.application_route.entry_check.authenticated=true;
  assert.match(h.run(`applicationRoute(${JSON.stringify(job)})`),/独立会话已确认登录/);
+});
+test('local material review requires an explicit check and never includes outbound permissions',async()=>{
+ const h=harness();h.state({candidate:{synthetic:true},jobs:[{id:'j',title:'AI',channel:'website',package:{id:'p',snapshot:'snap',blockers:['姓名待补充'],gaps:[],claims:[]}}]});
+ h.run(`openReview(['j']);globalThis.calls=[];action=async(name,payload)=>{calls.push({name,payload});return null;}`);
+ await h.run('saveMaterialReview()');assert.equal(h.run('calls.length'),0);
+ h.node('#material-review-confirm').checked=true;await h.run('saveMaterialReview()');
+ const call=JSON.parse(h.run('JSON.stringify(calls[0])'));
+ assert.deepEqual(call,{name:'review_materials',payload:{job_ids:['j'],snapshots:{j:'snap'},acknowledge_review:true}});
+ assert.match(h.node('#review-content').innerHTML,/姓名待补充/);assert.equal(h.node('#external-review').hidden,true);
+});
+test('current local review leaves the pending filter but preserves material gaps and unknown status',()=>{
+ const h=harness();h.state({jobs:[{id:'j',title:'AI',status:'prepared',material_review_current:true,package:{blockers:['姓名待补充']}},{id:'new',status:'prepared',package:{}}]});
+ h.run("filter='review'");assert.deepEqual(Array.from(h.run('filteredJobs().map(j=>j.id)')),['new']);
+ assert.match(h.run('jobBadge(state.jobs[0])'),/已复核 · 待补充/);
+ assert.match(h.run("jobBadge({...state.jobs[0],status:'submission_unknown'})"),/结果待查证/);
+});
+test('synthetic Anker candidates cannot open outbound authorization even when receiver is supported',()=>{
+ const h=harness();h.state({candidate:{synthetic:true},jobs:[{id:'j',title:'AI',channel:'anker',application_url:'https://anker-in.jobs.feishu.cn/index/resume/123/apply',package:{id:'p',snapshot:'s',claims:[],blockers:[],gaps:[]}}]});h.run("openReview(['j'])");
+ assert.equal(h.node('#external-review').hidden,true);assert.equal(h.node('#review-confirm').disabled,true);
+ assert.doesNotMatch(h.run("actionButton({...state.jobs[0],approval:{}})"),/data-execute/);
+});
+test('real supported authorization stays separate, collapsed and guarded by gap acknowledgement',()=>{
+ const h=harness();h.state({candidate:{synthetic:false},jobs:[{id:'j',title:'AI',channel:'anker',application_url:'https://anker-in.jobs.feishu.cn/index/resume/123/apply',package:{id:'p',snapshot:'s',claims:[],blockers:[],gaps:['经验待确认']}}]});h.run("openReview(['j'])");
+ assert.equal(h.node('#external-review').hidden,false);assert.equal(h.node('#external-review').open,false);
+ h.node('#review-confirm').checked=true;h.selections.set('#review-form input[name=permission]:checked',[{value:'upload'}]);
+ h.run('updateApprove()');assert.equal(h.node('#approve-batch').disabled,true);
+ h.node('#external-review').open=true;h.run('updateApprove()');assert.equal(h.node('#approve-batch').disabled,true);
+ h.node('#acknowledge-gaps').checked=true;h.run('updateApprove()');assert.equal(h.node('#approve-batch').disabled,false);
+ h.run('setBusy(true)');assert.equal(h.node('#approve-batch').disabled,true);
+});
+function configureSearch(h){
+ h.state({dataset:'app',candidate:{facts:[]},config:{keywords:['old'],sources:['website'],company_boards:[]}});
+ const f=h.node('#config-form');for(const [key,value] of Object.entries({keywords:'Agent',company_board_urls:'https://careers.example.com/',search_provider_url:'',cities:'',salary_min:'',max_jobs:'5',max_pages:'2',interval_minutes:'60',submission_limit:'0',browser_channel:''}))f.elements[key].value=value;
+ h.selections.set('#config-form input[name=sources]:checked',[{value:'website'}]);h.run('markConfigDirty()');return f;
+}
+test('save and search validates and persists the current form before running',async()=>{
+ const h=harness();configureSearch(h);assert.equal(h.node('#run-button').textContent,'保存并搜索');
+ h.run(`globalThis.calls=[];action=async(name,payload)=>{calls.push({name,payload});if(name==='config')state.config=payload.config;return {};}`);
+ await h.run('startSearch()');const calls=JSON.parse(h.run('JSON.stringify(calls)'));
+ assert.deepEqual(calls.map(c=>c.name),['config','run']);assert.deepEqual(calls[0].payload.config.keywords,['Agent']);assert.equal(h.run('configDirty'),false);
+});
+test('invalid or failed configuration never starts search',async()=>{
+ const h=harness();const f=configureSearch(h);h.run(`globalThis.calls=[];action=async(name)=>{calls.push(name);return null;}`);
+ f.elements.keywords.value='';await h.run('startSearch()');assert.equal(h.run('calls.length'),0);
+ f.elements.keywords.value='Agent';await h.run('startSearch()');assert.deepEqual(Array.from(h.run('calls')),['config']);assert.equal(h.run('configDirty'),true);
+});
+test('demo saves dirty settings before its synthetic action and never runs real discovery',async()=>{
+ const h=harness();configureSearch(h);h.run(`state.dataset='demo';refreshRunButton();globalThis.calls=[];action=async(name)=>{calls.push(name);return {};}`);
+ assert.equal(h.node('#run-button').textContent,'保存并运行演示');await h.run('startSearch()');assert.deepEqual(Array.from(h.run('calls')),['config','demo']);assert.equal(h.node('#run-button').textContent,'运行演示');
+});
+test('resume feedback is cleared on retry and busy feedback is inside the dialog',async()=>{
+ const h=harness();let removed=false;h.node('#resume-dialog').querySelector=selector=>selector==='.dialog-error'?{remove(){removed=true;}}:null;
+ await h.run('uploadResume({preventDefault(){},target:{}})');assert.equal(removed,true);assert.equal(h.node('#notice').hidden,true);
+ h.node('#resume-dialog').open=true;h.run("setBusy(true,'正在本地解析…')");
+ assert.equal(h.node('#resume-operation-status').hidden,false);assert.equal(h.node('#resume-operation-status').textContent,'正在本地解析…');assert.equal(h.node('#resume-upload-button').textContent,'正在本地解析…');
+ h.run('setBusy(false)');assert.equal(h.node('#resume-operation-status').hidden,true);
+});
+test('resume source locators are concise and full provenance remains in closed details',()=>{
+ const h=harness();const html=h.run(`factSourceDetail({source:{reference:'upload://abc123#page=2&paragraph=5',label:'synthetic.pdf'}})`);
+ assert.match(html,/<small>第 2 页 · 第 5 段<\/small>/);assert.match(html,/<details><summary>来源记录<\/summary><small>upload:\/\/abc123/);assert.doesNotMatch(html,/<details open/);
+});
+test('successful resume upload focuses the newly rendered facts heading',async()=>{
+ const h=harness();h.state({csrf_token:'local'});h.node('#resume-file').files=[{name:'synthetic.md',size:20}];h.node('#resume-upload-form').elements.synthetic.checked=true;
+ h.run(`globalThis.FileReader=class{readAsDataURL(){this.result='data:text/plain;base64,c3ludGhldGlj';this.onload();}};fetch=async()=>({ok:true,json:async()=>({state:{candidate_draft:{id:'draft',status:'needs_review',candidate:{facts:[]},profile:{}}}})});render=()=>{};`);
+ await h.run("uploadResume({preventDefault(){},target:document.querySelector('#resume-upload-form')})");assert.equal(h.node('#resume-draft-title').focused,true);assert.equal(h.run('busy'),false);
+});
+
+test('demo validation failures do not run fixtures, and running status has priority',async()=>{
+ const h=harness();const f=configureSearch(h);h.run(`state.dataset='demo';globalThis.calls=[];action=async(name)=>{calls.push(name);return null;}`);f.elements.keywords.value='';await h.run('startSearch()');assert.equal(h.run('calls.length'),0);
+ h.run("state.search_running=true;refreshRunButton()");assert.equal(h.node('#run-button').textContent,'演示进行中');assert.equal(h.node('#run-button').disabled,true);
+});
+
+test('asynchronous demo start does not claim completion or public-source search',async()=>{
+ const h=harness();h.state({dataset:'demo',search_running:false,runs:[]});h.run(`action=async()=>{state.search_running=true;return {};}`);await h.run('startSearch()');h.run('renderSearchProgress()');
+ assert.match(h.node('#toast').textContent,/已启动/);assert.doesNotMatch(h.node('#toast').textContent,/已完成|已结束/);
+ assert.match(h.node('#search-progress').innerHTML,/正在准备合成岗位/);assert.match(h.node('#search-progress').innerHTML,/仅使用合成资料/);assert.doesNotMatch(h.node('#search-progress').innerHTML,/正在搜索已选渠道|读取公开岗位/);
+});
+
+test('saving local material review returns keyboard focus to the current job title',async()=>{
+ const h=harness();h.state({candidate:{synthetic:true},jobs:[{id:'j',title:'AI',channel:'website',package:{id:'p',snapshot:'snap',blockers:[],gaps:[],claims:[]}}]});
+ h.run(`openReview(['j']);action=async()=>({});`);h.node('#material-review-confirm').checked=true;await h.run('saveMaterialReview()');
+ assert.equal(h.node('#review-dialog').open,false);assert.equal(h.node('#detail-title').focused,true);
 });
