@@ -90,13 +90,21 @@ def now():
     return datetime.now(timezone.utc).isoformat()
 
 
+def job_fragment(parts):
+    # Moka's hash router encodes the receiver's job identity; ordinary anchors
+    # remain irrelevant to URL identity and are discarded as before.
+    if parts.hostname in ('app.mokahr.com', 'hire-r1.mokahr.com') and re.fullmatch(r'/jobs?(?:[/?.][A-Za-z0-9_/?=&%.,-]*)?', parts.fragment):
+        return parts.fragment
+    return ''
+
+
 def public_url(url):
     from .network import validate_url
     try:
         p, _ = validate_url(url)
     except ValueError:
         return ''
-    return urlunsplit((p.scheme, p.netloc, p.path, p.query, ''))
+    return urlunsplit((p.scheme, p.netloc, p.path, p.query, job_fragment(p)))
 
 
 def normalize(kind, ident, title, jd, url, company=None, location=None, **extra):

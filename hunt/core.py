@@ -35,7 +35,7 @@ DEFAULT_CONFIG = dict(keyword='', keywords=[], cities=[], salary_min=None, max_j
                                       dict(type='lever', slug='binance', company='Binance'),
                                       dict(type='ashby', slug='cursor', company='Cursor')], max_pages=2,
                       source_modes={'boss': 'public', 'liepin': 'public'}, search_provider=None,
-                      official_only=False, browser_channel=None)
+                      official_only=False, browser_channel=None, check_entries=True, official_browser=False)
 LOCKED = {'sending', 'unknown', 'submitted'}
 
 
@@ -146,10 +146,11 @@ class Store:
                     tasks.append(dict(title=j['title'], reason=j.get('next_action', '审核材料'), job_id=j['id']))
             runs = [json.loads(r[0]) for r in c.execute('SELECT data FROM runs ORDER BY rowid DESC LIMIT 30')]
             from .profile import build_profile
+            from .catalog import CATALOG
             return dict(dataset='demo' if self.is_demo else 'app', candidate=candidate,
                         candidate_draft=self.meta(c, 'candidate_draft'), candidate_profile=build_profile(candidate, confirmed_only=True),
                         search_running=self.run_lock.locked() or bool(self.search_thread and self.search_thread.is_alive()),
-                        config=config, control=self.meta(c, 'control'), jobs=jobs, runs=runs,
+                        company_catalog=CATALOG, config=config, control=self.meta(c, 'control'), jobs=jobs, runs=runs,
                         tasks=tasks, interventions=[json.loads(r[0]) for r in c.execute('SELECT data FROM interventions ORDER BY rowid DESC')],
                         capabilities=[dict(channel='搜索', description='BOSS、猎聘与公司官网按已选来源检索；每轮结果显示实际覆盖与失败。'),
                                       dict(channel='候选人理解', description='本地规则提取与有来源的技能关联；不推断熟练度或录用概率。'),
@@ -167,7 +168,8 @@ class Store:
             parts = urlsplit(url)
             if parts.scheme not in ('https', 'http') or not parts.hostname or parts.username or parts.password:
                 raise Error('只接受无凭据的 HTTP(S) 岗位链接')
-            url = urlunsplit((parts.scheme.lower(), parts.netloc.lower(), parts.path, parts.query, ''))
+            from .sources import job_fragment
+            url = urlunsplit((parts.scheme.lower(), parts.netloc.lower(), parts.path, parts.query, job_fragment(parts)))
         channel = data.get('channel', 'import')
         identity = channel + ':' + str(data['platform_id']) if data.get('platform_id') else 'url:' + url if url else 'paste:' + digest([title, jd])
         with self.tx() as c:
@@ -557,6 +559,7 @@ class Store:
             cfg['max_jobs']=int(cfg['max_jobs']);cfg['submission_limit']=int(cfg['submission_limit'])
             if type(cfg['targets_confirmed']) is not bool: raise Error('需要明确确认目标')
             if type(cfg.get('official_only', False)) is not bool: raise Error('官网模式必须为明确的开关')
+            if any(type(cfg.get(k, False)) is not bool for k in ('check_entries', 'official_browser')): raise Error('入口核验与公开渲染必须为开关')
             if cfg.get('browser_channel') not in (None, 'chrome'): raise Error('仅支持默认 Chromium 或 Google Chrome')
             if not isinstance(cfg.get('keyword'),str) or len(cfg['keyword'])>100:
                 raise Error('岗位关键词最长 100 字符')

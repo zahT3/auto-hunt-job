@@ -47,6 +47,8 @@ Linux 生成中文 PDF 需要中文 TrueType 字体，例如安装 `fonts-wqy-ze
 
 可勾选 **本轮只查公司招聘来源** 暂时跳过 BOSS、猎聘和网页索引；在高级设置填写公司自己的招聘页，支持提取页面明确关联的 Greenhouse、Lever、Ashby 看板。岗位详情展示人工申请入口与关联来源。表单未核验时明确保留提示。
 
+新增国内 AI / Agent 与 Web3 官网目录：DeepSeek、Dify、Kimi、阶跃星辰、Cobo、OKX、HashKey 已实测读取岗位正文；MiniMax、imToken 仍明确标记未接通。支持逐岗只读入口核验，以及有官网同职位表单证据时修复接收地址；邮箱申请单独展示。Kimi、阶跃星辰需开启可选公开页面渲染。详见 [官网来源与入口规则](docs/official-sources.md)。
+
 BOSS 白屏调查、参考项目及官网替代路径见 [调查记录](docs/boss-white-screen.md)。源码研究、接口文档与实际限制见 [搜索方案](docs/search-research.md)。开发会话里的联网搜索工具不属于应用运行依赖。
 
 ### 可选浏览器

@@ -62,7 +62,7 @@ jobs:
           python - <<'PY'
           import unittest
           suite = unittest.TestSuite()
-          for pattern in ('test_anker.py', 'test_search_browser.py'):
+          for pattern in ('test_anker.py', 'test_search_browser.py', 'test_official_browser.py'):
               suite.addTests(unittest.defaultTestLoader.discover('tests', pattern=pattern))
           result = unittest.TextTestRunner(verbosity=2).run(suite)
           if not result.wasSuccessful() or result.skipped:

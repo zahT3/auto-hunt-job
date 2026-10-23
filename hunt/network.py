@@ -136,7 +136,7 @@ def resolve_public(host, timeout=TIMEOUT):
     return addresses
 
 
-def fetch(url, method='GET', data=None, headers=None):
+def fetch(url, method='GET', data=None, headers=None, with_metadata=False):
     """Fetch bytes; all redirects repeat URL/DNS validation and pin the result."""
     method = method.upper()
     if method not in ('GET', 'POST', 'HEAD'):
@@ -185,13 +185,14 @@ def fetch(url, method='GET', data=None, headers=None):
                     raise FetchError('重定向缺少目标或次数过多')
                 next_url = urljoin(url, location)
                 np, nh = validate_url(next_url)
+                if next_url == url: raise FetchError('重定向循环：目标地址未变化')
                 if method == 'POST' and nh != host:
                     raise FetchError('拒绝向其他主机重定向 POST 正文')
                 if response.status == 303 or response.status in (301, 302) and method == 'POST':
                     method, data = 'GET', None
                 url = next_url
                 continue
-            if response.status < 200 or response.status >= 300:
+            if not with_metadata and (response.status < 200 or response.status >= 300):
                 raise FetchError('公开请求 HTTP ' + str(response.status))
             if response.getheader('Content-Encoding', 'identity').lower() not in ('identity', ''):
                 raise FetchError('不接受压缩响应，防止解压缩超限')
@@ -203,7 +204,7 @@ def fetch(url, method='GET', data=None, headers=None):
                 raise FetchError('公开响应过大')
             if time.monotonic() - started > TIMEOUT:
                 raise FetchError('公开抓取超时')
-            return raw
+            return dict(body=raw, url=url, status=response.status) if with_metadata else raw
         except (OSError, http.client.HTTPException, ValueError) as exc:
             if isinstance(exc, FetchError):
                 raise

@@ -20,3 +20,6 @@ Default company seeds are **Anthropic (greenhouse/anthropic), Binance (lever/bin
 - `expanded_terms` reports the local recall aliases separately from original `queries`. JD extraction preserves paragraphs, line breaks, and plain-text comparisons. Browser list rendering waits up to20s, detail redirects away from job URLs become `blocked`.
 
 - `profile` parameter reserved for interface consistency; local candidate understanding proposes keywords before this function.
+
+
+Employer catalog and entry validation: see [official-sources](official-sources.md). `check_entries: true` enables bounded public entry checks; `entry_requests` defaults to12, cap50. `official_browser: true` optionally enables a fresh public renderer (no login profile, only explicitly allowed read-only POSTs). Catalog entries remain website sources. CLI `--catalog <id>` is repeatable; `--catalog all`, `--official-browser`, `--skip-entry-checks` are available. Entry checks report separately from source extraction, and cannot grant apply permissions. Moka receiver hash routes are preserved.

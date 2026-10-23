@@ -58,5 +58,9 @@ def preserve_entry_check(previous_raw, incoming_raw, application_url):
         if not timedelta(0) <= age < timedelta(hours=24): return incoming_raw
     except (KeyError, ValueError, TypeError): return incoming_raw
     incoming_route = incoming_raw.setdefault('application_route', {})
-    if isinstance(incoming_route, dict): incoming_route.setdefault('entry_check', dict(check))
+    if isinstance(incoming_route, dict):
+        incoming_check = incoming_route.get('entry_check') or {}
+        if check.get('status') in ('not_found', 'form_seen', 'login_required') and incoming_check.get('status') in ('needs_browser', 'check_failed', 'budget_exhausted'):
+            incoming_route['entry_check'] = dict(check)
+        else: incoming_route.setdefault('entry_check', dict(check))
     return incoming_raw

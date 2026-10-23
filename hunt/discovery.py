@@ -249,10 +249,15 @@ def _anker(source, read, terms, limit, pages, report):
             if page == pages: report['truncated'] = True
 
 
-def _website(source, read, terms, limit, pages, report):
+def _website(source, read, terms, limit, pages, report, renderer=None):
     from .careers import linked_boards, attach_route
     url = public_url(source.get('url') or '')
     if not url: raise SourceError('not_configured', '请配置公司官网公开 HTTPS 招聘页')
+    from .catalog import lookup
+    if lookup(url):
+        from .domestic import read_jobs
+        yield from read_jobs(source, read, terms, limit, pages, report, renderer)
+        return
     report['search_url'] = url; queue = [url]; seen = set(); emitted = set(); count = 0; boards_seen = set()
     while queue and report['pages'] < pages:
         current = queue.pop(0)
@@ -282,7 +287,11 @@ def _website(source, read, terms, limit, pages, report):
                     identity = (item['channel'], item['platform_id'])
                     if identity in emitted: continue
                     emitted.add(identity)
-                    yield attach_route(item, board); count += 1
+                    attach_route(item, board)
+                    from .entries import official_job_link
+                    alternate = official_job_link(html, current, item['title'])
+                    if alternate: item['raw']['application_route']['official_job_url'] = alternate
+                    yield item; count += 1
             finally:
                 report['pages'] += child['pages']
                 report['fetched'] += child['fetched']
@@ -336,9 +345,10 @@ def discover(config, profile=None, transport=None, *, browser_profile_root=None,
     pages = bounded(config.get('max_pages', config.get('discovery_pages')), 2, 1, 5)
     maximum = bounded(config.get('discovery_requests'), 40, 1, 100)
     budget = Budget(transport or fetch, maximum, should_continue=should_continue)
+    entry_budget = Budget(transport or fetch, bounded(config.get('entry_requests'), 12, 1, 50), should_continue=should_continue)
     for index, source in enumerate(sources):
         kind = source.get('kind'); sid = source.get('id') or kind
-        report = dict(source_id=sid, kind=kind, status='empty', fetched=0, returned=0, pages=0, requests=0,
+        report = dict(source_id=sid, kind=kind, company=source.get('company'), status='empty', fetched=0, returned=0, pages=0, requests=0,
                       error=None, search_url=None, checked_at=now(), truncated=False, mode=source.get('mode', 'public'))
         reports.append(report)
         remaining = len(sources) - index
@@ -346,6 +356,8 @@ def discover(config, profile=None, transport=None, *, browser_profile_root=None,
         quota = max(1, math.ceil((limit - len(jobs)) / remaining))
         request_quota = max(1, math.ceil((maximum - budget.used) / remaining))
         start = budget.used
+        entry_start = entry_budget.used
+        renderer = None
         def read(url, **kwargs):
             if budget.used - start >= request_quota:
                 raise SourceError('budget_exhausted', '此渠道已用完公平分配的请求预算；其他渠道继续扫描')
@@ -357,9 +369,13 @@ def discover(config, profile=None, transport=None, *, browser_profile_root=None,
                 from .sources_browser import BrowserReader
                 context = BrowserReader(kind, profile_root=browser_profile_root, headless=browser_headless,
                                         channel=config.get('browser_channel'))
+            elif kind == 'website' and config.get('official_browser'):
+                from .official_browser import PublicRenderer
+                context = PublicRenderer(maximum=pages+3, should_continue=should_continue)
             else: context = nullcontext(None)
             with context as browser:
-                if browser:
+                if kind == 'website': renderer = browser
+                if browser and kind in ('boss', 'liepin'):
                     def read(url, **kwargs):
                         if should_continue and not should_continue(): raise SourceError('cancelled', '扫描已停止；没有继续发起请求')
                         if budget.used - start >= request_quota or budget.used >= maximum:
@@ -369,7 +385,7 @@ def discover(config, profile=None, transport=None, *, browser_profile_root=None,
                 if kind in ('greenhouse', 'lever', 'ashby'): generator = _api(source, read, terms, quota, pages, report)
                 elif kind in ('boss', 'liepin'): generator = _platform(source, read, terms, quota, pages, report)
                 elif kind == 'anker': generator = _anker(source, read, terms, quota, pages, report)
-                elif kind == 'website': generator = _website(source, read, terms, quota, pages, report)
+                elif kind == 'website': generator = _website(source, read, terms, quota, pages, report, renderer)
                 elif kind == 'websearch': generator = _websearch(source, read, terms, quota, pages, report)
                 else: raise SourceError('not_configured', '未知岗位渠道：' + str(kind))
                 for item in generator:
@@ -377,6 +393,9 @@ def discover(config, profile=None, transport=None, *, browser_profile_root=None,
                     if key in seen: continue
                     seen.add(key)
                     item.setdefault('raw', {})['discovery'] = dict(source_id=sid, queries=terms, mode=report['mode'], checked_at=report['checked_at'])
+                    if config.get('check_entries'):
+                        from .entries import check_job
+                        check_job(item, entry_budget.get, renderer=renderer)
                     jobs.append(item); report['returned'] += 1
             report['status'] = 'ok' if report['returned'] else 'filtered_empty' if report['fetched'] else 'empty'
             if report.get('detail_errors'):
@@ -391,9 +410,11 @@ def discover(config, profile=None, transport=None, *, browser_profile_root=None,
         except (ValueError, TypeError, KeyError, AttributeError) as e:
             report['status'], report['error'] = 'parse_error', str(e)[:400]
         report['requests'] = budget.used - start
+        report['entry_requests'] = entry_budget.used - entry_start
+        report['rendered_pages'] = getattr(renderer, 'used', 0)
         if on_source: on_source(dict(report))
     return dict(jobs=jobs, sources=reports, queries=terms, checked_at=now(), requests=budget.used,
-                coverage='configured_sources_only', expanded_terms=expanded_terms(terms), search_provider_configured=bool(config.get('search_provider')),
+                entry_requests=entry_budget.used, coverage='configured_sources_only', expanded_terms=expanded_terms(terms), search_provider_configured=bool(config.get('search_provider')),
                 note='仅扫描配置渠道与公司看板；关键词用于发现，不代表候选人胜任、工作许可或岗位仍可投递。')
 
 
@@ -407,6 +428,9 @@ def main():
     parser.add_argument('--headless', action='store_true')
     parser.add_argument('--browser', choices=('chromium', 'chrome'), default='chromium')
     parser.add_argument('--official-only', action='store_true', help='本轮只查公司招聘来源，跳过 BOSS、猎聘与网页索引')
+    parser.add_argument('--catalog', action='append', help='内置公司 ID，可重复；all 表示全部')
+    parser.add_argument('--official-browser', action='store_true', help='启用无登录资料的公开页面渲染，仅只读')
+    parser.add_argument('--skip-entry-checks', action='store_true')
     parser.add_argument('--career-url', action='append', default=[], help='公司招聘页 HTTPS URL；可重复')
     parser.add_argument('--profile-root', type=Path)
     parser.add_argument('--data', type=Path, help='与工作台相同的数据目录')
@@ -419,6 +443,12 @@ def main():
                   source_modes={kind:'browser' for kind in args.browser_source}, max_jobs=args.max_jobs,
                   max_pages=args.max_pages, discovery_requests=args.requests)
     config.update(official_only=args.official_only, browser_channel='chrome' if args.browser == 'chrome' else None)
+    config.update(check_entries=not args.skip_entry_checks, official_browser=args.official_browser)
+    if args.catalog:
+        from .catalog import boards
+        config['company_boards'] = boards(None if 'all' in args.catalog else args.catalog)
+        if not config['company_boards']: parser.error('没有匹配的内置公司 ID')
+        config['sources'] = ['website']
     if args.career_url:
         config['company_boards'] = [dict(type='website', url=url) for url in args.career_url]
         config['sources'] = ['website']
