@@ -1,0 +1,105 @@
+{
+  "name": "林示例",
+  "synthetic": true,
+  "version": 1,
+  "facts": [
+    {
+      "id": "demo-name",
+      "text": "姓名：林示例（合成候选人）。",
+      "source": {
+        "reference": "synthetic://candidate/v1#demo-name",
+        "label": "开发合成资料"
+      },
+      "status": "confirmed",
+      "version": 1,
+      "disclosure": "application",
+      "tags": [
+        "identity"
+      ],
+      "value": "林示例"
+    },
+    {
+      "id": "demo-email",
+      "text": "联系邮箱：candidate@example.invalid。",
+      "source": {
+        "reference": "synthetic://candidate/v1#demo-email",
+        "label": "开发合成资料"
+      },
+      "status": "confirmed",
+      "version": 1,
+      "disclosure": "application",
+      "tags": [
+        "contact"
+      ],
+      "value": "candidate@example.invalid"
+    },
+    {
+      "id": "demo-python",
+      "text": "使用 Python 和 SQLite 实现过一个本地任务管理原型，并完成本地测试。",
+      "source": {
+        "reference": "synthetic://candidate/v1#demo-python",
+        "label": "开发合成资料"
+      },
+      "status": "confirmed",
+      "version": 1,
+      "disclosure": "application",
+      "tags": [
+        "python",
+        "sqlite",
+        "原型",
+        "本地测试"
+      ]
+    },
+    {
+      "id": "demo-analysis",
+      "text": "在合成数据练习中使用 SQL 分析 120 条记录，尚未上线，也没有业务效果证据。",
+      "source": {
+        "reference": "synthetic://candidate/v1#demo-analysis",
+        "label": "开发合成资料"
+      },
+      "status": "confirmed",
+      "version": 1,
+      "disclosure": "application",
+      "tags": [
+        "sql",
+        "数据分析",
+        "合成数据"
+      ]
+    },
+    {
+      "id": "demo-years",
+      "text": "已确认的相关工作经验为 1 年。",
+      "source": {
+        "reference": "synthetic://candidate/v1#demo-years",
+        "label": "开发合成资料"
+      },
+      "status": "confirmed",
+      "version": 1,
+      "disclosure": "application",
+      "tags": [
+        "experience"
+      ],
+      "value": 1
+    }
+  ],
+  "fields": {
+    "name": {
+      "value": "林示例",
+      "fact_ids": [
+        "demo-name"
+      ]
+    },
+    "email": {
+      "value": "candidate@example.invalid",
+      "fact_ids": [
+        "demo-email"
+      ]
+    },
+    "years_experience": {
+      "value": 1,
+      "fact_ids": [
+        "demo-years"
+      ]
+    }
+  }
+}

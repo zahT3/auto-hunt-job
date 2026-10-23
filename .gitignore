@@ -1,0 +1,12 @@
+private/
+.venv/
+__pycache__/
+*.pyc
+.DS_Store
+tmp/
+dist/
+.env
+.env.*
+!.env.example
+*.sqlite3*
+*.log

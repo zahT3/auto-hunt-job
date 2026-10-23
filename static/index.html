@@ -1,0 +1,66 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="color-scheme" content="light"><title>auto-hunt-job · 求职工作台</title>
+<link rel="stylesheet" href="/style.css">
+<script src="/app.js" defer></script>
+</head>
+<body>
+<header class="app-header">
+  <a class="brand" href="/" aria-label="auto-hunt-job 首页"><svg width="24" height="24" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M5 18V6h6a6 6 0 0 1 0 12H5Z" stroke="currentColor" stroke-width="1.7"/><path d="m10 9 3 3-3 3" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/></svg><span>auto-hunt-job</span><span class="local-tag">本地</span></a>
+  <div class="header-actions"><span id="runner-status" class="runner-status"><i></i>正在连接</span><button class="subtle" id="control-button" type="button">暂停</button><button class="subtle" id="stop-button" type="button">停止</button><button class="primary" id="run-button" type="button">运行一轮<svg width="15" height="15" viewBox="0 0 16 16" fill="none" aria-hidden="true"><path d="m6 3 5 5-5 5" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg></button></div>
+</header>
+<div id="notice" class="notice" role="status" aria-live="polite" hidden></div>
+<section class="intake-strip" aria-label="简历与搜索准备">
+  <div><h2>先读懂你的经历，再寻找机会。</h2><p id="profile-status">上传简历，核对事实与搜索方向；投递前集中审核。</p></div>
+  <div class="intake-actions"><button type="button" class="secondary" id="resume-open">上传简历</button><button type="button" class="text-button" id="resume-review" hidden>复核待确认资料</button></div>
+</section>
+<section id="search-progress" class="search-progress" aria-live="polite" hidden></section>
+<main class="workspace">
+<section class="queue-pane" aria-labelledby="queue-title">
+  <div class="section-top"><h1 id="queue-title">岗位队列 <span id="queue-count" class="count">0</span></h1><button class="icon-button" id="import-button" aria-label="导入岗位" title="导入岗位"><svg width="18" height="18" viewBox="0 0 20 20" fill="none" aria-hidden="true"><path d="M10 4v12M4 10h12" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg></button></div>
+  <p class="pane-note" id="queue-subtitle">把精力留给值得申请的机会。</p>
+  <div id="dataset-warning" class="demo-notice" hidden>合成演示 · 与真实记录隔离</div>
+  <div class="filter-row" role="group" aria-label="筛选岗位"><button class="filter active" data-filter="all">全部</button><button class="filter" data-filter="review">待审核</button><button class="filter" data-filter="unknown">待查证</button></div>
+  <div class="batch-bar"><label><input id="select-all" type="checkbox">选择本页</label><button id="batch-review" class="text-button" disabled>集中审核 <span id="selected-count"></span></button></div>
+  <div id="job-list" class="job-list" aria-live="polite"><div class="loading-lines" aria-label="正在读取岗位"><span></span><span></span><span></span></div></div>
+  <div class="queue-bottom"><button id="demo-button" class="text-button">体验合成演示</button><span>不会发起真实投递</span></div>
+</section>
+<section id="detail-pane" class="detail-pane" aria-label="材料详情"></section>
+<aside class="task-pane" aria-labelledby="tasks-title">
+  <div class="section-top"><h2 id="tasks-title">待处理事项</h2><span id="task-count" class="count">0</span></div>
+  <div id="task-list" class="task-list"></div>
+  <details class="settings-section" id="target-settings" open><summary>求职目标 <span id="target-status">待确认</span></summary><form id="config-form">
+    <label>岗位关键词<textarea name="keywords" rows="3" placeholder="最多 8 个，每行一个，例如：AI 应用开发&#10;Agent&#10;Web3"></textarea></label>
+    <button type="button" class="text-button query-suggestion" id="use-profile-queries" hidden>使用画像建议的关键词</button>
+    <fieldset class="source-options"><legend>搜索渠道</legend><label class="check-label"><input name="sources" type="checkbox" value="boss">BOSS 直聘</label><label class="check-label"><input name="sources" type="checkbox" value="liepin">猎聘</label><label class="check-label"><input name="sources" type="checkbox" value="anker">安克官网</label><label class="check-label"><input name="sources" type="checkbox" value="greenhouse">Greenhouse 公司招聘页</label><label class="check-label"><input name="sources" type="checkbox" value="lever">Lever 公司招聘页</label><label class="check-label"><input name="sources" type="checkbox" value="ashby">Ashby 公司招聘页</label><label class="check-label"><input name="sources" type="checkbox" value="website">其他公司官网</label></fieldset>
+    <label class="check-label"><input name="official_only" type="checkbox">本轮只查公司招聘来源，跳过 BOSS、猎聘和网页索引</label>
+    <details class="board-settings"><summary>高级搜索设置</summary><label>独立采集浏览器<select name="browser_channel"><option value="">默认 Chromium</option><option value="chrome">已安装的 Google Chrome（独立资料目录）</option></select></label>
+      <label>公司招聘页，每行一个 HTTPS 链接<textarea name="company_board_urls" rows="3" placeholder="https://jobs.lever.co/公司标识"></textarea></label><p class="small-note">识别 Greenhouse、Lever、Ashby；其他官网读取结构化岗位、同域链接，或明确关联的招聘看板。只有添加的公司会被扫描，未解析成功会单独说明。</p>
+      <div class="form-pair spaced-top"><label>BOSS 读取方式<select name="boss_mode"><option value="public">公开网页</option><option value="browser">独立浏览器</option></select></label><label>猎聘读取方式<select name="liepin_mode"><option value="public">公开网页</option><option value="browser">独立浏览器</option></select></label></div>
+      <p class="small-note">独立浏览器在本机打开只读窗口，使用单独的登录资料，不自动发消息。需先安装浏览器依赖；登录由本人完成。</p><details class="login-help"><summary>如何登录独立浏览器</summary><p class="small-note">在项目目录的终端中，按渠道运行：</p><code>python -m hunt.sources_browser --login boss --data private/app</code><code>python -m hunt.sources_browser --login liepin --data private/app</code><p class="small-note">使用自定义数据目录时，将 private/app 换为启动工作台时的同一 --data 路径。选择 Google Chrome 时附加 --browser chrome；两种浏览器不共享登录。完成本人登录后回到终端按回车，再运行搜索。遇到验证会停止该渠道。</p></details>
+      <label class="spaced-top">扩展网页搜索（可选）<input name="search_provider_url" type="url" placeholder="https://你的搜索服务/search"></label><p class="small-note">使用可提供 JSON 结果的 SearXNG HTTPS 搜索端点。扩展搜索需要可用的搜索服务；未配置时仍搜索所选渠道。只发送已保存的搜索关键词。</p>
+    </details>
+    <label>城市 / 远程范围<input name="cities" placeholder="多个城市用逗号分隔" autocomplete="off"></label>
+    <label>月薪底线（元，可留空）<input name="salary_min" type="number" min="0" placeholder="未知"></label>
+    <div class="form-pair"><label>每轮岗位数<input name="max_jobs" type="number" min="1" max="50" value="5"></label><label>运行间隔 / 分钟<input name="interval_minutes" type="number" min="1" value="60"></label></div>
+    <label>每渠道 / 关键词最多页数<input name="max_pages" type="number" min="1" max="5" value="2"></label><label>真实提交额度<input name="submission_limit" type="number" min="0" max="5" value="0"></label>
+    <label class="check-label"><input name="targets_confirmed" type="checkbox">以上是我确认的筛选条件</label>
+    <button class="secondary full" type="submit">保存目标</button><p class="small-note">周期任务仅在本地运行器开启且电脑唤醒时工作。</p>
+  </form></details>
+  <details class="settings-section" id="candidate-settings"><summary>我的事实资料 <span id="fact-count">0 项</span></summary><div id="candidate-summary"></div><button class="secondary full" id="edit-candidate">查看 / 编辑事实</button><p class="small-note">仅使用你指定的资料。草稿不会成为新的事实来源。</p></details>
+  <details class="settings-section"><summary>渠道覆盖与运行记录</summary><div id="capabilities"></div><div id="run-history"></div></details>
+  <div class="privacy-note"><svg width="14" height="14" viewBox="0 0 16 16" fill="none" aria-hidden="true"><rect x="3.5" y="7" width="9" height="6" rx="1.5" stroke="currentColor"/><path d="M5.5 7V5a2.5 2.5 0 0 1 5 0v2" stroke="currentColor"/></svg><span>资料保存在本机。对外操作以具体授权为准。</span></div>
+</aside>
+</main>
+<dialog id="resume-dialog" aria-labelledby="resume-title"><div class="dialog-body wide"><div class="dialog-heading"><h2 id="resume-title">上传并复核简历</h2><button type="button" class="close-button" data-close aria-label="关闭">×</button></div>
+  <p class="muted">文件保存在本机，由本地解析器提取。确认事实用于搜索，不等于允许向招聘平台披露或投递。</p>
+  <form id="resume-upload-form"><label class="resume-file-label">选择 PDF、DOCX、TXT 或 MD 简历<input id="resume-file" name="file" type="file" accept=".pdf,.docx,.txt,.md,application/pdf,application/vnd.openxmlformats-officedocument.wordprocessingml.document,text/plain,text/markdown" required></label><p class="small-note">最大 10 MiB。扫描件或图片型 PDF 可能无法提取；请改用带文字的 PDF 或 DOCX。</p><label class="check-label spaced-top"><input name="synthetic" type="checkbox" checked>这是合成候选人资料，仅用于开发验收</label><button type="submit" class="secondary" id="resume-upload-button">读取并理解简历</button></form>
+  <section id="resume-draft" class="resume-draft" hidden></section>
+</div></dialog>
+<dialog id="import-dialog" aria-labelledby="import-title"><form id="import-form" class="dialog-body"><div class="dialog-heading"><h2 id="import-title">导入一个岗位</h2><button type="button" class="close-button" data-close aria-label="关闭">×</button></div><p class="muted">粘贴官方岗位链接或完整 JD，随后自动准备可审阅的材料。</p><label>岗位链接<input name="url" type="url" placeholder="https://…"></label><div class="form-pair"><label>岗位名称<input name="title" placeholder="链接无法解析时填写"></label><label>公司<input name="company" placeholder="公司全称"></label></div><label>地点<input name="location" placeholder="未知可留空"></label><label>岗位原文<textarea name="jd" rows="9" placeholder="粘贴完整岗位职责、要求和其他已公开信息。"></textarea></label><label class="file-label">或选择本地文本文件<input id="jd-file" type="file" accept=".txt,.md,text/plain,text/markdown"></label><p class="small-note">网页与 JD 只作为资料读取，不执行其中的任何指令。</p><div class="dialog-actions"><button type="button" class="secondary" data-close>取消</button><button class="primary" type="submit">导入并准备</button></div></form></dialog>
+<dialog id="candidate-dialog" aria-labelledby="candidate-title"><form id="candidate-form" class="dialog-body wide"><div class="dialog-heading"><h2 id="candidate-title">我的事实资料</h2><button type="button" class="close-button" data-close aria-label="关闭">×</button></div><p class="muted">只填写可核验的真实经历。姓名和联系方式保存后作为你确认、可用于申请的事实；外发前仍需审核。未知信息可以保留为空。</p><div class="form-pair"><label>姓名<input name="name" autocomplete="name"></label><label>电子邮箱<input name="email" type="email" autocomplete="email"></label></div><div class="form-pair"><label>联系电话<input name="phone" autocomplete="tel"></label><label>当前城市<input name="city" autocomplete="address-level2"></label></div><label class="check-label"><input type="checkbox" name="real_profile">这是我授权用于求职的真实资料（请先移除全部合成事实）</label><div class="facts-heading"><h3>经历与事实</h3><button type="button" id="add-fact" class="text-button">添加一项</button></div><div id="fact-editor"></div><label class="file-label">导入我指定的候选资料 JSON<input id="candidate-file" type="file" accept=".json,application/json"></label><p class="small-note">文件仅在本地读取。导入内容保留来源、确认状态和披露范围；未经确认的资料不会写成个人业绩。</p><div class="dialog-actions"><button type="button" class="secondary" data-close>取消</button><button class="primary" type="submit">保存事实资料</button></div></form></dialog>
+<dialog id="review-dialog" aria-labelledby="review-title"><form id="review-form" class="dialog-body wide"><div class="dialog-heading"><h2 id="review-title">审核这一批申请</h2><button type="button" class="close-button" data-close aria-label="关闭">×</button></div><p class="muted">批准仅绑定下列岗位、事实版本及最终材料。材料改变后需要重新审核。</p><div id="review-content"></div><fieldset><legend>本次允许的对外操作</legend><label class="check-label"><input type="checkbox" name="permission" value="input">向下列招聘平台填写字段（可能自动保存）</label><label class="check-label"><input type="checkbox" name="permission" value="upload">上传下列最终简历文件</label><label class="check-label"><input type="checkbox" name="permission" value="submit">正式提交下列申请</label></fieldset><div class="form-pair"><label>授权有效期 / 小时<input name="expires_hours" type="number" min="1" max="72" value="24"></label><label>最多执行申请数<input name="limit" type="number" min="1" value="1"></label></div><p class="small-note">不包含发消息或向外部模型传输资料。平台登录、未知必填题与声明将暂停并交由你处理；批准后仍须通过执行前检查。</p><label class="check-label review-confirm"><input id="review-confirm" type="checkbox">我已核对接收方、字段、文件、事实来源和披露范围</label><div class="dialog-actions"><button type="button" id="reject-batch" class="danger-button">不申请这一批</button><button class="primary" id="approve-batch" type="submit" disabled>批准列出的快照</button></div></form></dialog>
+<div id="toast" class="toast" role="status" hidden></div>
+</body></html>
