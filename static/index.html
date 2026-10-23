@@ -9,38 +9,38 @@
 <body>
 <header class="app-header">
   <a class="brand" href="/" aria-label="auto-hunt-job 首页"><svg width="24" height="24" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M5 18V6h6a6 6 0 0 1 0 12H5Z" stroke="currentColor" stroke-width="1.7"/><path d="m10 9 3 3-3 3" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/></svg><span>auto-hunt-job</span><span class="local-tag">本地</span></a>
-  <div class="header-actions"><span id="runner-status" class="runner-status"><i></i>正在连接</span><button class="subtle" id="control-button" type="button">暂停</button><button class="subtle" id="stop-button" type="button">停止</button><button class="primary" id="run-button" type="button">运行一轮<svg width="15" height="15" viewBox="0 0 16 16" fill="none" aria-hidden="true"><path d="m6 3 5 5-5 5" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg></button></div>
+  <div class="header-actions"><button class="subtle workspace-toggle" id="workspace-toggle" aria-expanded="false" aria-controls="task-pane" type="button">设置与待办 <span id="pending-count" class="count"></span></button><span id="runner-status" class="runner-status"><i></i>正在连接</span><button class="subtle" id="control-button" type="button">暂停</button><button class="subtle" id="stop-button" type="button">停止</button><button class="primary" id="run-button" type="button">开始找岗位<svg width="15" height="15" viewBox="0 0 16 16" fill="none" aria-hidden="true"><path d="m6 3 5 5-5 5" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg></button></div>
 </header>
 <div id="notice" class="notice" role="status" aria-live="polite" hidden></div>
 <section class="intake-strip" aria-label="简历与搜索准备">
-  <div><h2>先读懂你的经历，再寻找机会。</h2><p id="profile-status">上传简历，核对事实与搜索方向；投递前集中审核。</p></div>
+  <div class="profile-line"><span id="profile-kind" class="badge neutral">候选资料</span><p id="profile-status">上传简历，确认事实后开始搜索</p><button class="text-button" type="button" data-open-target id="target-summary">设置搜索方向</button></div>
   <div class="intake-actions"><button type="button" class="secondary" id="resume-open">上传简历</button><button type="button" class="text-button" id="resume-review" hidden>复核待确认资料</button></div>
 </section>
 <section id="search-progress" class="search-progress" aria-live="polite" hidden></section>
-<main class="workspace">
+<main class="workspace" id="workspace">
 <section class="queue-pane" aria-labelledby="queue-title">
-  <div class="section-top"><h1 id="queue-title">岗位队列 <span id="queue-count" class="count">0</span></h1><button class="icon-button" id="import-button" aria-label="导入岗位" title="导入岗位"><svg width="18" height="18" viewBox="0 0 20 20" fill="none" aria-hidden="true"><path d="M10 4v12M4 10h12" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg></button></div>
-  <p class="pane-note" id="queue-subtitle">把精力留给值得申请的机会。</p>
-  <div id="dataset-warning" class="demo-notice" hidden>合成演示 · 与真实记录隔离</div>
+  <div class="section-top"><h1 id="queue-title">机会 <span id="queue-count" class="count">0</span></h1><button class="icon-button" id="import-button" aria-label="导入岗位" title="导入岗位"><svg width="18" height="18" viewBox="0 0 20 20" fill="none" aria-hidden="true"><path d="M10 4v12M4 10h12" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg></button></div>
+  <p class="pane-note" id="queue-subtitle" hidden></p><label class="queue-search"><span class="sr-only">搜索岗位或公司</span><input id="queue-search" type="search" placeholder="搜索岗位或公司" autocomplete="off"></label>
+  <div id="dataset-warning" class="demo-notice" hidden>合成演示 · 禁止投递</div>
   <div class="filter-row" role="group" aria-label="筛选岗位"><button class="filter active" data-filter="all">全部</button><button class="filter" data-filter="review">待审核</button><button class="filter" data-filter="unknown">待查证</button></div>
   <div class="batch-bar"><label><input id="select-all" type="checkbox">选择本页</label><button id="batch-review" class="text-button" disabled>集中审核 <span id="selected-count"></span></button></div>
   <div id="job-list" class="job-list" aria-live="polite"><div class="loading-lines" aria-label="正在读取岗位"><span></span><span></span><span></span></div></div>
   <div class="queue-bottom"><button id="demo-button" class="text-button">体验合成演示</button><span>不会发起真实投递</span></div>
 </section>
 <section id="detail-pane" class="detail-pane" aria-label="材料详情"></section>
-<aside class="task-pane" aria-labelledby="tasks-title">
-  <div class="section-top"><h2 id="tasks-title">待处理事项</h2><span id="task-count" class="count">0</span></div>
+<aside class="task-pane" id="task-pane" aria-labelledby="tasks-title" hidden>
+  <div class="section-top"><h2 id="tasks-title">设置与待办 <span id="task-count" class="count">0</span></h2><button type="button" class="text-button" id="workspace-close">收起</button></div>
   <div id="task-list" class="task-list"></div>
-  <details class="settings-section" id="target-settings" open><summary>求职目标 <span id="target-status">待确认</span></summary><form id="config-form">
+  <details class="settings-section" id="target-settings"><summary>求职目标 <span id="target-status">待确认</span></summary><form id="config-form">
     <label>岗位关键词<textarea name="keywords" rows="3" placeholder="最多 8 个，每行一个，例如：AI 应用开发&#10;Agent&#10;Web3"></textarea></label>
     <button type="button" class="text-button query-suggestion" id="use-profile-queries" hidden>使用画像建议的关键词</button>
     <fieldset class="source-options"><legend>搜索渠道</legend><label class="check-label"><input name="sources" type="checkbox" value="boss">BOSS 直聘</label><label class="check-label"><input name="sources" type="checkbox" value="liepin">猎聘</label><label class="check-label"><input name="sources" type="checkbox" value="anker">安克官网</label><label class="check-label"><input name="sources" type="checkbox" value="greenhouse">Greenhouse 公司招聘页</label><label class="check-label"><input name="sources" type="checkbox" value="lever">Lever 公司招聘页</label><label class="check-label"><input name="sources" type="checkbox" value="ashby">Ashby 公司招聘页</label><label class="check-label"><input name="sources" type="checkbox" value="website">其他公司官网</label></fieldset>
-    <label class="check-label"><input name="official_only" type="checkbox">本轮只查公司招聘来源，跳过 BOSS、猎聘和网页索引</label>
+    <label class="check-label"><input name="official_only" type="checkbox">只查公司官网</label>
     <details class="board-settings"><summary>高级搜索设置</summary><label>独立采集浏览器<select name="browser_channel"><option value="">默认 Chromium</option><option value="chrome">已安装的 Google Chrome（独立资料目录）</option></select></label>
       <div class="catalog-actions"><button type="button" class="secondary" data-catalog="ai">加入国内 AI / Agent 官网</button> <button type="button" class="secondary" data-catalog="web3">加入 Web3 官网</button></div>
       <details><summary>查看内置公司来源</summary><div id="company-catalog" class="small-note"></div></details>
-      <label class="check-label"><input name="check_entries" type="checkbox" checked>搜索时核验申请入口，失效入口暂不显示</label>
-      <label class="check-label"><input name="official_browser" type="checkbox">读取动态官网（需要浏览器组件，不共享个人登录状态）</label>
+      <label class="check-label"><input name="check_entries" type="checkbox" checked>自动核验申请入口</label>
+      <label class="check-label"><input name="official_browser" type="checkbox">读取动态官网（独立浏览器）</label>
       <p class="small-note">入口核验只读取页面；看到申请表单仍需集中审核。招聘邮箱单独展示，不自动发送。</p>
       <label>公司招聘页，每行一个 HTTPS 链接<textarea name="company_board_urls" rows="3" placeholder="https://jobs.lever.co/公司标识"></textarea></label><p class="small-note">识别 Greenhouse、Lever、Ashby；其他官网读取结构化岗位、同域链接，或明确关联的招聘看板。只有添加的公司会被扫描，未解析成功会单独说明。</p>
       <div class="form-pair spaced-top"><label>BOSS 读取方式<select name="boss_mode"><option value="public">公开网页</option><option value="browser">独立浏览器</option></select></label><label>猎聘读取方式<select name="liepin_mode"><option value="public">公开网页</option><option value="browser">独立浏览器</option></select></label></div>

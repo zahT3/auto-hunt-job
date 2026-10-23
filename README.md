@@ -14,7 +14,7 @@ Python 3.10+，macOS 或 Linux。当前本机验收环境为 macOS/Python 3.12�
 git clone https://github.com/zahT3/auto-hunt-job.git
 cd auto-hunt-job
 sh setup.sh
-.venv/bin/python run.py
+.venv/bin/python -m hunt web
 ```
 
 打开 <http://127.0.0.1:8766/>。macOS 也可双击 `Start.command`。
@@ -26,7 +26,7 @@ Linux 生成中文 PDF 需要中文 TrueType 字体，例如安装 `fonts-wqy-ze
 1. 点击 **上传简历**，选择 PDF、DOCX、TXT 或 MD，最大 10 MiB。使用合成样例时保持“合成候选人”勾选。
 2. 核对提取原文及页码/段落，选择准确事实。确认仅用于本地画像与匹配，默认仍为私密。
 3. 采用或修改建议关键词，选择渠道与公司招聘页。城市和薪资可留空，未知条件不会自动变成符合。
-4. 点击 **运行一轮**。搜索在后台执行，按请求、页数和岗位数量预算收集、去重、准备本地记录。运行结果显示每个渠道的实际状态。
+4. 点击 **开始找岗位**。搜索在后台执行，按请求、页数和岗位数量预算收集、去重、准备本地记录。运行结果显示每个渠道的实际状态。
 5. 查看相关技能、原文未提及项、硬条件和岗位原文。投递前集中审核具体岗位和材料，搜索过程不会发送消息或申请。
 
 候选理解使用可解释的本地规则：提取技能提及、学历/经历线索及明确写出的整体工作年限。不会从项目时间推算资历，不把关键词命中当成熟练度，不输出录用概率。复杂排版、多语言缩写和隐含经验可能遗漏，应核对原文。
@@ -47,7 +47,7 @@ Linux 生成中文 PDF 需要中文 TrueType 字体，例如安装 `fonts-wqy-ze
 
 可勾选 **本轮只查公司招聘来源** 暂时跳过 BOSS、猎聘和网页索引；在高级设置填写公司自己的招聘页，支持提取页面明确关联的 Greenhouse、Lever、Ashby 看板。岗位详情展示人工申请入口与关联来源。表单未核验时明确保留提示。
 
-新增国内 AI / Agent 与 Web3 官网目录：DeepSeek、Dify、Kimi、阶跃星辰、Cobo、OKX、HashKey 已实测读取岗位正文；MiniMax、imToken 仍明确标记未接通。支持逐岗只读入口核验，以及有官网同职位表单证据时修复接收地址；邮箱申请单独展示。Kimi、阶跃星辰需开启可选公开页面渲染。详见 [官网来源与入口规则](docs/official-sources.md)。
+新增国内 AI / Agent 与 Web3 官网目录：DeepSeek、Dify、Kimi、阶跃星辰、Cobo、OKX、HashKey 已实测读取岗位正文；MiniMax 社招已通过匿名浏览器接通；imToken 通过官网站点地图恢复岗位页和邮箱读取，但官网列表异常，是否仍在招待确认。支持逐岗只读入口核验，以及有官网同职位表单证据时修复接收地址；邮箱申请单独展示。Kimi、阶跃星辰、MiniMax 需开启可选公开页面渲染。Moka 支持独立窗口本人登录后只读核验。详见 [官网来源与入口规则](docs/official-sources.md)。
 
 BOSS 白屏调查、参考项目及官网替代路径见 [调查记录](docs/boss-white-screen.md)。源码研究、接口文档与实际限制见 [搜索方案](docs/search-research.md)。开发会话里的联网搜索工具不属于应用运行依赖。
 
@@ -59,6 +59,12 @@ BOSS 白屏调查、参考项目及官网替代路径见 [调查记录](docs/bos
 ```
 
 在独立窗口由本人完成登录，再在高级设置里将相应来源切到浏览器模式。登录命令及数据目录见 [使用与集成](docs/usage.md)。不会复用日常 Chrome Cookie，不自动解决验证码，不打招呼、不上传简历。动态页面可能仍受阻；如实保留失败原因。
+
+## 终端与网页
+
+两种入口共用本地资料。`python -m hunt --help` 查看全部命令；支持 `web`、`resume`、`confirm`、`configure`、`scan`、`prepare`、`status`、`verify`。首次导入默认合成资料，确认事实需要逐项指定 ID。完整例子见 [使用说明](docs/usage.md#统一终端入口)。
+
+界面以机会列表、判断依据和下一步为中心，支持手机列表/详情切换、键盘操作及减少动态效果。设计取舍与开源参考见 [界面说明](docs/interface-design.md)。
 
 ## 独立运行与数据
 
@@ -91,7 +97,7 @@ node --test tests/test_frontend.cjs
 .venv/bin/python scripts/build_release.py
 ```
 
-浏览器测试需要安装可选依赖与 Chromium，缺少时明确跳过。真实来源验证与本地夹具测试分开记录，见 [本轮验收](docs/v2-acceptance.md)。
+浏览器测试需要安装可选依赖与 Chromium，缺少时明确跳过。真实来源验证与本地夹具测试分开记录，见 [本轮验收](docs/v4-acceptance.md)。
 
 ## 开源
 

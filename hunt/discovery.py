@@ -371,7 +371,10 @@ def discover(config, profile=None, transport=None, *, browser_profile_root=None,
                                         channel=config.get('browser_channel'))
             elif kind == 'website' and config.get('official_browser'):
                 from .official_browser import PublicRenderer
-                context = PublicRenderer(maximum=pages+3, should_continue=should_continue)
+                from .catalog import lookup
+                entry = lookup(source.get('url', ''))
+                render_budget = min(3,pages) + 2*min(quota,pages) if entry and entry['id'] == 'minimax' else pages+3
+                context = PublicRenderer(maximum=render_budget, should_continue=should_continue)
             else: context = nullcontext(None)
             with context as browser:
                 if kind == 'website': renderer = browser
@@ -450,7 +453,7 @@ def main():
         if not config['company_boards']: parser.error('没有匹配的内置公司 ID')
         config['sources'] = ['website']
     if args.career_url:
-        config['company_boards'] = [dict(type='website', url=url) for url in args.career_url]
+        config['company_boards'] = config.get('company_boards',[]) + [dict(type='website', url=url) for url in args.career_url]
         config['sources'] = ['website']
     profile_root = args.profile_root or (args.data / 'browser-search' if args.data else None)
     result = discover(config, browser_profile_root=profile_root, browser_headless=args.headless)

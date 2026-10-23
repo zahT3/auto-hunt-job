@@ -58,6 +58,9 @@ class Store:
         self.run_lock = threading.Lock()
         self.start_lock = threading.Lock()
         self.search_thread = None
+        self.entry_lock = threading.Lock()
+        self.entry_verifications = {}
+        self.entry_signals = {}
         self.is_demo = self.root.name == 'demo'
         with self.tx() as c:
             c.executescript('''CREATE TABLE IF NOT EXISTS meta(key TEXT PRIMARY KEY, value TEXT NOT NULL);
@@ -128,6 +131,7 @@ class Store:
                 self.save(c, j)
 
     def state(self):
+        with self.entry_lock: entry_verifications = copy.deepcopy(self.entry_verifications)
         with self.tx() as c:
             jobs = [json.loads(r[0]) for r in c.execute('SELECT data FROM jobs ORDER BY rowid DESC')]
             for j in jobs:
@@ -150,6 +154,7 @@ class Store:
             return dict(dataset='demo' if self.is_demo else 'app', candidate=candidate,
                         candidate_draft=self.meta(c, 'candidate_draft'), candidate_profile=build_profile(candidate, confirmed_only=True),
                         search_running=self.run_lock.locked() or bool(self.search_thread and self.search_thread.is_alive()),
+                        entry_verifications=entry_verifications,
                         company_catalog=CATALOG, config=config, control=self.meta(c, 'control'), jobs=jobs, runs=runs,
                         tasks=tasks, interventions=[json.loads(r[0]) for r in c.execute('SELECT data FROM interventions ORDER BY rowid DESC')],
                         capabilities=[dict(channel='搜索', description='BOSS、猎聘与公司官网按已选来源检索；每轮结果显示实际覆盖与失败。'),
@@ -524,11 +529,60 @@ class Store:
         with self.tx() as c:
             return self.meta(c,'control')=='running'
 
+    def save_entry_check(self, original, check):
+        """A page observation cannot change the recipient, material or approval."""
+        with self.tx() as c:
+            job = self.job(c, original['id'])
+            if any(job.get(k) != original.get(k) for k in ('url','application_url','title','platform_id')):
+                raise Error('核验期间岗位已更新，请重新核验当前入口')
+            if not isinstance(job.get('raw'), dict): job['raw'] = {}
+            route = job['raw'].setdefault('application_route', {})
+            previous = route.get('entry_check')
+            if previous:
+                route['entry_check_history'] = (route.get('entry_check_history', []) + [previous])[-5:]
+            route['entry_check'] = check
+            self.event(job, 'entry_checked', '只读核验申请入口；未填写、上传或投递', dict(status=check['status'], method=check['method']))
+            self.save(c, job)
+
+    def start_entry_verification(self, job_id):
+        from .moka_session import MokaVerifier, entry_identity
+        with self.tx() as c: job = self.job(c, job_id)
+        entry_identity(job.get('application_url') or job['url'])
+        with self.entry_lock:
+            if any(v['status'] in ('opening','awaiting_login','checking') for v in self.entry_verifications.values()):
+                raise Error('已有核验窗口，请先完成或关闭它')
+            finish, cancel = threading.Event(), threading.Event()
+            self.entry_signals[job_id] = (finish, cancel)
+            self.entry_verifications[job_id] = dict(status='opening', message='正在打开独立核验窗口。')
+        def progress(status, message, check=None):
+            with self.entry_lock:
+                self.entry_verifications[job_id] = dict(status=status, message=message, check=check)
+        def run():
+            try:
+                with MokaVerifier(self.root / 'browser-entry', job) as browser:
+                    check = browser.run(finish, cancel, progress)
+                self.save_entry_check(job, check)
+                progress('complete', '入口核验完成；未投递。', check)
+            except Exception as error:
+                status = 'cancelled' if getattr(error, 'status', None) == 'cancelled' else 'failed'
+                progress(status, str(error) if isinstance(error, (ValueError, Error)) else '核验未完成：' + type(error).__name__)
+            finally:
+                with self.entry_lock:
+                    if self.entry_signals.get(job_id) == (finish,cancel):
+                        self.entry_signals.pop(job_id, None)
+        threading.Thread(target=run, daemon=True).start()
+
     def action(self,payload):
         action=payload.get('action')
         if action=='run': self.start_run()
         elif action=='demo': self.start_run(demo=True)
         elif action=='resume_confirm': self.confirm_resume(payload)
+        elif action=='entry_verify': self.start_entry_verification(payload['job_id'])
+        elif action in ('entry_finish', 'entry_cancel'):
+            with self.entry_lock:
+                signals = self.entry_signals.get(payload['job_id'])
+                if not signals: raise Error('核验窗口已结束')
+                signals[0 if action == 'entry_finish' else 1].set()
         elif action=='import':
             data=dict(payload)
             if not data.get('jd') and data.get('url'):

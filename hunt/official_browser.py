@@ -13,7 +13,8 @@ MOKA_READ_PATHS = {'/api/outer/ats-apply/website/jobs/v2', '/api/outer/ats-apply
 
 def read_request(method, url):
     p, _ = validate_url(url)
-    return method in ('GET', 'HEAD') or (method == 'POST' and p.hostname in ('app.mokahr.com', 'hire-r1.mokahr.com') and p.path in MOKA_READ_PATHS)
+    from .minimax import read_request as minimax_read
+    return method in ('GET', 'HEAD') or (method == 'POST' and p.hostname in ('app.mokahr.com', 'hire-r1.mokahr.com') and p.path in MOKA_READ_PATHS) or minimax_read(method, url)
 
 
 class PublicRenderer:
@@ -30,6 +31,9 @@ class PublicRenderer:
             self.runtime = sync_playwright().start()
             self.browser = self.runtime.chromium.launch(headless=True)
             self.context = self.browser.new_context(service_workers='block')
+            from .moka_session import ReadTracker
+            self.reads = ReadTracker()
+            self.reads.attach(self.context)
             self.hosts = set()
             def route_handler(route):
                 try:
@@ -56,15 +60,25 @@ class PublicRenderer:
         if self.used >= self.maximum: raise SourceError('budget_exhausted', '公开页面渲染次数已用完')
         self.used += 1
         if not getattr(self, 'runtime', None): self._start()
+        self.reads.reset()
         try:
+            same_document = self.page.url.split('#',1)[0] == url.split('#',1)[0]
             response = self.page.goto(url, wait_until='domcontentloaded', timeout=25000)
+            if same_document:
+                response = self.page.reload(wait_until='domcontentloaded', timeout=25000)
             # Public SPA data loads asynchronously. A single bounded wait, no retries.
             self.page.wait_for_timeout(2200)
             if self.page.url == 'about:blank': raise SourceError('blank_page', '公开招聘页退回空白，已停止')
             validate_url(self.page.url)
             html = self.page.content()
             if len(html.encode()) > 5 * 1024 * 1024: raise SourceError('parse_error', '渲染页面超过大小上限')
-            return dict(body=html.encode(), url=self.page.url, status=response.status if response else 200, rendered=True)
+            result = dict(body=html.encode(), url=self.page.url, status=response.status if response else 200, rendered=True)
+            p = urlsplit(self.page.url)
+            if p.hostname in ('app.mokahr.com', 'hire-r1.mokahr.com') and p.fragment.endswith('/apply'):
+                from .moka_session import OBSERVE
+                result['observation'] = self.page.evaluate(OBSERVE)
+                result['incomplete_reads'] = self.reads.incomplete
+            return result
         except SourceError: raise
         except Exception as error: raise SourceError('fetch_error', '公开页面渲染失败：' + str(error)[:200]) from error
 

@@ -22,6 +22,9 @@ def official_job_link(html, career_url, title):
 
 def inspect(job, url, response):
     if isinstance(response, bytes): response = dict(body=response, url=url, status=200)
+    if response.get('observation') is not None and 200 <= response.get('status',200) < 300:
+        from .moka_session import classify
+        return classify(job, response.get('url',url), response['observation'], blocked_reads=response.get('incomplete_reads',False))
     final_url, status = response.get('url', url), response.get('status', 200)
     result = dict(url=url, final_url=final_url, http_status=status, checked_at=now(), method='public_render' if response.get('rendered') else 'public_http')
     html = response['body'].decode('utf-8', errors='replace'); doc = Document(html)
@@ -38,7 +41,7 @@ def inspect(job, url, response):
     elif urlsplit(final_url).hostname in ('app.mokahr.com', 'hire-r1.mokahr.com') and urlsplit(final_url).fragment.endswith('/apply') and '请先登录' in doc.root.text():
         result['status'] = 'login_required'
     else:
-        role_headings = [n.text() for n in doc.root.nodes() if n.tag in ('h1','h2') or any(c.startswith('title-') for c in n.attrs.get('class','').split())]
+        role_headings = [n.text() for n in doc.root.nodes() if n.tag in ('h1','h2') or n.attrs.get('data-test') == 'jobTitle' or any(c.startswith('title-') for c in n.attrs.get('class','').split())]
         identity = any(title_key(h) == title_key(job['title']) for h in role_headings)
         if not identity:
             result['status'] = 'identity_mismatch' if role_headings else 'needs_browser'
@@ -59,7 +62,8 @@ def check_job(job, read, renderer=None):
     def check(target):
         try:
             result = inspect(job, target, read(target, with_metadata=True))
-            if renderer and result['status'] in ('needs_browser','identity_mismatch'):
+            public_browser = isinstance(job.get('raw'),dict) and job['raw'].get('requires_public_browser')
+            if renderer and (result['status'] in ('needs_browser','identity_mismatch') or public_browser and result['status'] in ('not_found','blocked','check_failed')):
                 result = inspect(job, target, renderer.read(target))
             return result
         except FetchError as error:

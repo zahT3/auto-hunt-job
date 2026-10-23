@@ -15,10 +15,10 @@
 | Cobo | https://www.cobo.com/zh/careers | 官网明确引用 Moka 租户；公开岗位接口，只允许只读搜索 POST |
 | OKX | https://www.okx.com/zh-hant/join-us/openings | 官网脚本明确引用 Greenhouse；列表与详情回源读取；地点可能为香港、海外 |
 | HashKey | https://group.hashkey.com/en/category/roles/ | 官网角色链接 → 具体岗位正文；看到表单才标记表单可见，业务岗位也可能命中 Web3 |
-| MiniMax | https://www.minimaxi.com/careers | 已定位官网，但引用的社招链接曾返回 404；未完成正文适配，不计为已接通 |
-| imToken | https://careers.token.im/ | 官网列表内嵌脚本出现空的 title/department/area/link 字段，未获得有效岗位，不计为已接通 |
+| MiniMax | https://www.minimaxi.com/careers | 匿名浏览器读取官网社招 Feishu 页；普通 HTTP 404 不代表失效，需开启公开页面渲染 |
+| imToken | https://careers.token.im/ | 官网列表为空；通过 robots.txt 明示的官方 sitemap 读取岗位页和邮箱，始终保留在招待确认 |
 
-实测日期与轮次数字见 [v3 验收](v3-acceptance.md)。内置目录可维护于 `hunt/catalog.py`；不要根据公司名称猜招聘租户，不要将检索摘要写成岗位正文。每轮分别报告读取、保留、失败、截断、入口检查与公开渲染页数。
+实测日期与轮次数字见 [v4 验收](v4-acceptance.md)。内置目录可维护于 `hunt/catalog.py`；不要根据公司名称猜招聘租户，不要将检索摘要写成岗位正文。每轮分别报告读取、保留、失败、截断、入口检查与公开渲染页数。
 
 ## 申请入口不再等于一条未检查的链接
 
@@ -28,13 +28,14 @@
 - `not_found`：HTTP 404/410，或页面标题明确显示不存在。隐藏该申请链接，不直接认定职位已关闭。
 - `identity_mismatch`：入口身份不能对应当前职位，不提供该链接作为可申请入口。
 - `login_required`、`captcha`、`blocked`：本人登录、验证或访问受阻；不会自动处理验证。
+- `form_incomplete`：必要表单读取失败、未完成或页面报告加载失败。不会认定为完整表单。
 - `needs_browser`、`check_failed`、`budget_exhausted`：尚未完成检查，不当作职位已关闭。
 
 只会修复到招聘页**明确出现且唯一对应同职位名称**的页面，并且再次看到同职位申请表单。来源带稳定职位 ID 时，替代页也必须包含该 ID。修复保留原地址和原检查；不会从职位名称拼接 URL、用招聘首页替代具体职位、换到另一职位。接收地址改变会使旧材料批准失效。
 
 已检查结果按具体地址保存 24 小时。刷新取得低确定性结果时，不覆盖同地址仍新鲜的已观察结果；下一轮仍可能重新读取。不宣称缓存消除了所有重复网络请求。
 
-Moka 的 `#/job/<id>` 是职位地址的一部分，必须保留；普通追踪锚点仍移除。公开 HTTP 请求遇到自循环重定向会停止，可选公开渲染使用全新、无个人登录状态的浏览器。它只允许 GET/HEAD 和明确列出的 Moka 只读检索 POST；其余 POST、上传、投递均阻止。
+Moka 的 `#/job/<id>` 是职位地址的一部分，必须保留；普通追踪锚点仍移除。公开 HTTP 请求遇到自循环重定向会停止，可选公开渲染使用全新、无个人登录状态的浏览器。它只允许 GET/HEAD 和明确列出的 Moka / MiniMax 只读检索 POST；其余 POST、上传、投递均阻止。
 
 公开渲染需安装浏览器组件：
 
@@ -44,4 +45,6 @@ Moka 的 `#/job/<id>` 是职位地址的一部分，必须保留；普通追踪�
 .venv/bin/python -m hunt.discovery --official-only --catalog deepseek --catalog dify --catalog kimi --catalog stepfun --catalog cobo --catalog okx --catalog hashkey --official-browser --keyword AI --keyword Agent --keyword Web3 --max-jobs 14 --max-pages 3 --requests 60 --output private/official-results.json
 ```
 
-常规 HTTP 发现与入口检查分别有预算。默认入口 HTTP 检查最多 12 次，每轮最多可配置 50 次；公开渲染每来源最多 `max_pages + 3` 页，正文最多读取 `max_pages` 个动态职位。达到限制后保留已取得的结果并显示部分完成。停止活动后不再发起新页面读取。这里没有全网无限扫描，也没有外部模型读取候选资料。
+常规 HTTP 发现与入口检查分别有预算。默认入口 HTTP 检查最多 12 次，每轮最多可配置 50 次；公开渲染通常每来源最多 `max_pages + 3` 页；MiniMax 为最多 3 个关键词列表，加预算内的详情与入口检查，最多 13 页，正文最多读取 `max_pages` 个动态职位。达到限制后保留已取得的结果并显示部分完成。停止活动后不再发起新页面读取。这里没有全网无限扫描，也没有外部模型读取候选资料。
+
+Moka 登录后的只读核验、独立会话存放与限制见 [使用说明](usage.md#Moka-登录后只读核验)。核验绑定同公司、站点、职位和标题；必要读取的网络失败、HTTP 错误和未完成请求都会阻止表单完整的结论。

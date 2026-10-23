@@ -42,6 +42,10 @@ def read_jobs(source, read, terms, limit, pages, report, renderer=None):
     if not entry: return
     name, url = entry['id'], source['url']; report['company'] = entry['company']; report['adapter'] = entry['adapter']
     report['search_url'] = url
+    if name == 'imtoken':
+        from .imtoken import read_jobs as read_imtoken
+        yield from read_imtoken(source, read, terms, limit, pages, report, renderer=renderer)
+        return
     html = read(url).decode('utf-8'); report['pages'] += 1
     def emit(rows):
         selected = [r for r in rows if matches(r['title'] + ' ' + r['jd'], terms)]
@@ -49,7 +53,10 @@ def read_jobs(source, read, terms, limit, pages, report, renderer=None):
         report['filter_scope'] = 'title_and_body'
         report['fetched'] += len(rows); report['truncated'] = len(selected) > limit
         return selected[:limit]
-    if name == 'deepseek':
+    if name == 'minimax':
+        from .minimax import read_jobs as read_minimax
+        yield from read_minimax(source, read, terms, limit, pages, report, renderer, html=html)
+    elif name == 'deepseek':
         resources = [u for u in scripts(html, url) if urlsplit(u).hostname == 'talent.deepseek.com' and '/static/main.' in u]
         if not resources: raise SourceError('parse_error', 'DeepSeek 页面脚本关联已变化')
         data = embedded_json(read(resources[0]).decode('utf-8')); report['pages'] += 1

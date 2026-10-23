@@ -87,3 +87,38 @@ python run.py --data private/app --once
 详情中的“打开申请入口（人工操作）”只打开网页，不代填、上传或提交。入口来自公开岗位数据；表单与申请资格需要逐岗核对。
 
 BOSS 独立浏览器可在高级设置选择已安装 Google Chrome。登录时使用相同的数据目录并附 `--browser chrome`，Chrome 与默认 Chromium 的资料不共享。首次切换需在该独立窗口本人登录，不复用日常浏览器 Cookie。白屏状态会明确显示并停止该来源；详见 [白屏调查](boss-white-screen.md)。
+
+## Moka 登录后只读核验
+
+岗位详情点击“登录核验”打开本工具独立窗口。本人操作登录和验证码，回到工作台点击“已登录”，程序重新读取同一个公司、站点和职位的申请页并关闭窗口。也可随时结束；超过 10 分钟自动关闭。
+
+终端可使用相同数据目录和岗位 ID：
+
+```sh
+python -m hunt.moka_session --data private/app --job JOB_ID
+# 后续只读检查该公司已有的独立会话，不等待登录
+python -m hunt.moka_session --data private/app --job JOB_ID --headless
+```
+
+会话仅保存在所选目录的 `browser-entry/`，按公司看板隔离，不读取日常浏览器资料。登录阶段仅放行已观察到的邮件/手机认证端点及明确的只读接口；申请、上传和资料修改请求持续被阻断。微信、第三方 SSO 或新的验证码协议可能受限，不自动扩大白名单或解决验证。
+
+核验不读取输入框值、不保存原始页面或账号响应。只保存同一职位的入口状态、时间和少量状态证据；“已见表单”不等于登录已确认、符合条件或可以提交。`authenticated` 只有明确的账户界面标记才为真，不读取认证响应正文。表单加载失败保留 `form_incomplete`，换岗位/站点保留 `identity_mismatch`。核验不会产生投递尝试或更改既有批准。
+
+## 统一终端入口
+
+```sh
+python -m hunt web --data private/app
+python -m hunt catalog
+python -m hunt status --data private/app
+python -m hunt resume resume.docx --data private/app
+# 先核对输出中的原文；只确认准确的事实 ID，可多次传 --fact
+python -m hunt confirm --data private/app --draft DRAFT_ID --fact FACT_ID
+python -m hunt configure --data private/app --catalog minimax --catalog imtoken --keyword Agent --keyword Web3 --official-browser
+# 退出同数据目录的网页运行器后，读取已保存范围并生成本地材料
+python -m hunt prepare --data private/app
+python -m hunt verify --data private/app --job JOB_ID
+```
+
+`resume` 默认标记为合成资料；真实简历须明确使用 `--real`，确认事实后仍默认私密。`configure` 保持提交额度 0，不替你确认目标条件。`status --json`、`resume --json` 等支持结构化输出。
+
+`scan` 透传独立搜索命令并输出搜索结果，不自动写回工作台：例如 `python -m hunt scan --catalog minimax --keyword Agent --official-browser --output private/search.json`。要按已保存范围写回工作台，用 `prepare`。网页和终端使用相同 `--data` 即操作同一份本地资料。
