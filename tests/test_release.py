@@ -5,6 +5,7 @@ from pathlib import Path
 import subprocess
 import tempfile
 import unittest
+import unittest.mock
 
 ROOT = Path(__file__).resolve().parents[1]
 spec = importlib.util.spec_from_file_location('build_release', ROOT / 'scripts' / 'build_release.py')
@@ -57,6 +58,51 @@ class ReleaseCheckTests(unittest.TestCase):
         self.init()
         self.track('b.png', b'\xff\xfe\x00')
         build_release.audit(build_release.source_files(self.root), self.root)
+
+    def test_audit_reports_tracked_but_missing(self):
+        self.init()
+        self.track('gone.py', 'x = 1\n').unlink()
+        with self.assertRaisesRegex(ValueError, 'gone.py: tracked but missing'):
+            build_release.audit(build_release.source_files(self.root), self.root)
+
+    def test_source_files_explains_missing_git(self):
+        with unittest.mock.patch.object(build_release.subprocess, 'run', side_effect=FileNotFoundError):
+            with self.assertRaisesRegex(RuntimeError, 'git is not installed'):
+                build_release.source_files(self.root)
+
+    def test_source_files_includes_git_stderr(self):
+        with self.assertRaisesRegex(RuntimeError, '(?i)not a git repository'):
+            build_release.source_files(self.root)
+
+    def test_check_reports_runtime_error_without_traceback(self):
+        with unittest.mock.patch.object(build_release, 'source_files', side_effect=RuntimeError('not a git checkout: x')):
+            with contextlib.redirect_stdout(io.StringIO()) as out:
+                self.assertEqual(build_release.main(['--check']), 1)
+        self.assertIn('not a git checkout', out.getvalue())
+
+    def test_audit_scans_non_utf8_text(self):
+        self.init()
+        self.track('gbk.txt', '路径 \x2fUsers\x2falice/x'.encode('gbk'))
+        with self.assertRaisesRegex(ValueError, 'gbk.txt'):
+            build_release.audit(build_release.source_files(self.root), self.root)
+
+    def test_audit_flags_linux_and_windows_home_paths(self):
+        self.init()
+        self.track('linux.md', '\x2fhome\x2falice/x\n')
+        self.track('win.md', 'C:\\\\Users\\\\alice\\\\x\n'.replace('\\\\', '\\'))
+        with self.assertRaises(ValueError) as caught:
+            build_release.audit(build_release.source_files(self.root), self.root)
+        self.assertIn('linux.md', str(caught.exception))
+        self.assertIn('win.md', str(caught.exception))
+
+    def test_audit_flags_personal_email_only(self):
+        self.init()
+        self.track('personal.md', 'mail alice' + '@' + 'gmail.com\n')
+        self.track('company.md', 'hr' + '@' + 'token.im and a' + '@' + 'example.invalid\n')
+        with self.assertRaises(ValueError) as caught:
+            build_release.audit(build_release.source_files(self.root), self.root)
+        self.assertIn('personal.md', str(caught.exception))
+        self.assertNotIn('company.md', str(caught.exception))
 
     def test_check_returns_zero_on_clean_repo(self):
         with contextlib.redirect_stdout(io.StringIO()) as out:
