@@ -10,3 +10,15 @@ dist/
 !.env.example
 *.sqlite3*
 *.log
+
+# Internal notes and agent config stay local
+00_工作日志.md
+COLD_START_PROMPT.md
+PRODUCT.md
+DESIGN.md
+.impeccable/
+docs/internal/
+examples/resume.synthetic.pdf
+examples/resume.synthetic.docx
+.superpowers/
+SOURCE_MANIFEST.json

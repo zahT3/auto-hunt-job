@@ -93,8 +93,8 @@ node --check static/app.js
 node --test tests/test_frontend.cjs
 # 生成纯合成 PDF/DOCX 样例
 .venv/bin/python examples/generate_synthetic_resume.py
-# 按明确白名单制作源码包，不含私人资料
-.venv/bin/python scripts/build_release.py
+# 检查已跟踪文件中没有私人目录、个人路径或类似密钥的内容
+.venv/bin/python scripts/build_release.py --check
 ```
 
 浏览器测试需要安装可选依赖与 Chromium，缺少时明确跳过。真实来源验证与本地夹具测试分开记录，见 [本轮验收](docs/v4-acceptance.md)。
