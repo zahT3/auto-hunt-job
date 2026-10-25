@@ -437,7 +437,7 @@ def discover(config, profile=None, transport=None, *, browser_profile_root=None,
             report['status'] = 'ok' if report['returned'] else 'filtered_empty' if report['fetched'] else 'empty'
             if report.get('detail_errors'):
                 report['status'] = 'parse_error'
-                report['error'] = str(len(report['detail_errors'])) + ' 个岗位详情无法解析；已保留其余真实结果'
+                report['error'] = str(report.get('detail_error_count') or len(report['detail_errors'])) + ' 个岗位详情无法解析；已保留其余真实结果'
         except SourceError as e:
             report['status'], report['error'] = e.status, str(e)
             if e.status == 'budget_exhausted' or e.status == 'cancelled' and timing['reached']: report['truncated'] = True

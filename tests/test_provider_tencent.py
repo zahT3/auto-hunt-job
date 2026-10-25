@@ -116,9 +116,42 @@ class TencentTests(unittest.TestCase):
         report = run(lambda url, **kw: b'<html>maintenance</html>')['sources'][0]
         self.assertEqual(report['status'], 'parse_error')
 
-    def test_post_without_identity_is_parse_error(self):
-        bad = page_of([dict(RecruitPostName='产品经理', Responsibility='负责产品')], 1)
-        self.assertEqual(run(lambda url, **kw: bad)['sources'][0]['status'], 'parse_error')
+    def test_bad_post_is_reported_and_rest_kept(self):
+        good = lambda n: post(n)
+        bad_rows = [dict(RecruitPostName='产品经理', Responsibility='负责产品'), 'oops', dict(PostId='7', RecruitPostName='空岗位'), None]
+        for bad in bad_rows:
+            pages = [page_of([good(1), bad, good(2)], 150), page_of([good(3)], 150)]
+            urls = []
+            def transport(url, **kw):
+                urls.append(url); return pages[len(urls) - 1]
+            result = run(transport, max_pages=2, max_jobs=100)
+            report = result['sources'][0]
+            self.assertEqual([j['platform_id'] for j in result['jobs']], ['1', '2', '3'], bad)
+            self.assertEqual((report['status'], len(urls), len(report['detail_errors'])), ('parse_error', 2, 1), bad)
+            self.assertIn('1 个岗位详情无法解析', report['error'])
+            self.assertEqual(report['detail_errors'][0]['status'], 'parse_error')
+
+    def test_bad_post_identity_recorded(self):
+        raw = page_of([post(1), dict(PostId='7', RecruitPostName='空岗位')], 2)
+        error = run(lambda url, **kw: raw)['sources'][0]['detail_errors'][0]
+        self.assertEqual(error['platform_id'], '7')
+
+    def test_bad_post_errors_capped_with_true_count(self):
+        raw = page_of([post(1)] + [dict(PostId=str(100 + n), RecruitPostName='空') for n in range(25)], 26)
+        result = run(lambda url, **kw: raw)
+        report = result['sources'][0]
+        self.assertEqual((len(result['jobs']), len(report['detail_errors']), report['detail_error_count']), (1, 20, 25))
+        self.assertIn('25 个岗位详情无法解析', report['error'])
+
+    def test_count_accepts_digit_string(self):
+        raw = json.dumps(dict(Data=dict(Count='2', Posts=[post(1), post(2)]))).encode()
+        report = run(lambda url, **kw: raw)['sources'][0]
+        self.assertEqual((report['status'], report['returned']), ('ok', 2))
+
+    def test_count_of_other_types_is_parse_error(self):
+        for count in (None, 'many', '', 2.5, True, [2]):
+            raw = json.dumps(dict(Data=dict(Count=count, Posts=[post(1)]))).encode()
+            self.assertEqual(run(lambda url, **kw: raw)['sources'][0]['status'], 'parse_error', count)
 
     def test_detect(self):
         provider = REGISTRY['tencent']
