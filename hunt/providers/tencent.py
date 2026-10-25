@@ -9,7 +9,7 @@ from datetime import date
 from urllib.parse import urlencode, urlsplit
 
 from ..sources import SourceError, json_data, normalize
-from . import Provider, record_detail_error, register
+from . import Provider, paged_jobs, register
 
 HOST = 'careers.tencent.com'
 PAGE_SIZE = 100
@@ -62,26 +62,18 @@ def detect(entry):
     return None
 
 
+def _row_id(row):
+    return str(row['PostId']) if isinstance(row, dict) and row.get('PostId') else None
+
+
 def fetch(entry, ctx):
-    company, seen, count = entry.get('company') or '腾讯', set(), 0
-    for term in ctx.terms:
-        for page in range(1, ctx.pages + 1):
-            url = _url(term, page)
-            if not ctx.report['search_url']: ctx.report['search_url'] = url
-            posts, total = _page(ctx.read(url))
-            ctx.report['pages'] += 1; ctx.report['fetched'] += len(posts)
-            for row in posts:
-                try: job = _job(row, company)
-                except SourceError as e:
-                    if e.status != 'parse_error': raise
-                    record_detail_error(ctx.report, str(row['PostId']) if isinstance(row, dict) and row.get('PostId') else None, e)
-                    continue
-                if job['platform_id'] in seen: continue
-                if count >= ctx.limit: ctx.report['truncated'] = True; return
-                seen.add(job['platform_id']); count += 1
-                yield job
-            if not posts or page * PAGE_SIZE >= total: break
-            if page == ctx.pages: ctx.report['truncated'] = True
+    company = entry.get('company') or '腾讯'
+
+    def fetch_page(term, page):
+        url = _url(term, page)
+        if not ctx.report['search_url']: ctx.report['search_url'] = url
+        return _page(ctx.read(url))
+    return paged_jobs(ctx, fetch_page, lambda row: _job(row, company), _row_id, PAGE_SIZE)
 
 
 PROVIDER = register(Provider('tencent', fetch, detect))

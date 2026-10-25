@@ -10,6 +10,8 @@ import pkgutil
 from dataclasses import dataclass
 from typing import Callable, Iterator, Optional
 
+from ..sources import SourceError
+
 
 class Context:
     """What a provider may use: the budgeted reader, search terms, quotas and the source report."""
@@ -42,6 +44,33 @@ def record_detail_error(report, platform_id, error):
     errors = report.setdefault('detail_errors', [])
     if len(errors) < MAX_DETAIL_ERRORS:
         errors.append(dict(platform_id=platform_id, status='parse_error', error=str(error)))
+
+
+def paged_jobs(ctx, fetch_page, make_job, row_id, page_size):
+    """The per-keyword paging loop shared by the paged JSON providers.
+
+    fetch_page(term, page) -> (posts, total) does the request and sets report['search_url'];
+    make_job(row) raises SourceError('parse_error') for a bad post, which is recorded and skipped
+    (row_id(row) names it, or None). Jobs are deduped by platform_id across keywords; `truncated`
+    is set only when a further new job (or page) existed beyond ctx.limit / ctx.pages.
+    """
+    seen, count = set(), 0
+    for term in ctx.terms:
+        for page in range(1, ctx.pages + 1):
+            posts, total = fetch_page(term, page)
+            ctx.report['pages'] += 1; ctx.report['fetched'] += len(posts)
+            for row in posts:
+                try: job = make_job(row)
+                except SourceError as e:
+                    if e.status != 'parse_error': raise
+                    record_detail_error(ctx.report, row_id(row), e)
+                    continue
+                if job['platform_id'] in seen: continue
+                if count >= ctx.limit: ctx.report['truncated'] = True; return
+                seen.add(job['platform_id']); count += 1
+                yield job
+            if not posts or page * page_size >= total: break
+            if page == ctx.pages: ctx.report['truncated'] = True
 
 
 def register(provider):

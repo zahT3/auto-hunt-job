@@ -11,7 +11,7 @@ from datetime import datetime, timedelta, timezone
 from urllib.parse import quote, urlsplit
 
 from ..sources import SourceError, json_data, normalize
-from . import Provider, record_detail_error, register
+from . import Provider, paged_jobs, register
 
 HOST = 'talent.alibaba.com'
 API = 'https://' + HOST + '/position/search'
@@ -96,28 +96,20 @@ def detect(entry):
     return None
 
 
+def _row_id(row):
+    return str(row['id']) if isinstance(row, dict) and row.get('id') not in (None, '') else None
+
+
 def fetch(entry, ctx):
-    company, seen, count, first = entry.get('company') or '阿里巴巴', set(), 0, True
-    token = str(uuid.uuid4())
-    for term in ctx.terms:
-        for page in range(1, ctx.pages + 1):
-            if not ctx.report['search_url']: ctx.report['search_url'] = API
-            if not first and PAUSE: time.sleep(PAUSE)
-            first = False
-            posts, total = _page(ctx.read(API, method='POST', data=_body(term, page), headers=_headers(token)))
-            ctx.report['pages'] += 1; ctx.report['fetched'] += len(posts)
-            for row in posts:
-                try: job = _job(row, company)
-                except SourceError as e:
-                    if e.status != 'parse_error': raise
-                    record_detail_error(ctx.report, str(row['id']) if isinstance(row, dict) and row.get('id') not in (None, '') else None, e)
-                    continue
-                if job['platform_id'] in seen: continue
-                if count >= ctx.limit: ctx.report['truncated'] = True; return
-                seen.add(job['platform_id']); count += 1
-                yield job
-            if not posts or page * PAGE_SIZE >= total: break
-            if page == ctx.pages: ctx.report['truncated'] = True
+    company, token, first = entry.get('company') or '阿里巴巴', str(uuid.uuid4()), True
+
+    def fetch_page(term, page):
+        nonlocal first
+        if not ctx.report['search_url']: ctx.report['search_url'] = API
+        if not first and PAUSE: time.sleep(PAUSE)
+        first = False
+        return _page(ctx.read(API, method='POST', data=_body(term, page), headers=_headers(token)))
+    return paged_jobs(ctx, fetch_page, lambda row: _job(row, company), _row_id, PAGE_SIZE)
 
 
 PROVIDER = register(Provider('alibaba', fetch, detect))
