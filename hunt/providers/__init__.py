@@ -1,7 +1,9 @@
 """Source-module registry: discovery routes each configured source to a Provider.
 
 A new source is a module `hunt/providers/<id>.py` that calls `register(Provider(...))`;
-every submodule is imported when this package loads.
+every submodule is imported when this package loads. Provider modules import hunt.sources /
+hunt.network at module level and hunt.discovery only lazily (it is still importing when
+load_all() runs).
 """
 import importlib
 import pkgutil
@@ -34,7 +36,8 @@ def register(provider):
 
 
 def route(entry):
-    provider = REGISTRY.get(entry.get('kind'))
+    kind = entry.get('kind')
+    provider = REGISTRY.get(kind) if isinstance(kind, str) else None
     if provider: return provider
     for provider in list(REGISTRY.values()):
         if provider.detect(entry) is not None: return provider

@@ -91,7 +91,7 @@ def source_configs(config):
                 item = dict(row)
                 item.setdefault('kind', item.get('type'))
                 item.setdefault('board', item.get('slug'))
-                item.setdefault('id', str(item.get('kind')) + (':' + str(item['board']) if item.get('board') else ''))
+                if item.get('kind'): item.setdefault('id', str(item['kind']) + (':' + str(item['board']) if item.get('board') else ''))
                 result.append(item)
         return [s for s in result if not config.get('official_only') or s.get('kind') not in ('boss', 'liepin', 'websearch')]
     kinds = config.get('sources', DEFAULT_KINDS)
@@ -348,7 +348,7 @@ def discover(config, profile=None, transport=None, *, browser_profile_root=None,
     budget = Budget(transport or fetch, maximum, should_continue=should_continue)
     entry_budget = Budget(transport or fetch, bounded(config.get('entry_requests'), 12, 1, 50), should_continue=should_continue)
     for index, source in enumerate(sources):
-        kind = source.get('kind'); sid = source.get('id') or kind
+        kind = source.get('kind'); sid = source.get('id') or str(kind)
         report = dict(source_id=sid, kind=kind, company=source.get('company'), status='empty', fetched=0, returned=0, pages=0, requests=0,
                       error=None, search_url=None, checked_at=now(), truncated=False, mode=source.get('mode', 'public'))
         reports.append(report)
@@ -388,7 +388,12 @@ def discover(config, profile=None, transport=None, *, browser_profile_root=None,
                         return browser.read(url)
                 provider = route(source)
                 if not provider: raise SourceError('not_configured', '未知岗位渠道：' + str(kind))
-                if provider.id != kind: source = provider.detect(source)
+                if provider.id != kind:
+                    source = provider.detect(source)
+                    parts = urlsplit(str(source.get('careers_url') or source.get('url') or ''))
+                    report['kind'] = provider.id
+                    report['source_id'] = sid = source.get('id') or (
+                        provider.id + (':' + parts.netloc + parts.path.rstrip('/') if parts.netloc else ''))
                 generator = provider.fetch(source, Context(read, terms, quota, pages, report, renderer))
                 for item in generator:
                     key = (item['channel'], item['platform_id'])
