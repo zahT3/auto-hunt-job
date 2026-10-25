@@ -1,0 +1,649 @@
+{
+  "schema_version": 1,
+  "generated_from": {
+    "repo": "shuheng-mo/career-ops-china",
+    "commit": "bef1e7122d2d84a0bf7137a9d5ffb88808d05c5c",
+    "file": "templates/portals-china.example.yml",
+    "license": "MIT"
+  },
+  "companies": [
+    {
+      "id": "tencent",
+      "name": "腾讯",
+      "careers_url": "https://careers.tencent.com/",
+      "provider": "tencent",
+      "tags": [
+        "大厂",
+        "互联网",
+        "AI",
+        "数据"
+      ],
+      "source": "career-ops-china"
+    },
+    {
+      "id": "alibaba",
+      "name": "阿里巴巴",
+      "careers_url": "https://talent.alibaba.com/",
+      "provider": "alibaba",
+      "tags": [
+        "大厂",
+        "互联网",
+        "AI",
+        "数据",
+        "云"
+      ],
+      "source": "career-ops-china"
+    },
+    {
+      "id": "meituan",
+      "name": "美团",
+      "careers_url": "https://zhaopin.meituan.com/",
+      "provider": "meituan",
+      "tags": [
+        "大厂",
+        "互联网",
+        "数据",
+        "算法",
+        "广告"
+      ],
+      "source": "career-ops-china"
+    },
+    {
+      "id": "bytedance",
+      "name": "字节跳动",
+      "careers_url": "https://jobs.bytedance.com",
+      "provider": "feishu",
+      "tags": [
+        "大厂",
+        "互联网",
+        "AI",
+        "数据",
+        "推荐"
+      ],
+      "source": "career-ops-china"
+    },
+    {
+      "id": "deepseek",
+      "name": "DeepSeek",
+      "careers_url": "https://talent.deepseek.com/",
+      "provider": null,
+      "tags": [
+        "AI",
+        "Agent"
+      ],
+      "source": "catalog"
+    },
+    {
+      "id": "dify",
+      "name": "Dify",
+      "careers_url": "https://join.dify.ai/roles",
+      "provider": null,
+      "tags": [
+        "AI 应用",
+        "Agent"
+      ],
+      "source": "catalog"
+    },
+    {
+      "id": "kimi",
+      "name": "Kimi / 月之暗面",
+      "careers_url": "https://careers.kimi.com/",
+      "provider": null,
+      "tags": [
+        "AI",
+        "Agent"
+      ],
+      "source": "catalog"
+    },
+    {
+      "id": "stepfun",
+      "name": "阶跃星辰",
+      "careers_url": "https://www.stepfun.com/about",
+      "provider": null,
+      "tags": [
+        "AI",
+        "Agent"
+      ],
+      "source": "catalog"
+    },
+    {
+      "id": "cobo",
+      "name": "Cobo",
+      "careers_url": "https://www.cobo.com/zh/careers",
+      "provider": null,
+      "tags": [
+        "Web3"
+      ],
+      "source": "catalog"
+    },
+    {
+      "id": "okx",
+      "name": "OKX",
+      "careers_url": "https://www.okx.com/zh-hant/join-us/openings",
+      "provider": null,
+      "tags": [
+        "Web3",
+        "Agent"
+      ],
+      "source": "catalog"
+    },
+    {
+      "id": "imtoken",
+      "name": "imToken",
+      "careers_url": "https://careers.token.im/",
+      "provider": null,
+      "tags": [
+        "Web3"
+      ],
+      "source": "catalog"
+    },
+    {
+      "id": "hashkey",
+      "name": "HashKey",
+      "careers_url": "https://group.hashkey.com/en/category/roles/",
+      "provider": null,
+      "tags": [
+        "Web3"
+      ],
+      "source": "catalog"
+    },
+    {
+      "id": "minimax",
+      "name": "MiniMax",
+      "careers_url": "https://www.minimaxi.com/careers",
+      "provider": null,
+      "tags": [
+        "AI",
+        "Agent"
+      ],
+      "source": "catalog"
+    },
+    {
+      "id": "huawei",
+      "name": "华为",
+      "careers_url": "https://career.huawei.com/reccampportal/portal5/index.html",
+      "provider": null,
+      "tags": [
+        "大厂",
+        "硬件",
+        "AI",
+        "云"
+      ],
+      "source": "curated"
+    },
+    {
+      "id": "xiaomi",
+      "name": "小米",
+      "careers_url": "https://hr.xiaomi.com/",
+      "provider": null,
+      "tags": [
+        "大厂",
+        "硬件",
+        "AI",
+        "汽车"
+      ],
+      "source": "curated"
+    },
+    {
+      "id": "antgroup",
+      "name": "蚂蚁集团",
+      "careers_url": "https://talent.antgroup.com/",
+      "provider": null,
+      "tags": [
+        "大厂",
+        "金融科技",
+        "AI",
+        "数据"
+      ],
+      "source": "curated"
+    },
+    {
+      "id": "ctrip",
+      "name": "携程",
+      "careers_url": "https://job.ctrip.com/",
+      "provider": null,
+      "tags": [
+        "互联网",
+        "旅游",
+        "数据"
+      ],
+      "source": "curated"
+    },
+    {
+      "id": "mihoyo",
+      "name": "米哈游",
+      "careers_url": "https://jobs.mihoyo.com/",
+      "provider": null,
+      "tags": [
+        "游戏",
+        "AI"
+      ],
+      "source": "curated"
+    },
+    {
+      "id": "dji",
+      "name": "大疆",
+      "careers_url": "https://careers.dji.com/zh-CN/",
+      "provider": null,
+      "tags": [
+        "硬件",
+        "机器人",
+        "算法"
+      ],
+      "source": "curated"
+    },
+    {
+      "id": "lixiang",
+      "name": "理想汽车",
+      "careers_url": "https://www.lixiang.com/employ.html",
+      "provider": null,
+      "tags": [
+        "汽车",
+        "智能驾驶",
+        "算法"
+      ],
+      "source": "curated"
+    },
+    {
+      "id": "xiaopeng",
+      "name": "小鹏汽车",
+      "careers_url": "https://xiaopeng.jobs.feishu.cn/",
+      "provider": "feishu",
+      "tags": [
+        "汽车",
+        "智能驾驶",
+        "算法"
+      ],
+      "source": "curated"
+    },
+    {
+      "id": "nio",
+      "name": "蔚来",
+      "careers_url": "https://nio.jobs.feishu.cn/",
+      "provider": "feishu",
+      "tags": [
+        "汽车",
+        "智能驾驶",
+        "算法"
+      ],
+      "source": "curated"
+    },
+    {
+      "id": "oppo",
+      "name": "OPPO",
+      "careers_url": "https://careers.oppo.com/",
+      "provider": null,
+      "tags": [
+        "硬件",
+        "终端",
+        "AI"
+      ],
+      "source": "curated"
+    },
+    {
+      "id": "pony-ai",
+      "name": "小马智行",
+      "careers_url": "https://pony.ai/careers",
+      "provider": null,
+      "tags": [
+        "智能驾驶",
+        "算法",
+        "AI"
+      ],
+      "source": "curated"
+    },
+    {
+      "id": "weride",
+      "name": "文远知行",
+      "careers_url": "https://www.weride.ai/careers",
+      "provider": null,
+      "tags": [
+        "智能驾驶",
+        "算法",
+        "AI"
+      ],
+      "source": "curated"
+    },
+    {
+      "id": "zhihu",
+      "name": "知乎",
+      "careers_url": "https://app.mokahr.com/apply/zhihu/78336",
+      "provider": "mokahr",
+      "tags": [
+        "互联网",
+        "内容",
+        "社区"
+      ],
+      "source": "curated"
+    },
+    {
+      "id": "talent-baidu-com-external-baidu-social-h",
+      "name": "百度",
+      "careers_url": "https://talent.baidu.com/external/baidu/social.html",
+      "provider": null,
+      "tags": [
+        "大厂",
+        "互联网",
+        "云"
+      ],
+      "source": "career-ops-china"
+    },
+    {
+      "id": "join-jd-com-home",
+      "name": "京东",
+      "careers_url": "https://join.jd.com/home",
+      "provider": null,
+      "tags": [
+        "大厂",
+        "互联网",
+        "云"
+      ],
+      "source": "career-ops-china"
+    },
+    {
+      "id": "careers-pinduoduo-com-social",
+      "name": "拼多多",
+      "careers_url": "https://careers.pinduoduo.com/social",
+      "provider": null,
+      "tags": [
+        "大厂",
+        "互联网"
+      ],
+      "source": "career-ops-china"
+    },
+    {
+      "id": "zhaopin-kuaishou-cn-recruit-e",
+      "name": "快手",
+      "careers_url": "https://zhaopin.kuaishou.cn/recruit/e/#/official/social-recruitment/",
+      "provider": null,
+      "tags": [
+        "大厂",
+        "互联网",
+        "数据",
+        "AI",
+        "推荐",
+        "广告"
+      ],
+      "source": "career-ops-china"
+    },
+    {
+      "id": "job-xiaohongshu-com",
+      "name": "小红书",
+      "careers_url": "https://job.xiaohongshu.com/?type=social",
+      "provider": null,
+      "tags": [
+        "大厂",
+        "互联网",
+        "数据",
+        "算法"
+      ],
+      "source": "career-ops-china"
+    },
+    {
+      "id": "jobs-bilibili-com-campus-positions",
+      "name": "B站",
+      "careers_url": "https://jobs.bilibili.com/campus/positions",
+      "provider": null,
+      "tags": [
+        "大厂",
+        "互联网",
+        "数据",
+        "AI",
+        "推荐"
+      ],
+      "source": "career-ops-china"
+    },
+    {
+      "id": "hr-163-com-job-list-html",
+      "name": "网易",
+      "careers_url": "https://hr.163.com/job-list.html",
+      "provider": null,
+      "tags": [
+        "大厂",
+        "互联网",
+        "AI",
+        "云",
+        "游戏"
+      ],
+      "source": "career-ops-china"
+    },
+    {
+      "id": "talent-didiglobal-com-social",
+      "name": "滴滴",
+      "careers_url": "https://talent.didiglobal.com/social",
+      "provider": null,
+      "tags": [
+        "大厂",
+        "互联网",
+        "数据",
+        "算法"
+      ],
+      "source": "career-ops-china"
+    },
+    {
+      "id": "zhipuai-cn-joinus",
+      "name": "智谱 AI",
+      "careers_url": "https://www.zhipuai.cn/joinUs",
+      "provider": null,
+      "tags": [
+        "AI",
+        "大模型"
+      ],
+      "source": "career-ops-china"
+    },
+    {
+      "id": "baichuan-ai-com-careers",
+      "name": "百川智能",
+      "careers_url": "https://www.baichuan-ai.com/careers",
+      "provider": null,
+      "tags": [
+        "AI",
+        "大模型"
+      ],
+      "source": "career-ops-china"
+    },
+    {
+      "id": "01-ai-careers",
+      "name": "零一万物",
+      "careers_url": "https://01.ai/careers",
+      "provider": null,
+      "tags": [
+        "AI",
+        "大模型"
+      ],
+      "source": "career-ops-china"
+    },
+    {
+      "id": "modelbest-cn-careers",
+      "name": "面壁智能",
+      "careers_url": "https://www.modelbest.cn/careers",
+      "provider": null,
+      "tags": [
+        "AI",
+        "大模型"
+      ],
+      "source": "career-ops-china"
+    },
+    {
+      "id": "manus-im-careers",
+      "name": "Manus（蝴蝶效应）",
+      "careers_url": "https://manus.im/careers",
+      "provider": null,
+      "tags": [
+        "AI",
+        "应用",
+        "Agent"
+      ],
+      "source": "career-ops-china"
+    },
+    {
+      "id": "pingcap-com-careers",
+      "name": "PingCAP（TiDB）",
+      "careers_url": "https://www.pingcap.com/careers/",
+      "provider": null,
+      "tags": [
+        "数据",
+        "数据库"
+      ],
+      "source": "career-ops-china"
+    },
+    {
+      "id": "starrocks-io-careers",
+      "name": "StarRocks（鼎石科技）",
+      "careers_url": "https://www.starrocks.io/careers",
+      "provider": null,
+      "tags": [
+        "数据",
+        "数据库"
+      ],
+      "source": "career-ops-china"
+    },
+    {
+      "id": "sensorsdata-cn-about-job-html",
+      "name": "神策数据",
+      "careers_url": "https://www.sensorsdata.cn/about/job.html",
+      "provider": null,
+      "tags": [
+        "数据",
+        "数据库"
+      ],
+      "source": "career-ops-china"
+    },
+    {
+      "id": "deepexi-com-about-us",
+      "name": "滴普科技",
+      "careers_url": "https://www.deepexi.com/about-us",
+      "provider": null,
+      "tags": [
+        "数据",
+        "数据库"
+      ],
+      "source": "career-ops-china"
+    },
+    {
+      "id": "kyligence-io-zh-careers",
+      "name": "Kyligence（跬智）",
+      "careers_url": "https://kyligence.io/zh/careers/",
+      "provider": null,
+      "tags": [
+        "数据",
+        "数据库",
+        "OLAP"
+      ],
+      "source": "career-ops-china"
+    },
+    {
+      "id": "doris-apache-org",
+      "name": "Apache Doris（百度系）",
+      "careers_url": "https://doris.apache.org",
+      "provider": null,
+      "tags": [
+        "数据",
+        "数据库"
+      ],
+      "source": "career-ops-china"
+    },
+    {
+      "id": "siliconflow-cn-zh-cn-about",
+      "name": "硅基流动 SiliconFlow",
+      "careers_url": "https://siliconflow.cn/zh-cn/about",
+      "provider": null,
+      "tags": [
+        "AI",
+        "Infra",
+        "推理"
+      ],
+      "source": "career-ops-china"
+    },
+    {
+      "id": "luchentech-com-joinus",
+      "name": "潞晨科技（Colossal-AI）",
+      "careers_url": "https://www.luchentech.com/joinUs",
+      "provider": null,
+      "tags": [
+        "AI",
+        "Infra",
+        "推理"
+      ],
+      "source": "career-ops-china"
+    },
+    {
+      "id": "infini-ai-com-careers",
+      "name": "无问芯穹（Infinigence）",
+      "careers_url": "https://infini-ai.com/careers",
+      "provider": null,
+      "tags": [
+        "AI",
+        "Infra",
+        "推理"
+      ],
+      "source": "career-ops-china"
+    },
+    {
+      "id": "4paradigm-com-about-jobs-html",
+      "name": "第四范式 4Paradigm",
+      "careers_url": "https://www.4paradigm.com/about/jobs.html",
+      "provider": null,
+      "tags": [
+        "AI",
+        "应用",
+        "数据",
+        "数据库",
+        "大模型"
+      ],
+      "source": "career-ops-china"
+    },
+    {
+      "id": "sensetime-com-cn-career",
+      "name": "商汤",
+      "careers_url": "https://www.sensetime.com/cn/career",
+      "provider": null,
+      "tags": [
+        "AI",
+        "应用",
+        "数据",
+        "数据库"
+      ],
+      "source": "career-ops-china"
+    },
+    {
+      "id": "megvii-com-join-us",
+      "name": "旷视",
+      "careers_url": "https://www.megvii.com/join_us",
+      "provider": null,
+      "tags": [
+        "AI",
+        "应用",
+        "数据",
+        "数据库"
+      ],
+      "source": "career-ops-china"
+    },
+    {
+      "id": "langboat-com-careers",
+      "name": "澜舟科技",
+      "careers_url": "https://www.langboat.com/careers",
+      "provider": null,
+      "tags": [
+        "AI",
+        "应用",
+        "数据",
+        "数据库",
+        "大模型",
+        "NLP"
+      ],
+      "source": "career-ops-china"
+    },
+    {
+      "id": "apply-workable-com-huggingface",
+      "name": "HuggingFace",
+      "careers_url": "https://apply.workable.com/huggingface/",
+      "provider": null,
+      "tags": [
+        "远程",
+        "海外"
+      ],
+      "source": "career-ops-china"
+    }
+  ]
+}

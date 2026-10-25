@@ -27,6 +27,11 @@ def parser():
         commands.add_parser(name, help=help_text, add_help=False)
     catalog = commands.add_parser('catalog', help='列出支持的公司官网和标识')
     catalog.add_argument('--json', action='store_true')
+    seeds = commands.add_parser('companies', help='列出大范围搜索将扫描的公司')
+    seeds.add_argument('--terms', nargs='+', default=[], metavar='TERM', help='搜索词，用于给公司排序')
+    seeds.add_argument('--limit', type=int, default=300, help='最多列出的公司数，默认 300')
+    seeds.add_argument('--data', type=Path, default=None, help='提供时，把该数据目录里遇到过的公司排在种子之后')
+    seeds.add_argument('--json', action='store_true')
     status = commands.add_parser('status', help='查看候选资料、岗位 ID 和申请尝试数')
     resume = commands.add_parser('resume', help='本地导入 PDF/DOCX，生成待核对事实')
     resume.add_argument('path', type=Path, metavar='PATH')
@@ -119,6 +124,21 @@ def main(argv=None):
             else:
                 for row in CATALOG:
                     print('{id:10} {company} · {category} · {adapter}'.format(**row))
+            return 0
+        if args.command == 'companies':
+            from . import companies
+            if not 1 <= args.limit <= 1000:
+                raise Error('--limit 必须是 1 至 1000')
+            extra = []
+            if args.data:
+                with Store(args.data).tx() as c:
+                    extra = companies.encountered(c)
+            result = dict(schema_version=1, companies=companies.select(args.terms, args.limit, extra))
+            if args.json:
+                print(json.dumps(result, ensure_ascii=False, indent=2))
+            else:
+                for row in result['companies']:
+                    print('{:8} {} · {}'.format(row['kind'], row['company'], row.get('url') or row['careers_url']))
             return 0
         store = Store(args.data)
         # Only the existing runner owns recovery and its OS lock. These local

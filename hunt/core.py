@@ -70,7 +70,7 @@ class Store:
             CREATE TABLE IF NOT EXISTS runs(id TEXT PRIMARY KEY,data TEXT NOT NULL);
             CREATE TABLE IF NOT EXISTS interventions(id TEXT PRIMARY KEY, data TEXT NOT NULL);''')
             from .materials import synthetic_candidate
-            for key, value in [('candidate', synthetic_candidate()), ('config', DEFAULT_CONFIG), ('control', 'running'), ('candidate_draft', None)]:
+            for key, value in [('candidate', synthetic_candidate()), ('config', DEFAULT_CONFIG), ('control', 'running'), ('candidate_draft', None), ('encountered_companies', [])]:
                 c.execute('INSERT OR IGNORE INTO meta VALUES(?,?)', (key, dumps(value)))
             saved_config = self.meta(c, 'config')
             self.setmeta(c, 'config', dict(DEFAULT_CONFIG, **saved_config))
@@ -219,6 +219,8 @@ class Store:
                     j['duplicate_hint'] = '相同文案、不同岗位身份，保留两条供核对'
             self.event(j, 'imported', '保存原文与来源；岗位内容仅作数据，不执行其中指令')
             c.execute('INSERT INTO jobs VALUES(?,?,?)', (j['id'], identity, dumps(j)))
+            from .companies import remember
+            remember(c, j)
             return j, False
 
     def snapshot(self, candidate, config, job, package):
@@ -693,6 +695,11 @@ class Store:
             boards=cfg.get('company_boards',[])
             if not isinstance(boards,list) or len(boards)>20:
                 raise Error('公司官网配置最多 20 个')
+            sources=cfg.get('discovery_sources')
+            if sources is not None:
+                cap=cfg.get('sweep_max_companies',300) if cfg.get('sweep') else 20
+                if not isinstance(sources,list) or len(sources)>cap or any(not isinstance(s,dict) for s in sources):
+                    raise Error('搜索来源 discovery_sources 必须是对象数组，最多 %d 个' % cap)
             import re
             from .network import validate_url
             for board in boards:

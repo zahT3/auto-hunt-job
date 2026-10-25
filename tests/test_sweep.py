@@ -237,6 +237,16 @@ class SweepRunTests(unittest.TestCase):
         state = self.configure(sweep=True, sweep_max_jobs=5000, sweep_prepare=0)
         self.assertTrue(state['config']['sweep'])
 
+    def test_discovery_sources_bounded(self):
+        many = lambda n: [dict(kind='website', url='https://e%d.example.test/' % i) for i in range(n)]
+        for bad in (dict(discovery_sources='x'), dict(discovery_sources=['x']), dict(discovery_sources=many(21)),
+                    dict(sweep=True, sweep_max_companies=5, discovery_sources=many(6)), dict(sweep=True, discovery_sources=many(301))):
+            with self.assertRaises(Error, msg=str(bad)):
+                self.configure(**bad)
+        self.assertEqual(len(self.configure(discovery_sources=many(20))['config']['discovery_sources']), 20)
+        self.assertEqual(len(self.configure(sweep=True, discovery_sources=many(300))['config']['discovery_sources']), 300)
+        self.assertEqual(len(self.configure(sweep=True, sweep_max_companies=1000, discovery_sources=many(1000))['config']['discovery_sources']), 1000)
+
 
 if __name__ == '__main__':
     unittest.main()
