@@ -219,8 +219,12 @@ class Store:
                     j['duplicate_hint'] = '相同文案、不同岗位身份，保留两条供核对'
             self.event(j, 'imported', '保存原文与来源；岗位内容仅作数据，不执行其中指令')
             c.execute('INSERT INTO jobs VALUES(?,?,?)', (j['id'], identity, dumps(j)))
-            from .companies import remember
-            remember(c, j)
+            # Best effort: a bad seed file or meta value must not roll back the job import.
+            try:
+                from .companies import remember
+                remember(c, j)
+            except (OSError, ValueError, KeyError, TypeError):
+                pass
             return j, False
 
     def snapshot(self, candidate, config, job, package):
@@ -398,6 +402,13 @@ class Store:
                         run.setdefault('sources', []).append(copy.deepcopy(report))
                         with self.tx() as connection:
                             connection.execute('UPDATE runs SET data=? WHERE id=?', (dumps(run), run['id']))
+                    if cfg.get('sweep') is True and 'discovery_sources' not in cfg:
+                        from . import companies
+                        from .discovery import search_terms
+                        try:
+                            with self.tx() as c: extra = companies.encountered(c)
+                        except (ValueError, TypeError): extra = []
+                        cfg = dict(cfg, discovery_sources=companies.select(search_terms(cfg), cfg.get('sweep_max_companies', 300), extra))
                     result = discover(cfg, profile=build_profile(candidate, confirmed_only=True),
                                       should_continue=self.is_running, browser_profile_root=self.root / 'browser-search',
                                       on_source=source_progress)

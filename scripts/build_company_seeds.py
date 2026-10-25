@@ -60,6 +60,7 @@ def read_tracked_companies(text):
     rows, section = [], ''
     for i in range(start + 1, len(lines)):
         line = lines[i]
+        if re.match(r'[A-Za-z_]\w*:', line): break
         if line.startswith('  # ') and not rule.match(line) and i + 1 < len(lines) and rule.match(lines[i - 1]) and rule.match(lines[i + 1]):
             section = line.strip().lstrip('#').strip()
         item = re.match(r'  - name:\s*(.+)$', line)
@@ -137,7 +138,8 @@ def main(argv=None):
         if not template.is_file():
             raise FileNotFoundError('找不到上游模板 %s；它在 git 忽略的 private/research/upstream 下，需先取得 %s 的该文件' % (template, UPSTREAM_REPO))
         commit = pinned_commit(args.upstream / 'pins.txt')
-        seeds = build(read_tracked_companies(template.read_text(encoding='utf-8')))
+        rows = read_tracked_companies(template.read_text(encoding='utf-8'))
+        seeds = build(rows)
     except (OSError, ValueError) as error:
         print('错误：' + str(error), file=sys.stderr)
         return 1
@@ -146,7 +148,8 @@ def main(argv=None):
     args.out.write_text(json.dumps(data, ensure_ascii=False, indent=2) + '\n', encoding='utf-8')
     counts = {}
     for s in seeds: counts[s['provider'] or 'website'] = counts.get(s['provider'] or 'website', 0) + 1
-    print('已写入 %s：%d 家 %s' % (args.out, len(seeds), counts))
+    skipped = sum(not r.get('careers_url') for r in rows)
+    print('已写入 %s：%d 家 %s；跳过 %d 行（没有 careers_url）' % (args.out, len(seeds), counts, skipped))
     return 0
 
 

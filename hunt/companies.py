@@ -1,4 +1,5 @@
 """Company seed list: which employers a sweep scans, plus employers met while importing jobs."""
+import functools
 import json
 import re
 from pathlib import Path
@@ -8,13 +9,22 @@ DATA = Path(__file__).resolve().parent / 'data' / 'companies.cn.json'
 KEYWORD_PROVIDERS = ('tencent', 'alibaba', 'meituan', 'feishu')
 MAX_ENCOUNTERED = 2000
 KEY = 'encountered_companies'
-# Aggregators list other companies' jobs; ATS hosts need a tenant path, so their origin is no careers page.
+# Job platforms and ATS hosts list other companies' jobs (or need a tenant path), and the keyword providers
+# are seeded already: none of their origins is a careers page worth remembering. Subdomains match too.
+BLOCKED_HOSTS = ('zhipin.com', 'liepin.com', 'lagou.com', 'zhaopin.com', '51job.com', 'linkedin.com', 'indeed.com', 'maimai.cn',
+                 'nowcoder.com', 'myworkdayjobs.com', 'smartrecruiters.com', 'greenhouse.io', 'lever.co', 'ashbyhq.com',
+                 'mokahr.com', 'workable.com', 'jobs.feishu.cn', 'careers.tencent.com', 'talent.alibaba.com',
+                 'zhaopin.meituan.com', 'jobs.bytedance.com')
 AGGREGATOR_CHANNELS = ('boss', 'liepin', 'websearch', 'import')
-ATS_HOSTS = ('greenhouse.io', 'lever.co', 'ashbyhq.com', 'mokahr.com', 'workable.com')
+
+
+@functools.lru_cache(maxsize=4)
+def _read(path):
+    return tuple(json.loads(path.read_text(encoding='utf-8'))['companies'])
 
 
 def load_seeds():
-    return json.loads(DATA.read_text(encoding='utf-8'))['companies']
+    return list(_read(DATA))
 
 
 def _split(url):
@@ -64,9 +74,10 @@ def remember(conn, job):
     from .providers import route
     company = str(job.get('company') or '').strip()
     parts = _split(job.get('url'))
-    if not company or company == '待确认' or not parts or job.get('channel') in AGGREGATOR_CHANNELS: return False
+    channel = str(job.get('channel') or '')
+    if not company or company == '待确认' or not parts or channel in AGGREGATOR_CHANNELS or channel.startswith('inbox'): return False
     host = parts.hostname.lower()
-    if any(host == h or host.endswith('.' + h) for h in ATS_HOSTS): return False
+    if any(host == h or host.endswith('.' + h) for h in BLOCKED_HOSTS): return False
     seeds, old = load_seeds(), encountered(conn)
     if len(old) >= MAX_ENCOUNTERED: return False
     if any(c['name'].casefold() == company.casefold() or _split(c['careers_url']).hostname.lower() == host for c in seeds + old): return False
