@@ -7,7 +7,7 @@ from unittest.mock import patch
 from hunt.core import Store, Error
 from hunt.discovery import discover
 from hunt.providers import Provider, REGISTRY, register
-from hunt.sources import normalize
+from hunt.sources import normalize, SourceError
 
 
 def job(source, n):
@@ -68,11 +68,44 @@ class SweepDiscoveryTests(unittest.TestCase):
         self.assertEqual(len(wide['sources']), 30)
 
     def test_fair_share_with_large_first_source(self):
-        result = run_discover(dict(sweep=True, sweep_max_jobs=30, discovery_sources=sources('big', 'small', 'rest')),
+        result = run_discover(dict(sweep=True, sweep_max_jobs=60, discovery_sources=sources('big', 'small', 'rest')),
                               provider(dict(big=None, small=3, rest=None)))
         got = {r['source_id']: r['returned'] for r in result['sources']}
-        self.assertEqual(got, dict(big=10, small=3, rest=17))
+        self.assertEqual(got, dict(big=20, small=3, rest=37))
+        self.assertEqual(len(result['jobs']), 60)
+
+    def test_limit_ignoring_provider_cannot_break_cap_or_fair_share(self):
+        def fetch(entry, ctx):
+            for n in range(100): yield job(entry['name'], n)
+        result = run_discover(dict(sweep=True, sweep_max_jobs=30, discovery_sources=sources('a', 'b', 'c')), Provider(id='sweep-test', fetch=fetch))
+        got = {r['source_id']: r['returned'] for r in result['sources']}
+        self.assertEqual(got, dict(a=10, b=10, c=10))
+        self.assertTrue(all(r['truncated'] for r in result['sources']))
         self.assertEqual(len(result['jobs']), 30)
+
+    def test_quota_exactly_met_is_not_truncated(self):
+        result = run_discover(dict(sweep=True, sweep_max_jobs=30, discovery_sources=sources('a', 'b', 'c')), provider(dict(a=10, b=10, c=10)))
+        self.assertEqual([r['truncated'] for r in result['sources']], [False] * 3)
+
+    def test_sweep_entry_budget_follows_prepare(self):
+        calls = []
+        def entry_calls(config):
+            calls.clear()
+            def fake_check(item, read, renderer=None):
+                try: read('https://jobs.example.test/entry/' + item['platform_id'])
+                except SourceError: pass
+                return item
+            with patch('hunt.entries.check_job', side_effect=fake_check), patch.dict(REGISTRY):
+                register(provider(dict(a=300)))
+                discover(dict(dict(keywords=['AI'], check_entries=True, discovery_sources=sources('a')), **config),
+                         transport=lambda u, **kw: calls.append(u) or b'{}')
+            return len([u for u in calls if '/entry/' in u])
+        self.assertEqual(entry_calls(dict(sweep=True, sweep_prepare=50)), 50)
+        self.assertEqual(entry_calls(dict(sweep=True, sweep_prepare=0)), 12)
+        self.assertEqual(entry_calls(dict(sweep=True, sweep_prepare=50, entry_requests=5)), 5)
+        self.assertEqual(entry_calls(dict(sweep=True, entry_requests=500)), 200)
+        self.assertEqual(entry_calls(dict(sweep_prepare=50)), 12)
+        self.assertEqual(entry_calls(dict(entry_requests=500, max_jobs=100)), 50)
 
     def test_fair_share_of_requests(self):
         def hook(entry, ctx):
@@ -169,6 +202,26 @@ class SweepRunTests(unittest.TestCase):
         self.assertEqual(result['status'], 'partial')
         self.assertTrue(result['deadline_reached'])
         self.assertEqual(result['imported'], 2)
+
+    def test_run_caps_imports_at_sweep_max_jobs(self):
+        with patch('hunt.discovery.discover', side_effect=lambda config, **kw: dict(
+                jobs=[job('a', n) for n in range(40)], sources=[], queries=['AI'], sweep=dict(max_jobs=25, prepare=0), deadline_reached=False)):
+            result = self.run_with(provider(dict(a=1)), sweep=True, sweep_max_jobs=25, sweep_prepare=0)
+        self.assertEqual(result['imported'], 25)
+
+    def test_run_deadline_with_no_jobs_is_partial(self):
+        ticks = []
+        def clock():
+            ticks.append(1)
+            return 0.0 if len(ticks) == 1 else 1000.0
+        self.configure(sweep=True)
+        with patch.dict(REGISTRY), patch('hunt.discovery.discover', side_effect=lambda config, **kw: discover(config, clock=clock, **kw)):
+            register(provider(dict(a=1)))
+            result = self.store.run()
+        self.assertEqual(result['imported'], 0)
+        self.assertTrue(result['deadline_reached'])
+        self.assertEqual(result['status'], 'partial')
+        self.assertTrue(result['truncated'])
 
     def test_non_sweep_run_unchanged(self):
         result = self.run_with(provider(dict(a=None)), max_jobs=3)

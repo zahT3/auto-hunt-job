@@ -366,7 +366,8 @@ def discover(config, profile=None, transport=None, *, browser_profile_root=None,
     pages = bounded(config.get('max_pages', config.get('discovery_pages')), 2, 1, 5)
     maximum = sweep['requests'] if sweep else bounded(config.get('discovery_requests'), 40, 1, 100)
     budget = Budget(transport or fetch, maximum, should_continue=should_continue)
-    entry_budget = Budget(transport or fetch, bounded(config.get('entry_requests'), 12, 1, 50), should_continue=should_continue)
+    entry_budget = Budget(transport or fetch, bounded(config.get('entry_requests'), max(12, sweep['prepare']) if sweep else 12, 1, 200 if sweep else 50),
+                          should_continue=should_continue)
     for index, source in enumerate(sources):
         kind = source.get('kind'); sid = source.get('id') or str(kind)
         report = dict(source_id=sid, kind=kind, company=source.get('company'), status='empty', fetched=0, returned=0, pages=0, requests=0,
@@ -418,6 +419,10 @@ def discover(config, profile=None, transport=None, *, browser_profile_root=None,
                 for item in generator:
                     key = (item['channel'], item['platform_id'])
                     if key in seen: continue
+                    # A provider that ignores ctx.limit must not eat the shares of later sources.
+                    if sweep and report['returned'] >= quota:
+                        report['truncated'] = True
+                        break
                     seen.add(key)
                     item.setdefault('raw', {})['discovery'] = dict(source_id=sid, queries=terms, mode=report['mode'], checked_at=report['checked_at'])
                     if config.get('check_entries'):

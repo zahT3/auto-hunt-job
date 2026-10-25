@@ -412,7 +412,7 @@ class Store:
             run['discovered'] = len(items)
             sweep = run.get('sweep')
             # A sweep imports everything it found but prepares only the first few, in discovery order.
-            for index, item in enumerate(items if sweep else items[:cfg['max_jobs']]):
+            for index, item in enumerate(items[:sweep['max_jobs']] if sweep else items[:cfg['max_jobs']]):
                 with self.tx() as c:
                     if self.meta(c, 'control') != 'running':
                         run['status'] = self.meta(c, 'control')
@@ -430,7 +430,7 @@ class Store:
             if run['status'] == 'running':
                 failed_sources = [s for s in run.get('sources', []) if s.get('status') not in ('ok', 'success', 'completed', 'empty', 'filtered_empty') or s.get('truncated')]
                 if run.get('deadline_reached'): run['truncated'] = True
-                run['status'] = ('partial' if items else 'blocked') if failed_sources or run.get('deadline_reached') else ('empty' if not items else 'completed')
+                run['status'] = 'partial' if run.get('deadline_reached') else ('partial' if items else 'blocked') if failed_sources else ('empty' if not items else 'completed')
                 if run['failures']:
                     run['status'] = 'partial' if run['prepared'] or sweep and run['imported'] else 'failed'
         except Exception as e:
