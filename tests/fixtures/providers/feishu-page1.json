@@ -1,0 +1,29 @@
+{
+  "code": 0,
+  "message": "success",
+  "data": {
+    "count": 2,
+    "job_post_list": [
+      {
+        "id": "7599900000000000001",
+        "title": "AI 产品经理（大模型应用）",
+        "city_list": [{"code": "CT_11", "name": "北京"}, {"code": "CT_45", "name": "上海"}],
+        "job_category": {"id": "6704215864629004552", "name": "产品"},
+        "recruit_type": {"id": "101", "name": "正式"},
+        "description": "负责大模型应用产品的规划与落地。",
+        "requirement": "熟悉大模型应用场景，三年以上产品经验。",
+        "publish_time": 1782172800000
+      },
+      {
+        "id": "7599900000000000002",
+        "title": "后端开发工程师",
+        "city_list": [{"name": "深圳"}],
+        "job_category": null,
+        "recruit_type": {"name": ""},
+        "description": "负责推荐系统后台的设计与开发。",
+        "requirement": "",
+        "publish_time": null
+      }
+    ]
+  }
+}
