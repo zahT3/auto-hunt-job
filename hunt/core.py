@@ -3,6 +3,7 @@ import base64
 import copy
 import hashlib
 import json
+import secrets
 import sqlite3
 import threading
 import uuid
@@ -226,6 +227,21 @@ class Store:
             except (OSError, ValueError, KeyError, TypeError):
                 pass
             return j, False
+
+    def inbox_token(self):
+        with self.tx() as c:
+            c.execute('INSERT OR IGNORE INTO meta VALUES(?,?)', ('inbox_token', dumps(secrets.token_urlsafe(32))))
+            return self.meta(c, 'inbox_token')
+
+    def receive_inbox(self, payload):
+        from .inbox import normalize_payload
+        from .sources import SourceError
+        try:
+            job = normalize_payload(payload)
+        except SourceError as e:
+            raise Error(str(e)) from e
+        saved, duplicate = self.import_job(job)
+        return dict(ok=True, job_id=saved['id'], duplicate=duplicate)
 
     def snapshot(self, candidate, config, job, package):
         return digest(dict(candidate=candidate, config=config, job={k: job.get(k) for k in ('id','platform_id','channel','url','title','company','jd','availability','requirements_text','questions','location','salary','experience','application_url')},
