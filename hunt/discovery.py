@@ -6,6 +6,7 @@ opt-in and uses a dedicated local profile. Failure is never an empty-success.
 import json
 import math
 import re
+import time
 from contextlib import nullcontext
 from urllib.parse import urlencode, urljoin, urlsplit, urlunsplit
 from .network import fetch, FetchError
@@ -81,12 +82,12 @@ def matches(text, terms):
     return False
 
 
-def source_configs(config):
+def source_configs(config, cap=20):
     if 'discovery_sources' in config:
         rows = config['discovery_sources']
         if not isinstance(rows, list): raise ValueError('discovery_sources 必须是数组')
         result = []
-        for row in rows[:20]:
+        for row in rows[:cap]:
             if isinstance(row, dict) and row.get('enabled', True):
                 item = dict(row)
                 item.setdefault('kind', item.get('type'))
@@ -104,12 +105,12 @@ def source_configs(config):
     for kind in kinds[:12]:
         if not isinstance(kind, str): continue
         if kind in ('greenhouse', 'lever', 'ashby'):
-            found = [b for b in boards[:20] if isinstance(b, dict) and b.get('type') == kind]
+            found = [b for b in boards[:cap] if isinstance(b, dict) and b.get('type') == kind]
             if not found: result.append(dict(id=kind, kind=kind))
             for b in found:
                 result.append(dict(id=kind + ':' + str(b.get('slug', '')), kind=kind, board=b.get('slug'), company=b.get('company')))
         elif kind == 'website':
-            for b in boards[:20]:
+            for b in boards[:cap]:
                 if isinstance(b, dict) and b.get('type') == 'website':
                     result.append(dict(id='website:' + str(b.get('url')), kind=kind, url=b.get('url'), company=b.get('company')))
         else:
@@ -117,7 +118,7 @@ def source_configs(config):
     if config.get('search_provider'):
         if not isinstance(config['search_provider'], dict): raise ValueError('search_provider 必须是配置对象')
         result.append(dict(id='websearch', kind='websearch', provider=config['search_provider'].get('provider'), url=config['search_provider'].get('url')))
-    return [s for s in result[:20] if not config.get('official_only') or s.get('kind') not in ('boss', 'liepin', 'websearch')]
+    return [s for s in result[:cap] if not config.get('official_only') or s.get('kind') not in ('boss', 'liepin', 'websearch')]
 
 
 class Budget:
@@ -335,16 +336,35 @@ def _websearch(source, read, terms, limit, pages, report):
             if page == pages: report['truncated'] = True
 
 
-def discover(config, profile=None, transport=None, *, browser_profile_root=None, browser_headless=False, should_continue=None, on_source=None):
+def sweep_limits(config):
+    if config.get('sweep') is not True: return None
+    return dict(max_companies=bounded(config.get('sweep_max_companies'), 300, 1, 1000),
+                max_jobs=bounded(config.get('sweep_max_jobs'), 1500, 1, 5000),
+                requests=bounded(config.get('sweep_requests'), 3000, 1, 10000),
+                deadline_seconds=bounded(config.get('sweep_deadline_seconds'), 600, 30, 3600),
+                prepare=bounded(config.get('sweep_prepare'), 50, 0, 200))
+
+
+def discover(config, profile=None, transport=None, *, browser_profile_root=None, browser_headless=False, should_continue=None, on_source=None, clock=time.monotonic):
     terms = search_terms(config, profile)
+    sweep, started_at = sweep_limits(config), now()
+    timing = dict(reached=False)
+    if sweep:
+        deadline = clock() + sweep['deadline_seconds']
+        user_continue = should_continue
+        def should_continue():
+            if timing['reached'] or clock() >= deadline:
+                timing['reached'] = True
+                return False
+            return user_continue() if user_continue else True
     jobs, reports, seen = [], [], set()
     if not terms: raise ValueError('请提供 1 至 8 个岗位或技能关键词；不接受联系方式或整段简历作为搜索词')
-    sources = source_configs(config)
+    sources = source_configs(config, sweep['max_companies'] if sweep else 20)
     if config.get('official_only') and not sources:
         raise ValueError('官网模式没有可搜索的公司来源；请选择安克、招聘看板或添加公司招聘页')
-    limit = bounded(config.get('max_jobs', config.get('discovery_limit')), 30, 1, 100)
+    limit = sweep['max_jobs'] if sweep else bounded(config.get('max_jobs', config.get('discovery_limit')), 30, 1, 100)
     pages = bounded(config.get('max_pages', config.get('discovery_pages')), 2, 1, 5)
-    maximum = bounded(config.get('discovery_requests'), 40, 1, 100)
+    maximum = sweep['requests'] if sweep else bounded(config.get('discovery_requests'), 40, 1, 100)
     budget = Budget(transport or fetch, maximum, should_continue=should_continue)
     entry_budget = Budget(transport or fetch, bounded(config.get('entry_requests'), 12, 1, 50), should_continue=should_continue)
     for index, source in enumerate(sources):
@@ -402,7 +422,12 @@ def discover(config, profile=None, transport=None, *, browser_profile_root=None,
                     item.setdefault('raw', {})['discovery'] = dict(source_id=sid, queries=terms, mode=report['mode'], checked_at=report['checked_at'])
                     if config.get('check_entries'):
                         from .entries import check_job
-                        check_job(item, entry_budget.get, renderer=renderer)
+                        try: check_job(item, entry_budget.get, renderer=renderer)
+                        except SourceError as e:
+                            # The fetched job is real; only its entry check was cut off by the deadline.
+                            if e.status == 'cancelled' and timing['reached']:
+                                jobs.append(item); report['returned'] += 1
+                            raise
                     jobs.append(item); report['returned'] += 1
             report['status'] = 'ok' if report['returned'] else 'filtered_empty' if report['fetched'] else 'empty'
             if report.get('detail_errors'):
@@ -410,7 +435,7 @@ def discover(config, profile=None, transport=None, *, browser_profile_root=None,
                 report['error'] = str(len(report['detail_errors'])) + ' 个岗位详情无法解析；已保留其余真实结果'
         except SourceError as e:
             report['status'], report['error'] = e.status, str(e)
-            if e.status == 'budget_exhausted': report['truncated'] = True
+            if e.status == 'budget_exhausted' or e.status == 'cancelled' and timing['reached']: report['truncated'] = True
         except FetchError as e:
             report['status'] = 'blocked' if re.search(r'HTTP (401|403|429)', str(e)) else 'fetch_error'
             report['error'] = str(e)
@@ -421,6 +446,7 @@ def discover(config, profile=None, transport=None, *, browser_profile_root=None,
         report['rendered_pages'] = getattr(renderer, 'used', 0)
         if on_source: on_source(dict(report))
     return dict(jobs=jobs, sources=reports, queries=terms, checked_at=now(), requests=budget.used,
+                sweep=sweep, deadline_reached=timing['reached'], started_at=started_at, finished_at=now(),
                 entry_requests=entry_budget.used, coverage='configured_sources_only', expanded_terms=expanded_terms(terms), search_provider_configured=bool(config.get('search_provider')),
                 note='仅扫描配置渠道与公司看板；关键词用于发现，不代表候选人胜任、工作许可或岗位仍可投递。')
 

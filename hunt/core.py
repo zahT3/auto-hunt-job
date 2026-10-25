@@ -371,7 +371,7 @@ class Store:
         if not self.run_lock.acquire(False):
             raise Error('本轮已在运行')
         run = dict(id=uuid.uuid4().hex, started_at=now(), kind='fixture' if demo else 'real_discovery', discovered=0,
-                   duplicates=0, prepared=0, applicable=0, verified_submissions=0, failures=[], status='running', user_interventions=0)
+                   duplicates=0, imported=0, prepared=0, applicable=0, verified_submissions=0, failures=[], status='running', user_interventions=0)
         try:
             with self.tx() as c:
                 cfg = self.meta(c, 'config')
@@ -403,12 +403,16 @@ class Store:
                     run['sources'] = result.get('sources', [])
                     run['queries'] = result.get('queries', [])
                     run['expanded_terms'] = result.get('expanded_terms', {})
+                    if result.get('sweep'):
+                        run.update(sweep=result['sweep'], deadline_reached=result.get('deadline_reached', False))
                     run['coverage_note'] = result.get('coverage_note', '仅覆盖本轮已配置来源与请求预算，不代表全网完整结果')
             if not self.is_running():
                 with self.tx() as c:
                     run['status'] = self.meta(c, 'control')
             run['discovered'] = len(items)
-            for item in items[:cfg['max_jobs']]:
+            sweep = run.get('sweep')
+            # A sweep imports everything it found but prepares only the first few, in discovery order.
+            for index, item in enumerate(items if sweep else items[:cfg['max_jobs']]):
                 with self.tx() as c:
                     if self.meta(c, 'control') != 'running':
                         run['status'] = self.meta(c, 'control')
@@ -416,7 +420,8 @@ class Store:
                 try:
                     j, duplicate = self.import_job(item)
                     run['duplicates'] += int(duplicate)
-                    if j['status'] not in LOCKED | {'rejected', 'approved'}:
+                    run['imported'] += 1
+                    if (not sweep or index < sweep['prepare']) and j['status'] not in LOCKED | {'rejected', 'approved'}:
                         j = self.prepare(j['id'])
                         run['prepared'] += 1
                         run['applicable'] += int(not j['package'].get('blockers') and not synthetic_profile(candidate) and cfg['targets_confirmed'] and j['channel']=='anker' and not any(x.get('status') == 'not_met' for x in j['match'].get('hard', [])))
@@ -424,9 +429,10 @@ class Store:
                     run['failures'].append(str(e))
             if run['status'] == 'running':
                 failed_sources = [s for s in run.get('sources', []) if s.get('status') not in ('ok', 'success', 'completed', 'empty', 'filtered_empty') or s.get('truncated')]
-                run['status'] = ('partial' if items else 'blocked') if failed_sources else ('empty' if not items else 'completed')
+                if run.get('deadline_reached'): run['truncated'] = True
+                run['status'] = ('partial' if items else 'blocked') if failed_sources or run.get('deadline_reached') else ('empty' if not items else 'completed')
                 if run['failures']:
-                    run['status'] = 'partial' if run['prepared'] else 'failed'
+                    run['status'] = 'partial' if run['prepared'] or sweep and run['imported'] else 'failed'
         except Exception as e:
             run.update(status='failed', failures=run['failures'] + [str(e)])
         finally:
@@ -670,6 +676,11 @@ class Store:
             if type(cfg['targets_confirmed']) is not bool: raise Error('需要明确确认目标')
             if type(cfg.get('official_only', False)) is not bool: raise Error('官网模式必须为明确的开关')
             if any(type(cfg.get(k, False)) is not bool for k in ('check_entries', 'official_browser')): raise Error('入口核验与公开渲染必须为开关')
+            if type(cfg.get('sweep', False)) is not bool: raise Error('大范围搜索必须为开关')
+            for key, low, high in (('sweep_max_companies', 1, 1000), ('sweep_max_jobs', 1, 5000), ('sweep_requests', 1, 10000),
+                                   ('sweep_deadline_seconds', 30, 3600), ('sweep_prepare', 0, 200)):
+                if key in cfg and (type(cfg[key]) is not int or not low <= cfg[key] <= high):
+                    raise Error('大范围搜索参数 %s 必须是 %d 至 %d 的整数' % (key, low, high))
             if cfg.get('browser_channel') not in (None, 'chrome'): raise Error('仅支持默认 Chromium 或 Google Chrome')
             if not isinstance(cfg.get('keyword'),str) or len(cfg['keyword'])>100:
                 raise Error('岗位关键词最长 100 字符')
