@@ -233,6 +233,12 @@ class Store:
             c.execute('INSERT OR IGNORE INTO meta VALUES(?,?)', ('inbox_token', dumps(secrets.token_urlsafe(32))))
             return self.meta(c, 'inbox_token')
 
+    def reset_inbox_token(self):
+        value = secrets.token_urlsafe(32)
+        with self.tx() as c:
+            c.execute('INSERT OR REPLACE INTO meta VALUES(?,?)', ('inbox_token', dumps(value)))
+        return value
+
     def receive_inbox(self, payload):
         from .inbox import normalize_payload
         from .sources import SourceError

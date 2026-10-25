@@ -231,3 +231,50 @@ test('saving local material review returns keyboard focus to the current job tit
  h.run(`openReview(['j']);action=async()=>({});`);h.node('#material-review-confirm').checked=true;await h.run('saveMaterialReview()');
  assert.equal(h.node('#review-dialog').open,false);assert.equal(h.node('#detail-title').focused,true);
 });
+
+const BOOKMARKLETS=['boss-zhipin','liepin','lagou','mokahr','universal'];
+const bookmarkletSource=name=>fs.readFileSync(path.join(__dirname,'../static/bookmarklets',name+'.js'),'utf8');
+
+test('bookmarklet sources are valid JavaScript',()=>{
+ const {spawnSync}=require('node:child_process');
+ for(const name of BOOKMARKLETS){
+  const r=spawnSync(process.execPath,['--check',path.join(__dirname,'../static/bookmarklets',name+'.js')],{encoding:'utf8'});
+  assert.equal(r.status,0,name+': '+r.stderr);
+ }
+});
+
+function runUniversal({text,fetchImpl}){
+ const toasts=[],timers=[],calls=[];
+ const el=()=>({style:{},remove(){this.removed=true;},appendChild(){}});
+ const document={title:'后端工程师 - 示例',body:{innerText:text,appendChild(node){toasts.push(node);}},documentElement:{},
+  querySelectorAll:()=>[],querySelector:()=>null,getElementById:()=>null,createElement:el,addEventListener(){}};
+ const context=vm.createContext({document,location:{href:'https://careers.example.com/jobs/1?utm_source=x'},TextEncoder,JSON,Object,String,Math,Date,
+  setTimeout:(fn,ms)=>{timers.push({fn,ms});return 1;},
+  fetch:async(url,init)=>{calls.push({url,init});return fetchImpl(url,init);}});
+ const code=bookmarkletSource('universal').replaceAll('__INBOX_URL__','http://127.0.0.1:8771/api/inbox').replaceAll('__INBOX_TOKEN__','tok-123');
+ return {toasts,timers,calls:()=>calls,run:()=>vm.runInContext(code,context)};
+}
+
+test('bookmarklet posts with the inbox token, stays under the size limit, and uses a self-removing toast',async()=>{
+ const h=runUniversal({text:'负责后端服务开发。'.repeat(20000),fetchImpl:async()=>({ok:true,status:200,json:async()=>({ok:true,duplicate:false})})});
+ await h.run();
+ const [{url,init}]=h.calls();
+ assert.equal(url,'http://127.0.0.1:8771/api/inbox');
+ assert.equal(init.method,'POST');assert.equal(init.headers['X-Inbox-Token'],'tok-123');assert.equal(init.credentials,'omit');
+ const bytes=Buffer.byteLength(init.body);
+ assert.ok(bytes<=180000,'body bytes '+bytes);
+ const payload=JSON.parse(init.body);
+ assert.equal(payload.platform,'universal');assert.equal(payload.url,'https://careers.example.com/jobs/1?utm_source=x');
+ assert.ok(payload.extracted.raw_text.length>1000&&payload.extracted.raw_text.length<100000);
+ assert.equal(h.toasts.length,1);assert.match(h.toasts[0].textContent,/已发送到工作台/);assert.equal(h.toasts[0].style.background,'#38634d');
+ assert.equal(h.timers.at(-1).ms,3000);h.timers.at(-1).fn();assert.equal(h.toasts[0].removed,true);
+});
+
+test('bookmarklet reports a rejected token and an unreachable inbox without blocking dialogs',async()=>{
+ const rejected=runUniversal({text:'正文'.repeat(300),fetchImpl:async()=>({ok:false,status:403,json:async()=>({error:'收件令牌无效'})})});
+ await rejected.run();
+ assert.match(rejected.toasts[0].textContent,/令牌无效或已重置/);assert.equal(rejected.toasts[0].style.background,'#a04841');
+ const down=runUniversal({text:'正文'.repeat(300),fetchImpl:async()=>{throw new TypeError('Failed to fetch');}});
+ await down.run();
+ assert.match(down.toasts[0].textContent,/连不上本地工作台/);assert.equal(down.timers.at(-1).ms,3000);
+});

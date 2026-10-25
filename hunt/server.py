@@ -5,9 +5,9 @@ import secrets
 import threading
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
-from urllib.parse import urlsplit
+from urllib.parse import parse_qs, urlsplit
 from .core import Error
-from . import inbox
+from . import bookmarklets, inbox
 
 
 STATIC = Path(__file__).resolve().parent.parent / 'static'
@@ -16,7 +16,8 @@ STATIC = Path(__file__).resolve().parent.parent / 'static'
 def make_server(store, port=8766):
     token = secrets.token_urlsafe(32)
     # Read once here: checking it per request would take the SQLite write lock before any authentication.
-    inbox_token = store.inbox_token()
+    # A one-slot list so the reset route can swap it in without a restart.
+    inbox_token = [store.inbox_token()]
     class Handler(BaseHTTPRequestHandler):
         timeout = 10
         def log_message(self,*args): pass
@@ -35,7 +36,7 @@ def make_server(store, port=8766):
             self.send_header('Content-Length',str(len(body)))
             self.send_header('X-Content-Type-Options','nosniff')
             self.send_header('X-Frame-Options','DENY')
-            self.send_header('Referrer-Policy','no-referrer')
+            if 'referrer-policy' not in {k.lower() for k,_ in extra}: self.send_header('Referrer-Policy','no-referrer')
             self.send_header('Cache-Control','no-store')
             for k,v in extra: self.send_header(k,v)
             self.send_header('Content-Security-Policy',"default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data:; connect-src 'self'; frame-ancestors 'none'; base-uri 'none'; form-action 'self'")
@@ -53,6 +54,8 @@ def make_server(store, port=8766):
                 file=store.root/'packages'/bits[3]/bits[4]
                 if not file.is_file(): return self.send(404,{'error':'文件不存在'})
                 return self.send(200,file.read_bytes(),mimetypes.guess_type(file.name)[0] or 'application/octet-stream')
+            # same-origin, not no-referrer: under no-referrer Chrome sends "Origin: null" on the reset form post, which cannot be told from a sandboxed attacker.
+            if path=='/bookmarklets': return self.send(200,bookmarklets.page(self.server.server_port,inbox_token[0],token).encode(),'text/html; charset=utf-8',extra=(('Referrer-Policy','same-origin'),))
             assets={'/':'index.html','/index.html':'index.html','/app.js':'app.js','/styles.css':'styles.css','/style.css':'style.css'}
             if path in assets:
                 file=STATIC/assets[path]
@@ -76,7 +79,7 @@ def make_server(store, port=8766):
             except OSError: return
             if not self.host_ok() or not inbox.is_https_origin(origin): return deny('收件接口拒绝此来源')
             listed=inbox.is_listed_origin(origin)
-            if not inbox.token_ok(inbox_token,self.headers.get('X-Inbox-Token')): return deny('收件令牌无效',listed)
+            if not inbox.token_ok(inbox_token[0],self.headers.get('X-Inbox-Token')): return deny('收件令牌无效',listed)
             if self.headers.get('Content-Type','').split(';')[0].strip().lower()!='application/json': return self.send(415,{'error':'只接受 JSON'},extra=cors())
             if length<=0 or length>inbox.MAX_BODY: return self.send(400,{'error':'请求体需在 200 KB 以内'},extra=cors())
             try:
@@ -88,8 +91,22 @@ def make_server(store, port=8766):
                 return self.send(400,{'error':str(e)},extra=cors())
             except Exception as e:
                 return self.send(500,{'error':'收件未完成：'+str(e)},extra=cors())
+        def reset_post(self):
+            # A plain form post: same-origin Host and Origin (browsers always send Origin on POST) plus the page's CSRF token.
+            try: length=int(self.headers.get('Content-Length','0'))
+            except ValueError: length=-1
+            if not 0<length<=4096: return self.send(400,{'error':'请求无效'})
+            body=self.rfile.read(length)
+            if not self.headers.get('Origin') or not self.allowed(): return self.send(403,{'error':'只允许本机同源访问'})
+            if self.headers.get('Content-Type','').split(';')[0].strip().lower()!='application/x-www-form-urlencoded': return self.send(415,{'error':'需要表单提交'})
+            given=parse_qs(body.decode('utf-8','replace')).get('csrf',[''])[0]
+            if not inbox.token_ok(token,given): return self.send(403,{'error':'会话令牌无效，请刷新页面'})
+            inbox_token[0]=store.reset_inbox_token()
+            self.send(303,b'',extra=(('Location','/bookmarklets'),))
         def do_POST(self):
-            if urlsplit(self.path).path=='/api/inbox': return self.inbox_post()
+            path=urlsplit(self.path).path
+            if path=='/api/inbox': return self.inbox_post()
+            if path=='/bookmarklets/reset': return self.reset_post()
             if not self.allowed(True): return self.send(403,{'error':'需要本机同源请求和会话令牌，请刷新页面'})
             if self.path not in ('/api/action', '/api/resume'): return self.send(404,{'error':'不存在的操作入口'})
             if self.headers.get('Content-Type','').split(';')[0]!='application/json': return self.send(415,{'error':'只接受 JSON'})
