@@ -9,6 +9,7 @@ import re
 from contextlib import nullcontext
 from urllib.parse import urlencode, urljoin, urlsplit, urlunsplit
 from .network import fetch, FetchError
+from .providers import REGISTRY, Context, route
 from .sources import (SourceError, Document, now, json_data, at_board, plain, normalize,
                       greenhouse_row, lever_row, ashby_row, jsonld_jobs, platform_links,
                       platform_detail, gate, public_url)
@@ -385,12 +386,10 @@ def discover(config, profile=None, transport=None, *, browser_profile_root=None,
                             raise SourceError('budget_exhausted', '浏览器页面请求预算已用完')
                         budget.used += 1
                         return browser.read(url)
-                if kind in ('greenhouse', 'lever', 'ashby'): generator = _api(source, read, terms, quota, pages, report)
-                elif kind in ('boss', 'liepin'): generator = _platform(source, read, terms, quota, pages, report)
-                elif kind == 'anker': generator = _anker(source, read, terms, quota, pages, report)
-                elif kind == 'website': generator = _website(source, read, terms, quota, pages, report, renderer)
-                elif kind == 'websearch': generator = _websearch(source, read, terms, quota, pages, report)
-                else: raise SourceError('not_configured', '未知岗位渠道：' + str(kind))
+                provider = route(source)
+                if not provider: raise SourceError('not_configured', '未知岗位渠道：' + str(kind))
+                if provider.id != kind: source = provider.detect(source)
+                generator = provider.fetch(source, Context(read, terms, quota, pages, report, renderer))
                 for item in generator:
                     key = (item['channel'], item['platform_id'])
                     if key in seen: continue
@@ -425,7 +424,7 @@ def main():
     import argparse
     from pathlib import Path
     parser = argparse.ArgumentParser(description='本地多渠道只读岗位搜索；不发送简历或申请')
-    parser.add_argument('--source', action='append', choices=DEFAULT_KINDS)
+    parser.add_argument('--source', action='append', choices=sorted(REGISTRY))
     parser.add_argument('--keyword', action='append', default=[])
     parser.add_argument('--browser-source', action='append', choices=['boss','liepin'], default=[])
     parser.add_argument('--headless', action='store_true')
