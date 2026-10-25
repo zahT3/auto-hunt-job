@@ -27,3 +27,7 @@ PDF 字体使用用户本机已安装的字体或 `HUNT_PDF_FONT` 指定文件�
 - [SearXNG Search API](https://docs.searxng.org/dev/search_api.html)
 
 本轮白屏诊断还查阅 [boss-zhipin-scraper](https://github.com/eatmoreduck/boss-zhipin-scraper) 的 MIT 实现及 Issue，以及 [boss-agent](https://github.com/Douyh123/boss-agent) 的浏览器实现与 Issue。未复制其代码、注入脚本或运行第三方程序；实际采用的独立改动见 [调查](docs/boss-white-screen.md)。
+
+## 移植代码
+
+- `hunt/providers/tencent.py` 移植自 [career-ops](https://github.com/career-ops-hq/career-ops)（commit `f4d7477c8d25f81e6e4a952b724378913ea8c86e`，MIT License）的 `providers/tencent.mjs`：请求参数、翻页规则和字段映射；改写为 Python 并接入本项目的来源注册表。

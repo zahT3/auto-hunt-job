@@ -1,0 +1,32 @@
+{
+  "Code": 200,
+  "Data": {
+    "Count": 2,
+    "Posts": [
+      {
+        "PostId": "1999900000001",
+        "RecruitPostName": "AI 产品经理（混元大模型）",
+        "CountryName": "中国",
+        "LocationName": "深圳",
+        "BGName": "TEG",
+        "CategoryName": "产品",
+        "RequireWorkYearsName": "3年以上工作经验",
+        "Responsibility": "负责大模型应用产品的需求分析与产品规划。\n推动研发、设计和运营团队落地产品方案，熟悉大模型应用场景。",
+        "LastUpdateTime": "2026年06月23日",
+        "PostURL": "http://careers.tencent.com/jobdesc.html?postId=1999900000001"
+      },
+      {
+        "PostId": "1999900000002",
+        "RecruitPostName": "后台开发工程师（微信支付）",
+        "CountryName": "中国",
+        "LocationName": "北京",
+        "BGName": "WXG",
+        "CategoryName": "技术",
+        "RequireWorkYearsName": "",
+        "Responsibility": "负责支付后台系统的设计与开发。",
+        "LastUpdateTime": "2026年06月20日",
+        "PostURL": "http://careers.tencent.com/jobdesc.html?postId=1999900000002"
+      }
+    ]
+  }
+}
