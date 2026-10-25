@@ -1,12 +1,13 @@
 """Bounded HTTPS fetching with validated DNS and pinned TLS destinations.
 
-No environment proxy or cookies are used. Reserved benchmark fake-DNS answers
-used by some local VPNs are re-resolved via Cloudflare DoH before connecting.
+No environment proxy or browser cookies are used (only a caller-minted XSRF token, see
+XSRF_COOKIE). Reserved benchmark fake-DNS answers used by some local VPNs are re-resolved via Cloudflare DoH before connecting.
 """
 import http.client
 import ipaddress
 import json
 import queue
+import re
 import socket
 import ssl
 import threading
@@ -136,6 +137,11 @@ def resolve_public(host, timeout=TIMEOUT):
     return addresses
 
 
+# The only Cookie value fetch() sends: a random UUID the caller mints per run for sites that
+# check cookie == header (CSRF double submit). It is never a login or browser cookie.
+XSRF_COOKIE = re.compile('XSRF-TOKEN=[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}')
+
+
 def fetch(url, method='GET', data=None, headers=None, with_metadata=False):
     """Fetch bytes; all redirects repeat URL/DNS validation and pin the result."""
     method = method.upper()
@@ -147,7 +153,9 @@ def fetch(url, method='GET', data=None, headers=None, with_metadata=False):
         raise FetchError('请求正文过大')
     request_headers = {'User-Agent': 'auto-hunt-job/0.1', 'Accept-Encoding': 'identity'}
     for k, v in (headers or {}).items():
-        if k.lower() in ('host', 'cookie', 'authorization', 'proxy-authorization', 'connection', 'transfer-encoding', 'content-length'):
+        if k.lower() == 'cookie' and XSRF_COOKIE.fullmatch(str(v)):
+            pass  # self-minted double-submit token, carries no identity
+        elif k.lower() in ('host', 'cookie', 'authorization', 'proxy-authorization', 'connection', 'transfer-encoding', 'content-length'):
             raise FetchError('公开检索不允许认证或连接覆盖头')
         if '\r' in k + str(v) or '\n' in k + str(v):
             raise FetchError('请求头无效')

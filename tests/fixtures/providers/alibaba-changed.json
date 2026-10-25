@@ -1,0 +1,9 @@
+{
+  "success": true,
+  "content": {
+    "totalCount": 2,
+    "positions": [
+      {"id": 1999900000001, "name": "AI 产品经理（通义）"}
+    ]
+  }
+}

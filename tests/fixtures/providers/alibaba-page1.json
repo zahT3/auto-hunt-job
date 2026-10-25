@@ -1,0 +1,33 @@
+{
+  "success": true,
+  "errorCode": null,
+  "errorMsg": null,
+  "content": {
+    "totalCount": 2,
+    "datas": [
+      {
+        "id": 1999900000001,
+        "name": "AI 产品经理（通义）",
+        "workLocations": ["杭州", "北京"],
+        "categories": ["产品类", "AI产品"],
+        "experience": {"from": 3, "to": 5},
+        "description": "负责大模型应用产品的规划与落地。",
+        "requirement": "熟悉大模型应用场景，有 B 端产品经验。",
+        "publishTime": 1782172800000,
+        "modifyTime": 1782259200000,
+        "positionUrl": "https://talent.alibaba.com/off-campus/position-detail?positionId=1999900000001&track_id=abc"
+      },
+      {
+        "id": 1999900000002,
+        "name": "产品经理（淘天）",
+        "workLocations": ["上海"],
+        "categories": [],
+        "experience": {"from": 5, "to": null},
+        "description": "负责电商产品体验。",
+        "requirement": "五年以上产品经验。",
+        "publishTime": null,
+        "modifyTime": 1782259200000
+      }
+    ]
+  }
+}

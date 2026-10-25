@@ -29,6 +29,20 @@ class Provider:
 
 REGISTRY: dict = {}
 
+MAX_DETAIL_ERRORS = 20
+
+
+def record_detail_error(report, platform_id, error):
+    """Skip-and-record for one bad post, so it cannot discard the rest of a large board.
+
+    discover() turns the recorded errors into a counted parse_error; only MAX_DETAIL_ERRORS
+    are kept, `detail_error_count` holds the true total.
+    """
+    report['detail_error_count'] = report.get('detail_error_count', 0) + 1
+    errors = report.setdefault('detail_errors', [])
+    if len(errors) < MAX_DETAIL_ERRORS:
+        errors.append(dict(platform_id=platform_id, status='parse_error', error=str(error)))
+
 
 def register(provider):
     REGISTRY[provider.id] = provider

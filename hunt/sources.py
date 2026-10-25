@@ -49,6 +49,8 @@ class Document(HTMLParser):
         super().__init__(convert_charrefs=True)
         self.root = self.current = Node()
         self.feed(html)
+        # Without close(), text ending in an unterminated '&xyz' (e.g. 'M&T事业部') stays buffered and is lost.
+        self.close()
 
     def handle_starttag(self, tag, attrs):
         n = Node(tag, attrs, self.current)

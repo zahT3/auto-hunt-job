@@ -9,11 +9,10 @@ from datetime import date
 from urllib.parse import urlencode, urlsplit
 
 from ..sources import SourceError, json_data, normalize
-from . import Provider, register
+from . import Provider, record_detail_error, register
 
 HOST = 'careers.tencent.com'
 PAGE_SIZE = 100
-MAX_DETAIL_ERRORS = 20
 
 
 def _url(keyword, page):
@@ -55,15 +54,6 @@ def _job(row, company):
                      raw=dict(source_kind='tencent', record=row))
 
 
-def _reject(report, row, error):
-    # A bad post must not discard the rest of a 2000-post board; discover() turns this into a counted parse_error.
-    report['detail_error_count'] = report.get('detail_error_count', 0) + 1
-    errors = report.setdefault('detail_errors', [])
-    if len(errors) < MAX_DETAIL_ERRORS:
-        errors.append(dict(platform_id=str(row.get('PostId')) if isinstance(row, dict) and row.get('PostId') else None,
-                           status='parse_error', error=str(error)))
-
-
 def detect(entry):
     for key in ('careers_url', 'url'):
         try: parts = urlsplit(entry.get(key) or '')
@@ -84,7 +74,7 @@ def fetch(entry, ctx):
                 try: job = _job(row, company)
                 except SourceError as e:
                     if e.status != 'parse_error': raise
-                    _reject(ctx.report, row, e)
+                    record_detail_error(ctx.report, str(row['PostId']) if isinstance(row, dict) and row.get('PostId') else None, e)
                     continue
                 if job['platform_id'] in seen: continue
                 if count >= ctx.limit: ctx.report['truncated'] = True; return
