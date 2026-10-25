@@ -32,3 +32,4 @@ PDF 字体使用用户本机已安装的字体或 `HUNT_PDF_FONT` 指定文件�
 
 - `hunt/providers/tencent.py` 移植自 [career-ops](https://github.com/career-ops-hq/career-ops)（commit `f4d7477c8d25f81e6e4a952b724378913ea8c86e`，MIT License）的 `providers/tencent.mjs`：请求参数、翻页规则和字段映射；改写为 Python 并接入本项目的来源注册表。
 - `hunt/providers/alibaba.py` 移植自 [career-ops](https://github.com/career-ops-hq/career-ops)（commit `f4d7477c8d25f81e6e4a952b724378913ea8c86e`，MIT License）的 `providers/alibaba.mjs`：请求体、XSRF 双提交令牌、翻页规则和字段映射；改写为 Python 并接入本项目的来源注册表。
+- `hunt/providers/meituan.py` 移植自 [career-ops](https://github.com/career-ops-hq/career-ops)（commit `f4d7477c8d25f81e6e4a952b724378913ea8c86e`，MIT License）的 `providers/meituan.mjs`：请求体（嵌套分页）、空页重试规则和字段映射；改写为 Python 并接入本项目的来源注册表。

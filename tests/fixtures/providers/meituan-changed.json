@@ -1,0 +1,9 @@
+{
+  "code": 0,
+  "data": {
+    "page": {"totalCount": 2},
+    "jobs": [
+      {"jobUnionId": "1999900000001", "name": "AI 产品经理（大模型）"}
+    ]
+  }
+}

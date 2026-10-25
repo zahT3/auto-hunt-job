@@ -1,0 +1,32 @@
+{
+  "code": 0,
+  "data": {
+    "page": {"pageNo": 1, "pageSize": 100, "totalCount": 2},
+    "list": [
+      {
+        "jobUnionId": "1999900000001",
+        "name": "AI 产品经理（大模型）",
+        "cityList": [{"code": "110100", "name": "北京市"}, {"code": "310100", "name": "上海市"}],
+        "department": [{"code": "1", "name": "基础研发平台"}],
+        "jobFamily": "产品类",
+        "workYear": "3-5年",
+        "jobDuty": "负责大模型应用产品的规划与落地。",
+        "jobRequirement": "熟悉大模型应用场景，三年以上产品经验。",
+        "refreshTime": 1782172800000,
+        "firstPostTime": 1781000000000
+      },
+      {
+        "jobUnionId": "1999900000002",
+        "name": "后端开发工程师",
+        "cityList": [{"name": "深圳市"}],
+        "department": [],
+        "jobFamily": "",
+        "workYear": "",
+        "jobDuty": "负责外卖后台系统的设计与开发。",
+        "jobRequirement": "",
+        "refreshTime": null,
+        "firstPostTime": 1782259200000
+      }
+    ]
+  }
+}
