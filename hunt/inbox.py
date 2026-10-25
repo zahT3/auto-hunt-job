@@ -51,7 +51,9 @@ def clean_url(url):
     p = urlsplit(url)
     query = [(k, v) for k, v in parse_qsl(p.query, keep_blank_values=True)
              if k.lower() not in TRACKING and not k.lower().startswith(TRACKING_PREFIXES)]
-    return urlunsplit((p.scheme, p.netloc, p.path, urlencode(query), p.fragment))
+    # Host case, a trailing dot and an explicit :443 must not split one job into two identities.
+    host = p.hostname.rstrip('.')
+    return urlunsplit((p.scheme, '[%s]' % host if ':' in host else host, p.path, urlencode(query), p.fragment))
 
 
 def _text(value, limit, what):
@@ -80,4 +82,4 @@ def normalize_payload(payload):
     return normalize('inbox:' + platform, hashlib.sha1(url.encode()).hexdigest()[:16], title, text, url,
                      _text(extracted.get('company'), 200, '公司') or None, _text(extracted.get('location'), 200, '地点') or None,
                      salary=salary or None, status='unverified',
-                     raw=dict(source_kind='inbox', platform=platform, received_at=now()))
+                     raw=dict(source_kind='inbox', source_url=url, platform=platform, received_at=now()))

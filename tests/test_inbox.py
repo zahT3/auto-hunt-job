@@ -5,6 +5,7 @@ import tempfile
 import threading
 import unittest
 from pathlib import Path
+from unittest.mock import patch
 
 from hunt.core import Store
 from hunt.inbox import normalize_payload
@@ -101,19 +102,51 @@ class InboxTests(InboxCase):
         self.assertEqual(self.post(body, origin='http://careers.example.com')[0], 403)
         self.assertEqual(self.count(), 1)
 
-    def test_preflight_only_for_allowed_origin(self):
-        status, _, response = self.request('OPTIONS', origin='https://m.liepin.com', token=None, ctype=None)
-        self.assertEqual(status, 204)
-        self.assertEqual(response.getheader('Access-Control-Allow-Origin'), 'https://m.liepin.com')
-        self.assertEqual(response.getheader('Access-Control-Allow-Headers'), 'Content-Type, X-Inbox-Token')
-        self.assertEqual(response.getheader('Access-Control-Allow-Private-Network'), 'true')
-        self.assertIn('Origin', response.getheader('Vary'))
-        for origin in ('https://evil.example', 'http://www.zhipin.com', 'null', None):
+    def test_preflight_answers_any_https_origin_and_nothing_else(self):
+        for origin in ('https://m.liepin.com', 'https://careers.example.com', 'https://evil.example'):
             status, _, response = self.request('OPTIONS', origin=origin, token=None, ctype=None)
-            self.assertEqual(status, 403, origin)
+            self.assertEqual(status, 204, origin)
+            self.assertEqual(response.getheader('Access-Control-Allow-Origin'), origin)
+            self.assertEqual(response.getheader('Access-Control-Allow-Methods'), 'POST')
+            self.assertEqual(response.getheader('Access-Control-Allow-Headers'), 'Content-Type, X-Inbox-Token')
+            self.assertEqual(response.getheader('Access-Control-Allow-Private-Network'), 'true')
+            self.assertIn('Origin', response.getheader('Vary'))
+            self.assertIsNone(response.getheader('Access-Control-Allow-Credentials'))
+            for h, v in response.getheaders():
+                self.assertNotEqual(v.strip(), '*', h)
+        for origin, host in (('http://www.zhipin.com', None), ('null', None), (None, None), ('https://www.zhipin.com:8443', None),
+                             ('https://u@www.zhipin.com', None), (BOSS, 'attacker.invalid')):
+            status, _, response = self.request('OPTIONS', origin=origin, token=None, ctype=None, host=host)
+            self.assertEqual(status, 403, (origin, host))
             self.assertIsNone(response.getheader('Access-Control-Allow-Origin'))
-        for h, v in response.getheaders():
-            self.assertNotEqual(v.strip(), '*', h)
+            self.assertIn('Origin', response.getheader('Vary'))
+
+    def test_open_preflight_does_not_open_the_post(self):
+        origin = 'https://evil.example'
+        self.assertEqual(self.request('OPTIONS', origin=origin, token=None, ctype=None)[0], 204)
+        for token in (None, 'wrong'):
+            status, _, response = self.post(payload(), origin=origin, token=token)
+            self.assertEqual(status, 403)
+            self.assertIsNone(response.getheader('Access-Control-Allow-Origin'))
+        status, _, response = self.post(payload(), origin=origin)
+        self.assertEqual(status, 403)
+        self.assertIsNone(response.getheader('Access-Control-Allow-Origin'))
+        self.assertEqual(self.count(), 0)
+
+    def test_tokenless_post_takes_no_write_lock(self):
+        opened = []
+        real = Store.tx
+        def counting(store):
+            opened.append(1)
+            return real(store)
+        with patch.object(Store, 'tx', counting):
+            for token in (None, 'wrong'):
+                self.assertEqual(self.post(payload(), token=token)[0], 403)
+            self.assertEqual(self.request('OPTIONS', token=None, ctype=None)[0], 204)
+        self.assertEqual(opened, [])
+
+    def test_handler_has_a_socket_timeout(self):
+        self.assertIsNotNone(self.server.RequestHandlerClass.timeout)
 
     def test_content_type_must_be_json(self):
         self.assertEqual(self.request('POST', payload(), ctype='text/plain')[0], 415)
@@ -121,9 +154,10 @@ class InboxTests(InboxCase):
         self.assertEqual(self.count(), 0)
 
     def test_payload_size_and_truncation(self):
-        big = payload()
-        big['extracted']['raw_text'] = '岗' * 210000
-        self.assertEqual(self.post(big)[0], 400)
+        for text in ('a' * 300000, '岗' * 210000):
+            big = payload()
+            big['extracted']['raw_text'] = text
+            self.assertEqual(self.post(big)[0], 400)
         self.assertEqual(self.count(), 0)
         long = payload()
         long['extracted']['raw_text'] = 'a' * 150000
@@ -163,6 +197,7 @@ class InboxTests(InboxCase):
         self.assertEqual(job['channel'], 'inbox:boss-zhipin')
         self.assertEqual(job['availability'], 'unverified')
         self.assertEqual(job['raw']['source_kind'], 'inbox')
+        self.assertEqual(job['raw']['source_url'], JOB_URL)
         self.assertEqual(job['company'], '示例科技')
         self.assertIsNone(job['match'])
         with self.store.tx() as c:
@@ -176,6 +211,13 @@ class InboxTests(InboxCase):
         self.assertEqual(first['job_id'], second['job_id'])
         self.assertEqual(self.count(), 1)
         self.assertNotIn('securityId', self.store.state()['jobs'][0]['url'])
+
+    def test_host_case_and_trailing_dot_do_not_split_identity(self):
+        ids = {normalize_payload(payload(url=u))['platform_id'] for u in (
+            'https://www.zhipin.com/job_detail/a.html', 'https://WWW.Zhipin.COM/job_detail/a.html',
+            'https://www.zhipin.com./job_detail/a.html', 'https://www.zhipin.com:443/job_detail/a.html')}
+        self.assertEqual(len(ids), 1)
+        self.assertEqual(normalize_payload(payload(url='https://WWW.Zhipin.COM./job_detail/a.html'))['url'], 'https://www.zhipin.com/job_detail/a.html')
 
     def test_identity_query_params_are_kept(self):
         a = normalize_payload(payload(url='https://www.51job.com/job?jobid=1'))

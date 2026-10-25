@@ -15,7 +15,10 @@ STATIC = Path(__file__).resolve().parent.parent / 'static'
 
 def make_server(store, port=8766):
     token = secrets.token_urlsafe(32)
+    # Read once here: checking it per request would take the SQLite write lock before any authentication.
+    inbox_token = store.inbox_token()
     class Handler(BaseHTTPRequestHandler):
+        timeout = 10
         def log_message(self,*args): pass
         def allowed(self, write=False):
             host=self.headers.get('Host','')
@@ -64,11 +67,16 @@ def make_server(store, port=8766):
             deny=lambda msg,known=False: self.send(403,{'error':msg},extra=cors() if known else (('Vary','Origin'),))
             try: length=int(self.headers.get('Content-Length','0'))
             except ValueError: length=0
-            # Read (bounded) before replying so an early reply does not reset the client's upload.
-            body=self.rfile.read(min(max(length,0),1024*1024))
+            self.close_connection=True
+            # Keep at most MAX_BODY+1 bytes; discard up to 1 MiB more unretained so replying early does not reset the client's upload.
+            try:
+                body=self.rfile.read(min(max(length,0),inbox.MAX_BODY+1))
+                left=min(max(length,0),1024*1024)-len(body)
+                while left>0 and (chunk:=self.rfile.read(min(left,65536))): left-=len(chunk)
+            except OSError: return
             if not self.host_ok() or not inbox.is_https_origin(origin): return deny('收件接口拒绝此来源')
             listed=inbox.is_listed_origin(origin)
-            if not inbox.token_ok(store.inbox_token(),self.headers.get('X-Inbox-Token')): return deny('收件令牌无效',listed)
+            if not inbox.token_ok(inbox_token,self.headers.get('X-Inbox-Token')): return deny('收件令牌无效',listed)
             if self.headers.get('Content-Type','').split(';')[0].strip().lower()!='application/json': return self.send(415,{'error':'只接受 JSON'},extra=cors())
             if length<=0 or length>inbox.MAX_BODY: return self.send(400,{'error':'请求体需在 200 KB 以内'},extra=cors())
             try:
@@ -99,10 +107,11 @@ def make_server(store, port=8766):
                 return self.send(500,{'error':'操作未完成：'+str(e)})
         def do_OPTIONS(self):
             origin=self.headers.get('Origin')
-            if urlsplit(self.path).path=='/api/inbox' and self.host_ok() and inbox.is_listed_origin(origin):
+            # Any https origin may preflight (the universal bookmarklet runs on arbitrary sites); the token and platform rules gate the POST.
+            if urlsplit(self.path).path=='/api/inbox' and self.host_ok() and inbox.is_https_origin(origin):
                 return self.send(204,b'',extra=(('Access-Control-Allow-Origin',origin),('Vary','Origin'),('Access-Control-Allow-Methods','POST'),
                     ('Access-Control-Allow-Headers','Content-Type, X-Inbox-Token'),('Access-Control-Allow-Private-Network','true'),('Access-Control-Max-Age','600')))
-            self.send(403,{'error':'不允许跨站访问'})
+            self.send(403,{'error':'不允许跨站访问'},extra=(('Vary','Origin'),))
     return ThreadingHTTPServer(('127.0.0.1',port),Handler)
 
 
