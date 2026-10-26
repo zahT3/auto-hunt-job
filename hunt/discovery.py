@@ -51,6 +51,19 @@ def search_terms(config, profile=None):
     return result
 
 
+ROLE_ALIASES = [
+    (('开发', '工程师', '研发'), ['engineer', 'engineering', 'developer', 'development']),
+    (('产品经理',), ['product manager', 'product owner']),
+]
+
+
+def _segment_aliases(segment):
+    # Only a segment of a multi-word term gets role aliases; a lone '开发' keeps matching narrowly.
+    extra = [a for roles, values in ROLE_ALIASES if any(r in segment for r in roles) for a in values]
+    if '应用' in segment and extra: extra += ['application', 'applied']
+    return extra
+
+
 def expanded_terms(terms):
     """Explicit, inspectable recall aliases; this does not assert candidate fit."""
     groups = {
@@ -67,6 +80,8 @@ def expanded_terms(terms):
             triggers = [key] + [v for v in values if any(ord(c) > 127 for c in v)]
             if any((re.search(r'(?<![a-z0-9_])' + re.escape(t) + r'(?![a-z0-9_])', lower) if t.isascii() else t in lower) for t in triggers):
                 aliases.extend(values)
+        if len(term.split()) > 1:
+            for segment in term.split(): aliases.extend(_segment_aliases(segment))
         result[term] = list(dict.fromkeys(aliases))
     return result
 
@@ -89,7 +104,7 @@ def matches(text, terms):
         segments = term.split()
         if len(segments) < 2:
             if _found(words, text): return True
-        elif _found([term], text) or all(_found(expanded_terms([s])[s], text) for s in segments): return True
+        elif _found([term], text) or all(_found(expanded_terms([s])[s] + _segment_aliases(s), text) for s in segments): return True
     return False
 
 

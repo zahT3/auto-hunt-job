@@ -116,11 +116,20 @@ class DiscoveryTests(unittest.TestCase):
         self.assertTrue(matches('AI产品经理（大模型）', ['AI 产品经理']))
         self.assertTrue(matches('大模型产品经理', ['AI 产品经理']))
         self.assertFalse(matches('产品经理（电商）', ['AI 产品经理']))
-        # 产品经理 has no alias group, so an English title needs its own English term.
-        self.assertFalse(matches('AI Product Manager', ['AI 产品经理']))
-        self.assertTrue(matches('AI Product Manager', ['AI 产品经理', 'AI Product Manager']))
-        self.assertFalse(matches('Machine Learning Engineer', ['AI 应用开发']))
         self.assertTrue(matches('大模型算法工程师', ['AI']))
+
+    def test_chinese_role_segments_match_english_titles(self):
+        self.assertTrue(matches('Agent Engineer', ['Agent 开发']))
+        self.assertTrue(matches('Retrieval Engineer', ['RAG 工程师']))
+        self.assertTrue(matches('Machine Learning Engineer', ['AI 应用开发']))
+        self.assertTrue(matches('LLM Application Engineer', ['AI 应用开发']))
+        self.assertTrue(matches('Senior AI Product Manager', ['AI 产品经理']))
+        self.assertTrue(matches('AI Product Owner', ['AI 产品经理']))
+        self.assertTrue(matches('Applied AI Developer', ['AI 应用研发']))
+        self.assertFalse(matches('大模型算法工程师', ['AI 产品经理']))
+        self.assertFalse(matches('Marketing Manager', ['AI 产品经理']))
+        self.assertFalse(matches('Product Manager', ['AI 产品经理']))
+        self.assertFalse(matches('Sales Engineer', ['Agent 开发']))
 
     def test_cross_domain_recommendation_links_not_read(self):
         links=platform_links('<a href="https://evil.example/job_detail/f.html">AI</a><a href="https://www.zhipin.com/job_detail/a.html">AI</a>','https://www.zhipin.com/','boss')
