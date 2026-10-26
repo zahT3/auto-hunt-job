@@ -563,7 +563,7 @@ class Store:
                         try:
                             with self.tx() as c: extra = companies.encountered(c)
                         except (ValueError, TypeError): extra = []
-                        cfg = dict(cfg, discovery_sources=companies.select(search_terms(cfg), cfg.get('sweep_max_companies', 300), extra))
+                        cfg = dict(cfg, discovery_sources=companies.select(search_terms(cfg), cfg.get('sweep_max_companies', 300), extra, families=list(dict.fromkeys(orient.directions.get(d['id'])['family'] for d in ((self.orientation() or {}).get('directions') or [])))))
                     def known(item):
                         # The identity import_job uses for discovered jobs, which always carry platform_id.
                         if not item.get('platform_id'): return False
