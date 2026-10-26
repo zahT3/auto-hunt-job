@@ -32,6 +32,8 @@ def _page(raw):
     body = data.get('Data') if isinstance(data, dict) else None
     posts = body.get('Posts') if isinstance(body, dict) else None
     total = body.get('Count') if isinstance(body, dict) else None
+    # A keyword with no match answers Posts: null (verified 2026-10-26); a missing key is still a structure change.
+    if isinstance(body, dict) and 'Posts' in body and posts is None: posts = []
     if isinstance(total, str) and re.fullmatch('[0-9]+', total): total = int(total)
     if not isinstance(posts, list) or not isinstance(total, int) or isinstance(total, bool):
         raise SourceError('parse_error', '腾讯招聘列表结构变化')

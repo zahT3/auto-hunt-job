@@ -38,6 +38,8 @@ def _page(raw):
     posts = body.get('list') if isinstance(body, dict) else None
     paging = body.get('page') if isinstance(body, dict) else None
     total = paging.get('totalCount') if isinstance(paging, dict) else None
+    # A keyword with no match answers list: null (verified 2026-10-26); a missing key is still a structure change.
+    if isinstance(body, dict) and 'list' in body and posts is None: posts = []
     if isinstance(total, str) and re.fullmatch('[0-9]+', total): total = int(total)
     if not isinstance(posts, list) or not isinstance(total, int) or isinstance(total, bool):
         raise SourceError('parse_error', '美团招聘列表结构变化')

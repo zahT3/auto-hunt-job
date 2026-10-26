@@ -106,6 +106,20 @@ class TencentTests(unittest.TestCase):
         report = result['sources'][0]
         self.assertEqual((report['status'], report['fetched'], report['error']), ('empty', 0, None))
 
+    def test_live_no_match_shape_is_empty_and_next_keyword_runs(self):
+        # Live no-match answer (2026-10-26): Posts is null rather than an empty list.
+        raw = (FIXTURES / 'tencent-empty.json').read_bytes()
+        report = run(lambda url, **kw: raw)['sources'][0]
+        self.assertEqual((report['status'], report['error']), ('empty', None))
+        good = json.dumps(fixture('tencent-page1.json')).encode()
+        keywords = []
+        def transport(url, **kw):
+            keywords.append(parse_qs(urlsplit(url).query)['keyword'][0])
+            return raw if len(keywords) == 1 else good
+        result = run(transport, keywords=['无此岗位', '产品经理'])
+        self.assertEqual(keywords, ['无此岗位', '产品经理'])
+        self.assertEqual((result['sources'][0]['status'], len(result['jobs'])), ('ok', 2))
+
     def test_structure_change_is_parse_error(self):
         raw = json.dumps(fixture('tencent-changed.json')).encode()
         report = run(lambda url, **kw: raw)['sources'][0]

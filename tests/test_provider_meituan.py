@@ -142,6 +142,24 @@ class MeituanTests(unittest.TestCase):
         self.assertEqual((report['status'], report['fetched'], report['error']), ('empty', 0, None))
         self.assertEqual(len(calls), 3)
 
+    def test_live_no_match_shape_is_empty_and_next_keyword_runs(self):
+        # Live no-match answer (2026-10-26): list is null rather than an empty list.
+        raw = (FIXTURES / 'meituan-empty.json').read_bytes()
+        calls = []
+        def transport(url, **kw):
+            calls.append(1); return raw
+        report = run(transport)['sources'][0]
+        self.assertEqual((report['status'], report['error']), ('empty', None))
+        self.assertEqual(len(calls), 3)  # the empty-page retry still sees it
+        good = json.dumps(fixture('meituan-page1.json')).encode()
+        keywords = []
+        def two(url, **kw):
+            keywords.append(json.loads(kw['data'])['keywords'])
+            return raw if keywords[-1] == '无此岗位' else good
+        result = run(two, keywords=['无此岗位', '产品经理'])
+        self.assertEqual(keywords[-1], '产品经理')
+        self.assertEqual((result['sources'][0]['status'], len(result['jobs'])), ('ok', 2))
+
     def test_structure_change_is_parse_error(self):
         raw = json.dumps(fixture('meituan-changed.json')).encode()
         report = run(lambda url, **kw: raw)['sources'][0]
