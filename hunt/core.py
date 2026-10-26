@@ -431,9 +431,14 @@ class Store:
                             with self.tx() as c: extra = companies.encountered(c)
                         except (ValueError, TypeError): extra = []
                         cfg = dict(cfg, discovery_sources=companies.select(search_terms(cfg), cfg.get('sweep_max_companies', 300), extra))
+                    def known(item):
+                        # The identity import_job uses for discovered jobs, which always carry platform_id.
+                        if not item.get('platform_id'): return False
+                        with self.tx() as c:
+                            return c.execute('SELECT 1 FROM jobs WHERE identity=?', (item.get('channel', 'import') + ':' + str(item['platform_id']),)).fetchone() is not None
                     result = discover(cfg, profile=build_profile(candidate, confirmed_only=True),
                                       should_continue=self.is_running, browser_profile_root=self.root / 'browser-search',
-                                      on_source=source_progress)
+                                      on_source=source_progress, known=known)
                     items = result['jobs']
                     run['sources'] = result.get('sources', [])
                     run['queries'] = result.get('queries', [])
@@ -446,8 +451,10 @@ class Store:
                     run['status'] = self.meta(c, 'control')
             run['discovered'] = len(items)
             sweep = run.get('sweep')
-            # A sweep imports everything it found but prepares only the first few, in discovery order.
-            for index, item in enumerate(items[:sweep['max_jobs']] if sweep else items[:cfg['max_jobs']]):
+            # A sweep imports everything it found but prepares only the first few new ones, in discovery order;
+            # duplicates take no slot, so a recurring sweep still reaches companies it has not seen.
+            fresh = 0
+            for item in items[:sweep['max_jobs']] if sweep else items[:cfg['max_jobs']]:
                 with self.tx() as c:
                     if self.meta(c, 'control') != 'running':
                         run['status'] = self.meta(c, 'control')
@@ -456,7 +463,9 @@ class Store:
                     j, duplicate = self.import_job(item)
                     run['duplicates'] += int(duplicate)
                     run['imported'] += 1
-                    if (not sweep or index < sweep['prepare']) and j['status'] not in LOCKED | {'rejected', 'approved'}:
+                    slot = not sweep or not duplicate and fresh < sweep['prepare']
+                    fresh += int(not duplicate)
+                    if slot and j['status'] not in LOCKED | {'rejected', 'approved'}:
                         j = self.prepare(j['id'])
                         run['prepared'] += 1
                         run['applicable'] += int(not j['package'].get('blockers') and not synthetic_profile(candidate) and cfg['targets_confirmed'] and j['channel']=='anker' and not any(x.get('status') == 'not_met' for x in j['match'].get('hard', [])))
@@ -713,7 +722,7 @@ class Store:
             if any(type(cfg.get(k, False)) is not bool for k in ('check_entries', 'official_browser')): raise Error('入口核验与公开渲染必须为开关')
             if type(cfg.get('sweep', False)) is not bool: raise Error('大范围搜索必须为开关')
             for key, low, high in (('sweep_max_companies', 1, 1000), ('sweep_max_jobs', 1, 5000), ('sweep_requests', 1, 10000),
-                                   ('sweep_deadline_seconds', 30, 3600), ('sweep_prepare', 0, 200)):
+                                   ('sweep_deadline_seconds', 30, 3600), ('sweep_prepare', 0, 200), ('sweep_max_pages', 1, 50)):
                 if key in cfg and (type(cfg[key]) is not int or not low <= cfg[key] <= high):
                     raise Error('大范围搜索参数 %s 必须是 %d 至 %d 的整数' % (key, low, high))
             if cfg.get('browser_channel') not in (None, 'chrome'): raise Error('仅支持默认 Chromium 或 Google Chrome')

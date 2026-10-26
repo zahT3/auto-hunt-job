@@ -20,13 +20,16 @@ def sources(*names):
 
 
 def provider(counts, hook=None):
-    """Yields min(ctx.limit, counts[name]) jobs per source; counts[name] None means unlimited."""
+    """Yields min(ctx.limit, counts[name]) jobs per source; counts[name] None means unlimited.
+
+    Like the real providers, it marks the report truncated only when more jobs exist beyond ctx.limit."""
     def fetch(entry, ctx):
         if hook: hook(entry, ctx)
         wanted = counts.get(entry['name'], 0)
         n = 0
         while (wanted is None or n < wanted) and n < ctx.limit:
             yield job(entry['name'], n); n += 1
+        if wanted is None or wanted > n: ctx.report['truncated'] = True
     return Provider(id='sweep-test', fetch=fetch)
 
 
@@ -39,14 +42,14 @@ def run_discover(config, prov, **kwargs):
 class SweepDiscoveryTests(unittest.TestCase):
     def test_sweep_defaults(self):
         result = run_discover(dict(sweep=True, discovery_sources=sources('a')), provider(dict(a=1)))
-        self.assertEqual(result['sweep'], dict(max_companies=300, max_jobs=1500, requests=3000, deadline_seconds=600, prepare=50))
+        self.assertEqual(result['sweep'], dict(max_companies=300, max_jobs=1500, requests=3000, deadline_seconds=600, prepare=50, max_pages=20))
         self.assertFalse(result['deadline_reached'])
         self.assertTrue(result['started_at'] and result['finished_at'])
 
     def test_sweep_bounds_clamped(self):
         result = run_discover(dict(sweep=True, sweep_max_jobs=99999, sweep_deadline_seconds=1, sweep_max_companies=0,
-                                   sweep_requests=10 ** 6, sweep_prepare=-3, discovery_sources=sources('a')), provider(dict(a=1)))
-        self.assertEqual(result['sweep'], dict(max_companies=1, max_jobs=5000, requests=10000, deadline_seconds=30, prepare=0))
+                                   sweep_requests=10 ** 6, sweep_prepare=-3, sweep_max_pages=999, discovery_sources=sources('a')), provider(dict(a=1)))
+        self.assertEqual(result['sweep'], dict(max_companies=1, max_jobs=5000, requests=10000, deadline_seconds=30, prepare=0, max_pages=50))
 
     def test_non_sweep_unchanged(self):
         result = run_discover(dict(max_jobs=500, discovery_sources=sources('a')), provider(dict(a=None)))
@@ -101,9 +104,9 @@ class SweepDiscoveryTests(unittest.TestCase):
                          transport=lambda u, **kw: calls.append(u) or b'{}')
             return len([u for u in calls if '/entry/' in u])
         self.assertEqual(entry_calls(dict(sweep=True, sweep_prepare=50)), 50)
-        self.assertEqual(entry_calls(dict(sweep=True, sweep_prepare=0)), 12)
+        self.assertEqual(entry_calls(dict(sweep=True, sweep_prepare=0)), 0)
         self.assertEqual(entry_calls(dict(sweep=True, sweep_prepare=50, entry_requests=5)), 5)
-        self.assertEqual(entry_calls(dict(sweep=True, entry_requests=500)), 200)
+        self.assertEqual(entry_calls(dict(sweep=True, sweep_prepare=120, entry_requests=500)), 120)
         self.assertEqual(entry_calls(dict(sweep_prepare=50)), 12)
         self.assertEqual(entry_calls(dict(entry_requests=500, max_jobs=100)), 50)
 
@@ -148,13 +151,134 @@ class SweepDiscoveryTests(unittest.TestCase):
         self.assertEqual(result['sources'][0]['requests'], 0)
         self.assertTrue(result['deadline_reached'])
 
-    def test_deadline_during_entry_check_keeps_job(self):
+    def test_deadline_before_entry_checks_keeps_job(self):
         now = [0.0]
         def hook(entry, ctx): now[0] = 1000.0
-        result = run_discover(dict(sweep=True, check_entries=True, discovery_sources=sources('a')), provider(dict(a=1), hook), clock=lambda: now[0])
+        with patch('hunt.entries.check_job') as check:
+            result = run_discover(dict(sweep=True, check_entries=True, discovery_sources=sources('a')), provider(dict(a=1), hook), clock=lambda: now[0])
+        check.assert_not_called()
         self.assertEqual(len(result['jobs']), 1)
-        self.assertEqual(result['sources'][0]['status'], 'cancelled')
+        self.assertEqual(result['sources'][0]['status'], 'ok')
+        self.assertEqual((result['entry_check']['checked'], result['entry_check']['skipped']), (0, 1))
         self.assertTrue(result['deadline_reached'])
+
+    def test_second_pass_gives_leftover_share_to_truncated_source(self):
+        result = run_discover(dict(sweep=True, sweep_max_jobs=60, discovery_sources=sources('big', 's1', 's2')),
+                              provider(dict(big=None, s1=3, s2=3)))
+        got = {r['source_id']: r['returned'] for r in result['sources']}
+        self.assertEqual(got, dict(big=54, s1=3, s2=3))
+        self.assertEqual(len(result['jobs']), 60)
+        self.assertEqual(len({(j['channel'], j['platform_id']) for j in result['jobs']}), 60)
+        self.assertEqual([j['platform_id'] for j in result['jobs'][:20]], ['big-%d' % n for n in range(20)])
+        big = result['sources'][0]
+        self.assertTrue(big['truncated'])
+        self.assertEqual((big['status'], big['passes']), ('ok', 2))
+
+    def test_second_pass_ends_untruncated_when_source_runs_dry(self):
+        result = run_discover(dict(sweep=True, sweep_max_jobs=60, discovery_sources=sources('big', 's1', 's2')),
+                              provider(dict(big=30, s1=3, s2=3)))
+        big = result['sources'][0]
+        self.assertEqual((big['returned'], big['truncated'], big['status']), (30, False, 'ok'))
+
+    def test_second_pass_shares_leftover_jobs_and_requests(self):
+        limits, reads = [], dict(big=1000, rest=3, tiny=1)
+        def hook(entry, ctx):
+            limits.append((entry['name'], ctx.limit))
+            for i in range(reads[entry['name']]):
+                try: ctx.read('https://jobs.example.test/%s/%d' % (entry['name'], i))
+                except SourceError: break
+        result = run_discover(dict(sweep=True, sweep_requests=30, sweep_max_jobs=30, discovery_sources=sources('big', 'rest', 'tiny')),
+                              provider(dict(big=40, rest=40, tiny=1), hook))
+        # First pass: big 10 jobs / 10 requests, rest 10 / 3, tiny 1 / 1. Left: 9 jobs, 16 requests for two candidates.
+        self.assertEqual(limits, [('big', 10), ('rest', 10), ('tiny', 10), ('big', 15), ('rest', 14)])
+        by = {r['source_id']: r for r in result['sources']}
+        self.assertEqual({k: (r['returned'], r['requests']) for k, r in by.items()}, dict(big=(15, 18), rest=(14, 6), tiny=(1, 1)))
+        self.assertEqual((len(result['jobs']), result['requests']), (30, 25))
+
+    def test_second_pass_never_runs_past_deadline(self):
+        now, calls = [0.0], []
+        def hook(entry, ctx):
+            calls.append(entry['name'])
+            if entry['name'] == 's2': now[0] = 1000.0
+        result = run_discover(dict(sweep=True, sweep_max_jobs=60, discovery_sources=sources('big', 's1', 's2')),
+                              provider(dict(big=None, s1=3, s2=3), hook), clock=lambda: now[0])
+        self.assertEqual(calls, ['big', 's1', 's2'])
+        self.assertEqual(result['sources'][0]['returned'], 20)
+        self.assertEqual(result['sources'][0]['passes'], 1)
+        self.assertTrue(result['deadline_reached'])
+
+    def test_non_sweep_has_no_second_pass(self):
+        calls = []
+        result = run_discover(dict(max_jobs=60, discovery_sources=sources('big', 's1', 's2')),
+                              provider(dict(big=None, s1=3, s2=3), lambda entry, ctx: calls.append((entry['name'], ctx.pages))))
+        self.assertEqual(calls, [('big', 2), ('s1', 2), ('s2', 2)])
+        self.assertEqual(result['sources'][0]['returned'], 20)
+
+    def test_sweep_uses_sweep_max_pages(self):
+        seen = []
+        hook = lambda entry, ctx: seen.append(ctx.pages)
+        run_discover(dict(sweep=True, max_pages=3, discovery_sources=sources('a')), provider(dict(a=1), hook))
+        run_discover(dict(sweep=True, sweep_max_pages=7, discovery_sources=sources('a')), provider(dict(a=1), hook))
+        run_discover(dict(sweep=True, sweep_max_pages=0, discovery_sources=sources('a')), provider(dict(a=1), hook))
+        run_discover(dict(max_pages=3, sweep_max_pages=7, discovery_sources=sources('a')), provider(dict(a=1), hook))
+        self.assertEqual(seen, [20, 7, 1, 3])
+
+    def test_entry_checks_run_after_all_discovery(self):
+        events = []
+        def fake_check(item, read, renderer=None):
+            events.append('check:' + item['platform_id']); return item
+        with patch('hunt.entries.check_job', side_effect=fake_check):
+            result = run_discover(dict(sweep=True, check_entries=True, sweep_prepare=3, discovery_sources=sources('a', 'b')),
+                                  provider(dict(a=2, b=2), lambda entry, ctx: events.append('fetch:' + entry['name'])))
+        self.assertEqual(events, ['fetch:a', 'fetch:b', 'check:a-0', 'check:a-1', 'check:b-0'])
+        self.assertEqual(len(result['jobs']), 4)
+        self.assertEqual(result['entry_check']['mode'], 'after_discovery')
+        self.assertEqual(result['entry_check']['checked'], 3)
+
+    def test_entry_checks_skip_jobs_already_known(self):
+        checked = []
+        def fake_check(item, read, renderer=None):
+            checked.append(item['platform_id']); return item
+        with patch('hunt.entries.check_job', side_effect=fake_check):
+            run_discover(dict(sweep=True, check_entries=True, sweep_prepare=2, discovery_sources=sources('a')),
+                         provider(dict(a=4)), known=lambda item: item['platform_id'] == 'a-0')
+        self.assertEqual(checked, ['a-1', 'a-2'])
+
+    def test_entry_checks_stop_at_deadline_and_keep_jobs(self):
+        now = [0.0]
+        def fake_check(item, read, renderer=None):
+            now[0] += 400.0
+            read('https://jobs.example.test/entry/' + item['platform_id'])
+            item['raw'].setdefault('application_route', {})['entry_check'] = dict(status='job_page_seen')
+            return item
+        with patch('hunt.entries.check_job', side_effect=fake_check):
+            result = run_discover(dict(sweep=True, check_entries=True, discovery_sources=sources('a')), provider(dict(a=5)), clock=lambda: now[0])
+        self.assertEqual(len(result['jobs']), 5)
+        self.assertEqual([bool(j['raw'].get('application_route')) for j in result['jobs']], [True, False, False, False, False])
+        self.assertEqual((result['entry_check']['checked'], result['entry_check']['skipped']), (1, 4))
+        self.assertEqual(result['entry_check']['elapsed_seconds'], 800.0)
+        self.assertEqual(result['sources'][0]['entry_requests'], 1)
+        self.assertEqual(result['sources'][0]['status'], 'ok')
+        self.assertTrue(result['deadline_reached'])
+
+    def test_non_sweep_entry_checks_stay_inline(self):
+        events = []
+        def fake_check(item, read, renderer=None):
+            events.append('check:' + item['platform_id']); return item
+        with patch('hunt.entries.check_job', side_effect=fake_check):
+            result = run_discover(dict(check_entries=True, discovery_sources=sources('a', 'b')),
+                                  provider(dict(a=1, b=1), lambda entry, ctx: events.append('fetch:' + entry['name'])))
+        self.assertEqual(events, ['fetch:a', 'check:a-0', 'fetch:b', 'check:b-0'])
+        self.assertEqual((result['entry_check']['mode'], result['entry_check']['checked']), ('inline', 2))
+
+    def test_every_source_report_has_elapsed_seconds(self):
+        now = [0.0]
+        def hook(entry, ctx): now[0] += 2.5
+        result = run_discover(dict(sweep=True, discovery_sources=sources('a', 'b')), provider(dict(a=1, b=1), hook), clock=lambda: now[0])
+        self.assertEqual([r['elapsed_seconds'] for r in result['sources']], [2.5, 2.5])
+        plain = run_discover(dict(discovery_sources=sources('a')), provider(dict(a=1)))
+        self.assertIn('elapsed_seconds', plain['sources'][0])
+        self.assertIn('elapsed_seconds', plain['entry_check'])
 
     def test_user_stop_is_not_deadline(self):
         result = run_discover(dict(sweep=True, discovery_sources=sources('a')), provider(dict(a=1)), should_continue=lambda: False)
@@ -188,6 +312,18 @@ class SweepRunTests(unittest.TestCase):
         self.assertEqual(sorted(j['status'] for j in jobs), ['new', 'new', 'new', 'review', 'review'])
         prepared = {j['platform_id'] for j in jobs if j['status'] == 'review'}
         self.assertEqual(prepared, {'a-0', 'a-1'})
+
+    def test_prepare_slots_go_to_new_jobs_only(self):
+        self.run_with(provider(dict(a=2)), sweep=True, sweep_prepare=2)
+        checked = []
+        def fake_check(item, read, renderer=None):
+            checked.append(item['platform_id']); return item
+        with patch('hunt.entries.check_job', side_effect=fake_check):
+            result = self.run_with(provider(dict(a=5)), sweep=True, sweep_prepare=2, check_entries=True)
+        self.assertEqual((result['imported'], result['duplicates'], result['prepared']), (5, 2, 2))
+        status = {j['platform_id']: j['status'] for j in self.store.state()['jobs']}
+        self.assertEqual([status['a-2'], status['a-3'], status['a-4']], ['review', 'review', 'new'])
+        self.assertEqual(checked, ['a-2', 'a-3'])
 
     def test_run_marks_deadline_partial(self):
         now = [0.0]
@@ -231,10 +367,11 @@ class SweepRunTests(unittest.TestCase):
 
     def test_sweep_config_validation(self):
         for bad in (dict(sweep='yes'), dict(sweep_max_jobs=0), dict(sweep_max_jobs=5001), dict(sweep_deadline_seconds=29),
-                    dict(sweep_prepare=201), dict(sweep_requests='many'), dict(sweep_max_companies=True)):
+                    dict(sweep_prepare=201), dict(sweep_requests='many'), dict(sweep_max_companies=True),
+                    dict(sweep_max_pages=0), dict(sweep_max_pages=51)):
             with self.assertRaises(Error, msg=str(bad)):
                 self.configure(**bad)
-        state = self.configure(sweep=True, sweep_max_jobs=5000, sweep_prepare=0)
+        state = self.configure(sweep=True, sweep_max_jobs=5000, sweep_prepare=0, sweep_max_pages=50)
         self.assertTrue(state['config']['sweep'])
 
     def test_discovery_sources_bounded(self):
