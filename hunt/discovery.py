@@ -71,15 +71,25 @@ def expanded_terms(terms):
     return result
 
 
+def _found(words, text):
+    for word in words:
+        pattern = re.escape(word)
+        if word[0].isascii() and word[0].isalnum(): pattern = r'(?<![A-Za-z0-9_])' + pattern
+        if word[-1].isascii() and word[-1].isalnum(): pattern += r'(?![A-Za-z0-9_])'
+        if re.search(pattern, text, re.I): return True
+    return False
+
+
 def matches(text, terms):
+    """Local filter. A multi-word term matches as the whole phrase, or when every segment
+    (each through its own alias group) matches: '大模型算法工程师' is not an 'AI 产品经理'."""
     if not terms: return False
     text = plain(text)
-    for words in expanded_terms(terms).values():
-        for word in words:
-            pattern = re.escape(word)
-            if word[0].isascii() and word[0].isalnum(): pattern = r'(?<![A-Za-z0-9_])' + pattern
-            if word[-1].isascii() and word[-1].isalnum(): pattern += r'(?![A-Za-z0-9_])'
-            if re.search(pattern, text, re.I): return True
+    for term, words in expanded_terms(terms).items():
+        segments = term.split()
+        if len(segments) < 2:
+            if _found(words, text): return True
+        elif _found([term], text) or all(_found(expanded_terms([s])[s], text) for s in segments): return True
     return False
 
 
