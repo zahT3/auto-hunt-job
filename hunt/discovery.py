@@ -39,7 +39,8 @@ def search_terms(config, profile=None):
     # The entire candidate profile is intentionally ignored at the network layer.
     # Local understanding proposes role labels; only explicit search fields leave.
     terms = config.get('keywords', config.get('search_terms'))
-    if not isinstance(terms, list) or not terms: terms = [config.get('keyword')] if config.get('keyword') else ['AI', 'Agent', 'Web3']
+    # No built-in fallback terms: what to search for comes from the user's directions or keywords, never a default industry.
+    if not isinstance(terms, list) or not terms: terms = [config.get('keyword')] if config.get('keyword') else []
     result = []
     for term in terms[:12]:
         if not isinstance(term, str): continue
@@ -71,6 +72,13 @@ def expanded_terms(terms):
         'web3': ['web3', 'blockchain', '区块链', 'smart contract', '智能合约'],
         'agent': ['agent', '智能体'],
         'rag': ['RAG', 'retrieval augmented generation', '检索增强', 'retrieval'],
+        # Non-tech groups. Every Chinese value is also a trigger, so keys stay specific: '设计师', not '设计' ('芯片设计' is not a designer).
+        '销售': ['销售', 'sales', '业务拓展', 'business development', '大客户', 'account manager', 'account executive', '客户经理'],
+        '运营': ['运营', 'operations', '用户运营', '内容运营', 'growth'],
+        '财务': ['财务', 'finance', 'financial', '会计', 'accounting', 'accountant', '出纳', '审计', 'audit', 'auditor'],
+        '人力资源': ['人力资源', 'HR', 'HRBP', 'human resources', '招聘', 'recruiter', 'recruiting', 'talent acquisition'],
+        '设计师': ['设计师', 'designer', 'UI设计', 'UX', '视觉设计', '平面设计', 'graphic design'],
+        '供应链': ['供应链', 'supply chain', '采购', 'procurement', 'purchasing', '物流', 'logistics', '仓储', 'warehouse'],
     }
     result = {}
     for term in terms:
@@ -378,6 +386,7 @@ def sweep_limits(config):
 def discover(config, profile=None, transport=None, *, browser_profile_root=None, browser_headless=False, should_continue=None, on_source=None, clock=time.monotonic, known=None):
     """`known(job)` is True for a job already stored; a sweep spends its entry checks only on the others."""
     terms = search_terms(config, profile)
+    if not terms: raise ValueError('没有搜索词：请先确定方向或填写搜索关键词')
     sweep, started_at = sweep_limits(config), now()
     timing = dict(reached=False)
     if sweep:
@@ -554,7 +563,12 @@ def main():
     parser.add_argument('--requests', type=int, default=30)
     parser.add_argument('--output', type=Path)
     args = parser.parse_args()
-    config = dict(sources=list(dict.fromkeys((args.source or DEFAULT_KINDS) + args.browser_source)), keywords=args.keyword or ['AI','Agent','Web3'],
+    keywords = args.keyword
+    if not keywords and args.data:
+        from .core import Store
+        keywords = (Store(args.data).orientation() or {}).get('terms') or []
+    if not keywords: parser.error('请用 --keyword 指定搜索词，或用 --data 指向已确定方向的数据目录')
+    config = dict(sources=list(dict.fromkeys((args.source or DEFAULT_KINDS) + args.browser_source)), keywords=keywords,
                   source_modes={kind:'browser' for kind in args.browser_source}, max_jobs=args.max_jobs,
                   max_pages=args.max_pages, discovery_requests=args.requests)
     config.update(official_only=args.official_only, browser_channel='chrome' if args.browser == 'chrome' else None)

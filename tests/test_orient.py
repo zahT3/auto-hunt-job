@@ -378,5 +378,17 @@ class RunTests(OrientCase):
             self.store.run()
 
 
+
+class TermsTests(unittest.TestCase):
+    def test_slash_names_are_not_search_terms_and_every_term_can_match(self):
+        from hunt import directions, discovery
+        ids = [r['id'] for r in directions.load()]
+        for n in range(0, len(ids), 4):
+            terms = orient.terms_for(ids[n:n + 4])
+            self.assertTrue(terms)
+            self.assertFalse([t for t in terms if '/' in t], ids[n:n + 4])
+        self.assertTrue(discovery.matches('总账会计', orient.terms_for(['accountant'])))
+
+
 if __name__ == '__main__':
     unittest.main()

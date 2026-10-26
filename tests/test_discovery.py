@@ -187,4 +187,40 @@ class DiscoveryTests(unittest.TestCase):
         self.assertEqual(result['sources'][0]['status'],'not_configured')
 
 
+class NoDefaultTermsTests(unittest.TestCase):
+    def test_no_ai_default_terms(self):
+        self.assertEqual(search_terms({}), [])
+        self.assertEqual(search_terms({'keywords': [], 'keyword': ''}), [])
+        with self.assertRaises(ValueError) as caught:
+            discover(dict(), transport=lambda *a, **k: self.fail('must not fetch without terms'))
+        self.assertIn('方向', str(caught.exception))
+
+    def test_scan_cli_needs_a_keyword_or_chosen_directions(self):
+        import contextlib, io, sys, tempfile
+        from pathlib import Path
+        from hunt import discovery
+        from hunt.core import Store
+        with patch.object(sys, 'argv', ['scan']), contextlib.redirect_stderr(io.StringIO()), self.assertRaises(SystemExit):
+            discovery.main()
+        with tempfile.TemporaryDirectory() as tmp:
+            Store(Path(tmp)).action(dict(action='directions_set', directions=['accountant']))
+            seen = {}
+            def fake(config, **kwargs):
+                seen.update(config)
+                return dict(jobs=[], queries=[], sources=[])
+            with patch.object(sys, 'argv', ['scan', '--data', tmp]), patch.object(discovery, 'discover', fake), \
+                    contextlib.redirect_stdout(io.StringIO()):
+                discovery.main()
+        self.assertTrue(seen['keywords'])
+        self.assertFalse({'AI', 'Agent', 'Web3'} & set(seen['keywords']))
+
+    def test_non_tech_alias_groups(self):
+        self.assertTrue(matches('Senior Accountant', ['财务 会计']))
+        for term, title in (('销售', 'Key Account Manager'), ('运营', 'Operations Specialist'), ('财务', 'Finance Analyst'),
+                            ('人力资源', 'HR Business Partner'), ('设计师', 'Graphic Designer'), ('供应链', 'Procurement Specialist')):
+            self.assertTrue(matches(title, [term]), term)
+        self.assertFalse(matches('UI Designer', ['芯片设计']))  # only '设计师' style terms pull in design titles
+        self.assertIn('ai', ' '.join(expanded_terms(['AI'])['AI']).lower())  # the old groups stay
+
+
 if __name__=='__main__': unittest.main()

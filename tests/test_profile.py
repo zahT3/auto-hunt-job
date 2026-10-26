@@ -16,8 +16,8 @@ class ProfileTests(unittest.TestCase):
             self.assertTrue(item['fact_ids'])
             self.assertTrue(set(item['fact_ids']) <= ids)
         self.assertEqual(profile['years_experience']['value'], 3)
-        self.assertIn('Agent 开发', profile['suggested_queries'])
-        self.assertIn('Web3 开发', profile['suggested_queries'])
+        self.assertIn('AI 应用开发', profile['suggested_queries'])
+        self.assertIn('Web3 开发工程师', profile['suggested_queries'])
         self.assertNotIn('private', ' '.join(profile['suggested_queries']))
         self.assertFalse(profile['external_search_authorized'])
         self.assertFalse(accepted_facts(result['candidate']))
@@ -76,10 +76,10 @@ class ProfileTests(unittest.TestCase):
         preview = build_profile(confirmed)
         active = build_profile(confirmed, confirmed_only=True)
         self.assertEqual(preview['years_experience']['value'], 3)
-        self.assertIn('Web3 开发', preview['suggested_queries'])
+        self.assertIn('Web3 开发工程师', preview['suggested_queries'])
         self.assertIsNone(active['years_experience'])
         self.assertFalse(active['experience'])
-        self.assertNotIn('Web3 开发', active['suggested_queries'])
+        self.assertNotIn('Web3 开发工程师', active['suggested_queries'])
         self.assertEqual([s['name'] for s in active['skills']], ['Python'])
         self.assertEqual(active['skills'][0]['status'], 'confirmed')
         self.assertTrue(active['unknowns'])
@@ -129,6 +129,32 @@ class ProfileTests(unittest.TestCase):
         candidate['fields']['untrusted_skill'] = {'value': 'Solidity', 'fact_ids': [candidate['facts'][0]['id']]}
         self.assertNotIn('Solidity', [s['name'] for s in build_profile(candidate)['skills']])
         self.assertNotIn('untrusted_skill', build_profile(candidate)['fields'])
+
+
+    def test_non_tech_resume_gets_table_directions_and_skills(self):
+        candidate = self.profile('工作经验：5年\n负责应收应付核算、编制月度财务报表，熟悉税务申报。\n持有初级会计职称。')['candidate']
+        confirmed = confirm_candidate(candidate, [f['id'] for f in candidate['facts']])
+        profile = build_profile(confirmed, confirmed_only=True)
+        self.assertTrue({'财务', '会计'} <= {s['name'] for s in profile['skills']})
+        from hunt import directions
+        families = {directions.get(d['id'])['family'] for d in profile['directions']}
+        self.assertIn('人力行政财务法务', families)
+        self.assertTrue(profile['suggested_queries'])
+        self.assertFalse({'AI 应用开发', 'Web3 开发', 'Agent 开发'} & set(profile['suggested_queries']))
+        for item in profile['directions'] + profile['query_evidence']:
+            self.assertTrue(item['fact_ids'])
+
+    def test_skill_bridge_points_only_at_table_directions(self):
+        from hunt import directions
+        from hunt.profile import _SKILLS, _SKILL_DIRECTIONS
+        known = {r['id'] for r in directions.load()}
+        self.assertTrue(set(_SKILL_DIRECTIONS) <= set(_SKILLS))
+        self.assertTrue({i for ids in _SKILL_DIRECTIONS.values() for i in ids} <= known)
+
+    def test_other_trades_are_recognised(self):
+        result = self.profile('三年门店销售经验，负责大客户开发。\n做过两年护士，熟悉临床护理。\n负责采购与供应链对接。')
+        names = {s['name'] for s in result['profile']['skills']}
+        self.assertTrue({'销售', '护理', '采购', '供应链'} <= names, names)
 
 
 if __name__ == '__main__':

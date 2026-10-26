@@ -4,6 +4,8 @@ import math
 import re
 from collections import Counter
 
+from . import directions
+
 # Only public, generic job/technology terms can enter a suggested search query.
 _SKILLS = {
     'Python': r'(?<![a-z0-9_])python(?![a-z0-9_])', 'SQL': r'(?<![a-z0-9_])sql(?![a-z0-9_])',
@@ -14,19 +16,35 @@ _SKILLS = {
     'LangChain': r'langchain', 'PyTorch': r'pytorch', 'Docker': r'docker',
     'Solidity': r'solidity', 'Web3': r'web\s?3|区块链', 'Ethereum': r'ethereum|以太坊',
     '数据分析': r'数据分析|data analysis', '数字化': r'数字化|信息化',
+    # Non-tech trades; each label is also a phrase in the direction table, so it feeds direction suggestions.
+    '销售': r'销售|(?<![a-z])sales(?![a-z])|大客户|客户开发|业务拓展', '运营': r'运营|(?<![a-z])operations(?![a-z])',
+    '市场营销': r'市场营销|品牌推广|(?<![a-z])marketing(?![a-z])', '客服': r'客服|客户服务|customer service',
+    '财务': r'财务|(?<![a-z])finance|financial', '会计': r'会计|核算|记账|总账|accounting|accountant',
+    '税务': r'税务|报税|纳税申报|(?<![a-z])tax(?![a-z])', '人力资源': r'人力资源|招聘|(?<![a-z])hr(?![a-z])|human resources|recruit',
+    '法务': r'法务|合同审核|律师|(?<![a-z])legal(?![a-z])', '平面设计': r'平面设计|视觉设计|ui设计|graphic design|photoshop|illustrator',
+    '教学': r'教学|授课|教师|讲师|teaching|teacher|tutor', '护理': r'护理|护士|nursing|(?<![a-z])nurse',
+    '采购': r'采购|procurement|purchasing', '供应链': r'供应链|supply chain', '物流': r'物流|仓储|logistics|warehouse',
 }
 _NEGATIVE = re.compile(r'没有|不会|不具备|未掌握|不熟悉|无.{0,10}(?:经验|经历)|\bno\b|\bwithout\b', re.I)
-_DIRECTIONS = {
-    'AI 应用开发': ({'RAG', 'Agent', 'LLM', 'LangChain'}, ['AI 应用开发', 'Agent 开发', 'RAG 工程师']),
-    'Web3 开发': ({'Solidity', 'Web3', 'Ethereum'}, ['Web3 开发', '区块链开发', 'Solidity 工程师']),
-    '数据分析': ({'SQL', '数据分析'}, ['数据分析师']),
-    '数字化': ({'数字化'}, ['数字化开发', '信息化工程师']),
-    '软件开发': ({'Python', 'JavaScript', 'Java', 'React', 'Vue'}, ['软件开发工程师']),
+# Skill mentions -> direction table ids. The table matches job-title phrases, and a bare skill word ('Python', 'RAG')
+# hits none of them, so this short bridge says which directions a skill points to. Every id must exist in the table.
+_SKILL_DIRECTIONS = {
+    'Python': ['backend', 'data-analyst'], 'SQL': ['data-analyst', 'data-engineer'], 'Java': ['backend'],
+    'JavaScript': ['frontend'], 'React': ['frontend'], 'Vue': ['frontend'], 'Docker': ['backend'],
+    'RAG': ['ai-application-dev'], 'Agent': ['ai-application-dev'], 'LLM': ['ai-application-dev'], 'LangChain': ['ai-application-dev'],
+    'PyTorch': ['data-scientist'], 'Solidity': ['blockchain-dev'], 'Web3': ['blockchain-dev'], 'Ethereum': ['blockchain-dev'],
+    '数据分析': ['data-analyst'], '数字化': ['software-engineer'],
+    '销售': ['b2b-enterprise-sales', 'retail-sales-guide'], '运营': ['user-operations', 'operations-management'],
+    '市场营销': ['marketing-planning', 'brand-marketing'], '客服': ['customer-service'],
+    '财务': ['accountant', 'management-accountant'], '会计': ['accountant'], '税务': ['tax-specialist'],
+    '人力资源': ['hrbp', 'recruiter'], '法务': ['legal-counsel'], '平面设计': ['graphic-designer'],
+    '教学': ['training-instructor', 'k12-teacher'], '护理': ['nurse'], '采购': ['procurement'],
+    '供应链': ['supply-chain-planning', 'procurement'], '物流': ['logistics-warehouse'],
 }
+MAX_QUERIES_PER_DIRECTION = 3
 
 
-
-def _source_facts(candidate, confirmed_only=False):
+def source_facts(candidate, confirmed_only=False):
     """Keep only unique, well-formed, source-backed facts; privacy stays local."""
     rows = candidate.get('facts', []) if isinstance(candidate, dict) else []
     if not isinstance(rows, list):
@@ -80,7 +98,7 @@ def build_profile(candidate, confirmed_only=False):
     No years are computed from dates, graduation, project duration or age.
     confirmed_only=True also hides fields whose source facts were not confirmed.
     """
-    facts = _source_facts(candidate, confirmed_only=confirmed_only)
+    facts = source_facts(candidate, confirmed_only=confirmed_only)
     fields = _supported_fields(candidate, facts)
     confirmed_ids = {f['id'] for f in facts if f['status'] == 'confirmed'}
     skills, education, experience = [], [], []
@@ -95,17 +113,28 @@ def build_profile(candidate, confirmed_only=False):
             education.append({'text': text, 'fact_ids': [f['id']], 'status': 'confirmed' if f['id'] in confirmed_ids else 'needs_confirmation'})
         if re.search(r'工作经验|工作经历|实习|work experience|employment', text, re.I):
             experience.append({'text': text, 'fact_ids': [f['id']], 'status': 'confirmed' if f['id'] in confirmed_ids else 'needs_confirmation'})
-    directions, queries, query_evidence = [], [], []
-    for label, (terms, suggestions) in _DIRECTIONS.items():
-        ids = list(dict.fromkeys(fid for skill in skills if skill['label'] in terms for fid in skill['fact_ids']))
+    directions_found, queries, query_evidence = [], [], []
+    # Items here already passed the confirmed_only filter, so the table sees them as usable evidence.
+    view = {key: [dict(item, status='confirmed') for item in rows] for key, rows in (('skills', skills), ('experience', experience), ('education', education))}
+    support = {}
+    for skill in skills:
+        for ident in _SKILL_DIRECTIONS.get(skill['label'], []):
+            support.setdefault(ident, []).extend(skill['fact_ids'])
+    ranked = sorted(support, key=lambda i: -len(set(support[i])))  # stable: ties keep skill order
+    for ident in list(dict.fromkeys(ranked + directions.suggest_from_profile(view)))[:directions.MAX_SUGGEST]:
+        ids = list(dict.fromkeys(support.get(ident, []) + directions.evidence(view, ident)))
         if not ids:
             continue
-        directions.append({'label': label, 'fact_ids': ids, 'status': 'suggested'})
-        for query in suggestions:
-            queries.append(query)
-            query_evidence.append({'query': query, 'fact_ids': ids})
+        row = directions.get(ident)
+        label = re.sub(r'[（(].*?[）)]', '', row['name']).strip()
+        directions_found.append({'id': ident, 'label': label, 'fact_ids': ids, 'status': 'suggested'})
+        # A name like '区块链 / 智能合约开发' is a label, not a search phrase; example titles are.
+        for query in list(dict.fromkeys(([] if '/' in label else [label]) + row['titles']))[:MAX_QUERIES_PER_DIRECTION]:
+            if query not in queries:
+                queries.append(query)
+                query_evidence.append({'query': query, 'fact_ids': ids})
     return {
-        'method': 'local_rules_v1', 'skills': skills, 'directions': directions,
+        'method': 'local_rules_v2', 'skills': skills, 'directions': directions_found,
         'education': education, 'experience': experience,
         'years_experience': fields.get('years_experience'),
         'fields': fields, 'confirmed_only': bool(confirmed_only),
@@ -150,8 +179,9 @@ def recommend(candidate, job, config=None):
     text = ' '.join(str(job.get(key) or '') for key in ('title', 'description', 'jd', 'requirements', 'requirements_text', 'raw_text'))
     job_skills = {name for name, pattern in _SKILLS.items() if re.search(pattern, text, re.I)}
     skill_matches = [dict(name=s['name'], fact_ids=s['fact_ids']) for s in profile['skills'] if s['name'] in job_skills]
+    # A suggested direction counts when the job itself clearly sits in it (the same 0.5 bar classification uses).
     direction_matches = [dict(name=d['label'], fact_ids=d['fact_ids']) for d in profile['directions']
-                         if _DIRECTIONS[d['label']][0] & job_skills]
+                         if any(score >= 0.5 for _, score in directions.rule_match(job.get('title'), text, [d['id']]))]
     return {
         'skill_matches': skill_matches, 'direction_matches': direction_matches,
         'missing_skills': sorted(job_skills - {s['name'] for s in profile['skills']}),

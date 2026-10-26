@@ -127,6 +127,19 @@ def rule_match(title, jd, allowed):
     return [(i, s) for i, s, _, _ in result]
 
 
+def evidence(profile, ident):
+    """Fact ids of confirmed profile items (skills, experience, education) whose text the direction's phrases hit."""
+    ids = []
+    for key, fields in (('skills', ('name',)), ('experience', ('text',)), ('education', ('text',))):
+        for item in profile.get(key) or []:
+            if not isinstance(item, dict) or item.get('status') != 'confirmed':
+                continue
+            text = ' '.join(str(item.get(f)) for f in fields)
+            if rule_match(text, '', [ident]):
+                ids += item.get('fact_ids') or []
+    return list(dict.fromkeys(ids))
+
+
 def suggest_from_profile(profile):
     """Up to six direction ids from confirmed skills, experience and education text.
 

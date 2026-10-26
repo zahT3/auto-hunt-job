@@ -9,7 +9,7 @@ import json
 import re
 
 from . import directions, discovery, llm, network, redact
-from .profile import _source_facts
+from .profile import source_facts
 
 PLACEHOLDER_NAME = '待确认候选人'
 MAX_DIRECTIONS, MAX_TERMS, MIN_QUESTIONS, MAX_QUESTIONS = 4, 8, 3, 6
@@ -40,7 +40,7 @@ FIXED_IDS = {q['id'] for q in fixed_questions()}
 
 def confirmed_facts(candidate):
     """Confirmed, source-backed facts only (the same filter the local profile uses)."""
-    return [dict(id=f['id'], text=f['text']) for f in _source_facts(candidate, confirmed_only=True)]
+    return [dict(id=f['id'], text=f['text']) for f in source_facts(candidate, confirmed_only=True)]
 
 
 def candidate_names(candidate):
@@ -215,24 +215,13 @@ def terms_for(direction_ids):
     pools = []
     for ident in direction_ids:
         row = directions.get(ident)
-        pools.append([re.sub(r'[（(].*?[）)]', '', row['name']).strip()] + row['titles'])
+        name = re.sub(r'[（(].*?[）)]', '', row['name']).strip()
+        # '会计 / 总账' is a label; as a search term its '/' segment never matches a title, so only plain names are searched.
+        pools.append(([] if '/' in name else [name]) + row['titles'])
     out = []
     for i in range(max((len(p) for p in pools), default=0)):
         out += [p[i] for p in pools if i < len(p) and p[i] not in out]
     return discovery.search_terms(dict(keywords=out[:MAX_TERMS * 2])) if out else []
-
-
-def _evidence(profile, ident):
-    """Confirmed profile items (skills, experience, education) whose text the direction's table phrases hit."""
-    ids = []
-    for key, fields in (('skills', ('name',)), ('experience', ('text',)), ('education', ('text',))):
-        for item in profile.get(key) or []:
-            if not isinstance(item, dict) or item.get('status') != 'confirmed':
-                continue
-            text = ' '.join(str(item.get(f)) for f in fields)
-            if directions.rule_match(text, '', [ident]):
-                ids += item.get('fact_ids') or []
-    return list(dict.fromkeys(ids))
 
 
 def _rule_directions(profile, answers, notes):
@@ -250,7 +239,7 @@ def _rule_directions(profile, answers, notes):
     out = []
     for ident in ids:
         row = directions.get(ident)
-        facts = _evidence(profile, ident)
+        facts = directions.evidence(profile, ident)
         picked = row['family'] in by_family
         why = ('已确认的简历事实里有与「%s」相关的内容' % row['name']) if facts else ''
         if picked:
