@@ -1,6 +1,7 @@
 import contextlib
 import importlib.util
 import io
+import hashlib
 import json
 from pathlib import Path
 import tempfile
@@ -47,6 +48,43 @@ class SeedFileTests(unittest.TestCase):
                 self.assertIn(s['provider'], REGISTRY)
             if s['source'] != 'catalog' and s['provider'] is None:
                 self.assertIsNone(route(dict(careers_url=s['careers_url'])), s)
+
+
+class NontechSeedTests(unittest.TestCase):
+    def test_original_53_records_are_unchanged(self):
+        original = json.dumps(companies.load_seeds()[:53], ensure_ascii=False, sort_keys=True).encode()
+        self.assertEqual(hashlib.sha256(original).hexdigest(),
+                         '4f71674f01323cf47bc0ff9b5155c1a10df6f604737a8d221b2abdac5ac9aba0')
+
+    def test_at_least_40_nontech_employers_cover_families_and_industries(self):
+        from hunt import directions
+        families = {r['family'] for r in directions.load()}
+        nontech = families - {'技术研发', '产品', '设计', '数据与算法'}
+        rows = companies.load_seeds()[53:]
+        self.assertGreaterEqual(len(rows), 40)
+        self.assertTrue(all(set(r['tags']) & nontech for r in rows))
+        tags = set().union(*(set(r['tags']) for r in rows))
+        self.assertGreaterEqual(len(tags & nontech), 8)
+        for industry in ('消费零售', '金融专业', '制造', '医疗健康', '教育培训', '物流', '能源', '汽车'):
+            self.assertIn(industry, tags)
+
+    def test_new_rows_match_nontech_constant_and_builder(self):
+        rows = companies.load_seeds()[53:]
+        self.assertEqual(rows, builder.NONTECH)
+        self.assertEqual(builder.build([])[-len(rows):], rows)
+        self.assertTrue(all(r['source'] == 'curated' for r in rows))
+        self.assertEqual(len({r['id'] for r in companies.load_seeds()}), len(companies.load_seeds()))
+
+    def test_new_tags_and_provider_detection(self):
+        from hunt import directions
+        from hunt.providers import route
+        families = {r['family'] for r in directions.load()}
+        for r in companies.load_seeds()[53:]:
+            with self.subTest(company=r['id']):
+                self.assertTrue(set(r['tags']) & families)
+                self.assertFalse({'ai', 'agent', 'web3', '大模型'} & {tag.casefold() for tag in r['tags']})
+                provider = route(dict(careers_url=r['careers_url']))
+                self.assertEqual(r['provider'], provider.id if provider else None)
 
 
 class SelectTests(unittest.TestCase):
@@ -100,8 +138,8 @@ class SelectTests(unittest.TestCase):
         default = {c['id'] for c in companies.select(['AI'], 300)}
         self.assertNotIn('huawei', default)
         self.assertNotIn('baichuan-ai-com-careers', default)
-        self.assertEqual(len(default), 53 - 31)
-        self.assertEqual(len(companies.select(['AI'], 300, include_flagged=True)), 53)
+        self.assertEqual(len(default), len(companies.load_seeds()) - 31)
+        self.assertEqual(len(companies.select(['AI'], 300, include_flagged=True)), len(companies.load_seeds()))
 
     def test_select_keyword_providers_survive_small_limit(self):
         chosen = companies.select(['AI'], 4)
@@ -125,6 +163,34 @@ class SelectTests(unittest.TestCase):
         seeds = [seed('x', 'https://x.example.test/jobs')]
         chosen = companies.select([], 10, [seed('x2', 'https://X.example.test/jobs/')], seeds=seeds)
         self.assertEqual(len(chosen), 1)
+
+
+class FamilyPriorityTests(unittest.TestCase):
+    def test_family_precedes_keyword_overlap_and_keeps_keyword_providers_first(self):
+        rows = [seed('plain', 'https://plain.example.test/', tags=['销售', '质量']),
+                seed('family', 'https://family.example.test/', tags=['销售与商务']),
+                seed('keyword', 'https://careers.tencent.com/', provider='tencent')]
+        chosen = companies.select(['销售', '质量'], 300, seeds=rows, families=['销售与商务'])
+        self.assertEqual([r['id'] for r in chosen], ['keyword', 'family', 'plain'])
+
+    def test_family_count_then_term_overlap_then_stable_file_order(self):
+        rows = [seed('none', 'https://none.example.test/', tags=['质量']),
+                seed('sales', 'https://sales.example.test/', tags=['销售与商务']),
+                seed('both1', 'https://both1.example.test/', tags=['销售与商务', '供应链与生产制造']),
+                seed('both2', 'https://both2.example.test/', tags=['销售与商务', '供应链与生产制造']),
+                seed('both-term', 'https://term.example.test/', tags=['销售与商务', '供应链与生产制造', '质量'])]
+        chosen = companies.select(['质量'], 300, seeds=rows, families=['销售与商务', '供应链与生产制造', '销售与商务'])
+        self.assertEqual([r['id'] for r in chosen], ['both-term', 'both1', 'both2', 'sales', 'none'])
+
+    def test_empty_families_preserve_existing_order(self):
+        self.assertEqual(companies.select(['销售'], 300), companies.select(['销售'], 300, families=()))
+
+    def test_flagged_seeds_and_extra_still_obey_existing_rules(self):
+        rows = [dict(seed('bad', 'https://bad.example.test/', tags=['销售与商务']), status='dead'),
+                seed('plain', 'https://plain.example.test/')]
+        extra = [seed('extra', 'https://extra.example.test/', tags=['销售与商务'])]
+        chosen = companies.select([], 300, extra, seeds=rows, families=['销售与商务'])
+        self.assertEqual([r['id'] for r in chosen], ['plain', 'extra'])
 
 
 class RememberTests(unittest.TestCase):
@@ -237,6 +303,12 @@ class RunWiringTests(unittest.TestCase):
         self.assertEqual(cfg['discovery_sources'][-1]['company'], 'Newco')
         self.assertNotIn('discovery_sources', self.store.state()['config'])
 
+    def test_sweep_passes_distinct_orientation_families_in_direction_order(self):
+        self.store.directions_set(dict(directions=['b2b-enterprise-sales', 'channel-sales', 'quality-engineer']))
+        with unittest.mock.patch('hunt.companies.select', wraps=companies.select) as select:
+            self.run_store(sweep=True)
+        self.assertEqual(select.call_args.kwargs['families'], ['销售与商务', '供应链与生产制造'])
+
     def test_explicit_sources_win_and_non_sweep_unchanged(self):
         mine = [dict(kind='website', url='https://mine.example.test/', company='Mine')]
         self.assertEqual(self.run_store(sweep=True, discovery_sources=mine)['discovery_sources'], mine)
@@ -327,7 +399,10 @@ class CLITests(unittest.TestCase):
         self.assertEqual(len(result['companies']), 3)
 
     def test_cli_companies_text_with_terms(self):
-        code, output = self.invoke(['companies', '--terms', 'AI', '产品经理', '--limit', '12'])
+        rows = [seed('keyword', 'https://careers.tencent.com/', provider='tencent')]
+        rows += [seed('plain-%d' % i, 'https://c%d.example.test/' % i) for i in range(11)]
+        with unittest.mock.patch.object(companies, 'load_seeds', return_value=rows):
+            code, output = self.invoke(['companies', '--terms', 'AI', '产品经理', '--limit', '12'])
         self.assertEqual(code, 0)
         self.assertEqual(len(output.strip().splitlines()), 12)
         self.assertIn('website', output)

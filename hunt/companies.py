@@ -50,14 +50,16 @@ def _entry(seed):
     return dict(id=seed['id'], kind='website', url=seed['careers_url'], company=seed['name'])
 
 
-def select(terms, limit, extra=(), seeds=None, include_flagged=False):
-    """discovery_sources entries: keyword-search providers first, then seeds by tag overlap, then `extra`.
+def select(terms, limit, extra=(), seeds=None, include_flagged=False, families=()):
+    """discovery_sources entries: keyword-search providers first, then family/tag overlap, then `extra`.
 
     Seeds whose `status` is `dead` or `needs_adapter` are skipped unless include_flagged is set."""
     seeds = load_seeds() if seeds is None else seeds
     if not include_flagged: seeds = [s for s in seeds if s.get('status') not in FLAGGED]
     keyword = [s for s in seeds if s.get('provider') in KEYWORD_PROVIDERS]
-    rest = sorted((s for s in seeds if s.get('provider') not in KEYWORD_PROVIDERS), key=lambda s: -_overlap(terms, s))
+    families = set(families)
+    rest = sorted((s for s in seeds if s.get('provider') not in KEYWORD_PROVIDERS),
+                  key=lambda s: (-len(families.intersection(s.get('tags', ()))), -_overlap(terms, s)))
     chosen, seen = [], set()
     for seed in keyword + rest + list(extra):
         key = _key(seed.get('careers_url'))

@@ -675,6 +675,515 @@
       ],
       "source": "career-ops-china",
       "status": "needs_adapter"
+    },
+    {
+      "id": "bayer",
+      "name": "拜耳中国",
+      "careers_url": "https://app.mokahr.com/social-recruitment/bayer/148387",
+      "provider": "mokahr",
+      "tags": [
+        "医疗健康",
+        "销售与商务",
+        "医药"
+      ],
+      "source": "curated"
+    },
+    {
+      "id": "ey",
+      "name": "安永",
+      "careers_url": "https://app.mokahr.com/social-recruitment/ey/102474",
+      "provider": "mokahr",
+      "tags": [
+        "咨询",
+        "人力行政财务法务"
+      ],
+      "source": "curated"
+    },
+    {
+      "id": "marriott",
+      "name": "万豪国际",
+      "careers_url": "https://app.mokahr.com/social-recruitment/marriott/141002",
+      "provider": "mokahr",
+      "tags": [
+        "酒店餐饮旅游",
+        "客户服务"
+      ],
+      "source": "curated"
+    },
+    {
+      "id": "prada",
+      "name": "普拉达",
+      "careers_url": "https://app.mokahr.com/social-recruitment/pradagroup/151069",
+      "provider": "mokahr",
+      "tags": [
+        "销售与商务",
+        "客户服务",
+        "消费零售"
+      ],
+      "source": "curated"
+    },
+    {
+      "id": "schneider-electric",
+      "name": "施耐德电气",
+      "careers_url": "https://app.mokahr.com/social-recruitment/se/98712",
+      "provider": "mokahr",
+      "tags": [
+        "供应链与生产制造",
+        "销售与商务",
+        "电气制造"
+      ],
+      "source": "curated"
+    },
+    {
+      "id": "bosch-cn",
+      "name": "博世中国",
+      "careers_url": "https://app.mokahr.com/social-recruitment/bosch/73873",
+      "provider": "mokahr",
+      "tags": [
+        "供应链与生产制造",
+        "销售与商务",
+        "汽车"
+      ],
+      "source": "curated"
+    },
+    {
+      "id": "volvo-cars",
+      "name": "沃尔沃汽车",
+      "careers_url": "https://app.mokahr.com/social-recruitment/volvocars/56034",
+      "provider": "mokahr",
+      "tags": [
+        "供应链与生产制造",
+        "销售与商务",
+        "汽车"
+      ],
+      "source": "curated"
+    },
+    {
+      "id": "nestle-cn",
+      "name": "雀巢大中华",
+      "careers_url": "https://app.mokahr.com/social-recruitment/nestlezgc/91898",
+      "provider": "mokahr",
+      "tags": [
+        "销售与商务",
+        "市场与品牌",
+        "供应链与生产制造",
+        "食品"
+      ],
+      "source": "curated"
+    },
+    {
+      "id": "carlsberg",
+      "name": "嘉士伯",
+      "careers_url": "https://app.mokahr.com/social-recruitment/carlsberg/37541",
+      "provider": "mokahr",
+      "tags": [
+        "销售与商务",
+        "供应链与生产制造",
+        "食品"
+      ],
+      "source": "curated"
+    },
+    {
+      "id": "voyah",
+      "name": "岚图汽车",
+      "careers_url": "https://app.mokahr.com/social-recruitment/voyah/146292",
+      "provider": "mokahr",
+      "tags": [
+        "供应链与生产制造",
+        "销售与商务",
+        "汽车"
+      ],
+      "source": "curated"
+    },
+    {
+      "id": "geely",
+      "name": "吉利汽车",
+      "careers_url": "https://app.mokahr.com/social-recruitment/geely/102042",
+      "provider": "mokahr",
+      "tags": [
+        "供应链与生产制造",
+        "销售与商务",
+        "汽车"
+      ],
+      "source": "curated"
+    },
+    {
+      "id": "yanfeng",
+      "name": "延锋",
+      "careers_url": "https://app.mokahr.com/social-recruitment/yanfeng/45086",
+      "provider": "mokahr",
+      "tags": [
+        "供应链与生产制造",
+        "销售与商务",
+        "汽车"
+      ],
+      "source": "curated"
+    },
+    {
+      "id": "joyson",
+      "name": "均胜集团",
+      "careers_url": "https://app.mokahr.com/social-recruitment/joyson/94310",
+      "provider": "mokahr",
+      "tags": [
+        "供应链与生产制造",
+        "销售与商务",
+        "汽车"
+      ],
+      "source": "curated"
+    },
+    {
+      "id": "envision-energy",
+      "name": "远景能源",
+      "careers_url": "https://app.mokahr.com/social-recruitment/envisiongroup/43123",
+      "provider": "mokahr",
+      "tags": [
+        "公共事业·农业·能源",
+        "供应链与生产制造",
+        "能源"
+      ],
+      "source": "curated"
+    },
+    {
+      "id": "solaxpower",
+      "name": "艾罗能源",
+      "careers_url": "https://app.mokahr.com/social-recruitment/solaxpower/151400",
+      "provider": "mokahr",
+      "tags": [
+        "公共事业·农业·能源",
+        "供应链与生产制造",
+        "能源"
+      ],
+      "source": "curated"
+    },
+    {
+      "id": "trinasolar",
+      "name": "天合光能",
+      "careers_url": "https://app.mokahr.com/social-recruitment/trinasolar/39871",
+      "provider": "mokahr",
+      "tags": [
+        "公共事业·农业·能源",
+        "供应链与生产制造",
+        "能源"
+      ],
+      "source": "curated"
+    },
+    {
+      "id": "sanhua",
+      "name": "三花智控",
+      "careers_url": "https://app.mokahr.com/social-recruitment/zjshc/56208",
+      "provider": "mokahr",
+      "tags": [
+        "供应链与生产制造",
+        "汽车"
+      ],
+      "source": "curated"
+    },
+    {
+      "id": "synland",
+      "name": "时代新安",
+      "careers_url": "https://app.mokahr.com/social-recruitment/synland/58041",
+      "provider": "mokahr",
+      "tags": [
+        "供应链与生产制造",
+        "汽车"
+      ],
+      "source": "curated"
+    },
+    {
+      "id": "anta",
+      "name": "安踏集团",
+      "careers_url": "https://app.mokahr.com/social-recruitment/antahr/142914",
+      "provider": "mokahr",
+      "tags": [
+        "销售与商务",
+        "运营",
+        "市场与品牌",
+        "消费零售"
+      ],
+      "source": "curated"
+    },
+    {
+      "id": "wantai-bio",
+      "name": "万泰生物",
+      "careers_url": "https://app.mokahr.com/social-recruitment/ystwt/97880",
+      "provider": "mokahr",
+      "tags": [
+        "医疗健康",
+        "供应链与生产制造",
+        "医药"
+      ],
+      "source": "curated"
+    },
+    {
+      "id": "zuoyebang-edu",
+      "name": "作业帮",
+      "careers_url": "https://app.mokahr.com/social-recruitment/zuoyebang/41328",
+      "provider": "mokahr",
+      "tags": [
+        "教育培训",
+        "运营"
+      ],
+      "source": "curated"
+    },
+    {
+      "id": "zijin-mining",
+      "name": "紫金矿业",
+      "careers_url": "https://app.mokahr.com/social-recruitment/zijinmining/140688",
+      "provider": "mokahr",
+      "tags": [
+        "公共事业·农业·能源",
+        "供应链与生产制造",
+        "矿业"
+      ],
+      "source": "curated"
+    },
+    {
+      "id": "westlake-university",
+      "name": "西湖大学",
+      "careers_url": "https://app.mokahr.com/social-recruitment/westlake/43525",
+      "provider": "mokahr",
+      "tags": [
+        "教育培训",
+        "人力行政财务法务"
+      ],
+      "source": "curated"
+    },
+    {
+      "id": "pharmaron",
+      "name": "康龙化成",
+      "careers_url": "https://app.mokahr.com/campus-recruitment/pharmaron/44352",
+      "provider": "mokahr",
+      "tags": [
+        "医疗健康",
+        "供应链与生产制造",
+        "医药"
+      ],
+      "source": "curated"
+    },
+    {
+      "id": "hengrui",
+      "name": "恒瑞医药",
+      "careers_url": "https://app.mokahr.com/campus-recruitment/hengrui/145997",
+      "provider": "mokahr",
+      "tags": [
+        "医疗健康",
+        "销售与商务",
+        "医药"
+      ],
+      "source": "curated"
+    },
+    {
+      "id": "yusen-logistics",
+      "name": "日邮物流",
+      "careers_url": "https://app.mokahr.com/campus-recruitment/yusen/73956",
+      "provider": "mokahr",
+      "tags": [
+        "交通运输与生活服务",
+        "客户服务",
+        "物流"
+      ],
+      "source": "curated"
+    },
+    {
+      "id": "canmax",
+      "name": "天华新能",
+      "careers_url": "https://app.mokahr.com/apply/canmax/140245",
+      "provider": "mokahr",
+      "tags": [
+        "公共事业·农业·能源",
+        "供应链与生产制造",
+        "能源"
+      ],
+      "source": "curated"
+    },
+    {
+      "id": "bsh",
+      "name": "博西家电",
+      "careers_url": "https://app.mokahr.com/apply/bshg/28741",
+      "provider": "mokahr",
+      "tags": [
+        "供应链与生产制造",
+        "销售与商务",
+        "客户服务",
+        "制造"
+      ],
+      "source": "curated"
+    },
+    {
+      "id": "sushang-bank",
+      "name": "苏商银行",
+      "careers_url": "https://app.mokahr.com/social-recruitment/snb/45591",
+      "provider": "mokahr",
+      "tags": [
+        "金融专业",
+        "客户服务"
+      ],
+      "source": "curated"
+    },
+    {
+      "id": "luckin-coffee",
+      "name": "瑞幸咖啡",
+      "careers_url": "https://app.mokahr.com/campus-recruitment/lkcoffee/45257",
+      "provider": "mokahr",
+      "tags": [
+        "酒店餐饮旅游",
+        "运营",
+        "市场与品牌",
+        "餐饮连锁"
+      ],
+      "source": "curated"
+    },
+    {
+      "id": "tal-education",
+      "name": "好未来",
+      "careers_url": "https://app.mokahr.com/campus-recruitment/tal/95443",
+      "provider": "mokahr",
+      "tags": [
+        "教育培训",
+        "运营"
+      ],
+      "source": "curated"
+    },
+    {
+      "id": "muyuan-food",
+      "name": "牧原食品",
+      "careers_url": "https://app.mokahr.com/campus-recruitment/muyuan/70116",
+      "provider": "mokahr",
+      "tags": [
+        "公共事业·农业·能源",
+        "供应链与生产制造",
+        "农业"
+      ],
+      "source": "curated"
+    },
+    {
+      "id": "avatr",
+      "name": "阿维塔",
+      "careers_url": "https://xcn5vbnquq58.jobs.feishu.cn/",
+      "provider": "feishu",
+      "tags": [
+        "供应链与生产制造",
+        "销售与商务",
+        "汽车"
+      ],
+      "source": "curated"
+    },
+    {
+      "id": "zeron",
+      "name": "零一汽车",
+      "careers_url": "https://zeron.jobs.feishu.cn/",
+      "provider": "feishu",
+      "tags": [
+        "供应链与生产制造",
+        "销售与商务",
+        "汽车"
+      ],
+      "source": "curated"
+    },
+    {
+      "id": "desay-sv",
+      "name": "德赛西威",
+      "careers_url": "https://yesv-desaysv.jobs.feishu.cn/",
+      "provider": "feishu",
+      "tags": [
+        "供应链与生产制造",
+        "汽车"
+      ],
+      "source": "curated"
+    },
+    {
+      "id": "hete",
+      "name": "和而泰",
+      "careers_url": "https://salcje7shg.jobs.feishu.cn/",
+      "provider": "feishu",
+      "tags": [
+        "供应链与生产制造",
+        "制造"
+      ],
+      "source": "curated"
+    },
+    {
+      "id": "breo",
+      "name": "倍轻松",
+      "careers_url": "https://e0cmewvq7v7.jobs.feishu.cn/",
+      "provider": "feishu",
+      "tags": [
+        "销售与商务",
+        "市场与品牌",
+        "消费零售"
+      ],
+      "source": "curated"
+    },
+    {
+      "id": "genki-forest",
+      "name": "元气森林",
+      "careers_url": "https://k11pnjpvz1.jobs.feishu.cn/",
+      "provider": "feishu",
+      "tags": [
+        "销售与商务",
+        "市场与品牌",
+        "食品"
+      ],
+      "source": "curated"
+    },
+    {
+      "id": "babycare",
+      "name": "Babycare",
+      "careers_url": "https://babycare.jobs.feishu.cn/",
+      "provider": "feishu",
+      "tags": [
+        "销售与商务",
+        "运营",
+        "市场与品牌",
+        "消费零售"
+      ],
+      "source": "curated"
+    },
+    {
+      "id": "leoao",
+      "name": "乐刻运动",
+      "careers_url": "https://leoao-inc.jobs.feishu.cn/",
+      "provider": "feishu",
+      "tags": [
+        "运营",
+        "客户服务",
+        "交通运输与生活服务",
+        "健身"
+      ],
+      "source": "curated"
+    },
+    {
+      "id": "mediastorm",
+      "name": "影视飓风",
+      "careers_url": "https://mediastorm.jobs.feishu.cn/",
+      "provider": "feishu",
+      "tags": [
+        "内容与传媒",
+        "市场与品牌"
+      ],
+      "source": "curated"
+    },
+    {
+      "id": "bluefocus",
+      "name": "蓝色光标",
+      "careers_url": "https://bluefocus.jobs.feishu.cn/",
+      "provider": "feishu",
+      "tags": [
+        "市场与品牌",
+        "内容与传媒"
+      ],
+      "source": "curated"
+    },
+    {
+      "id": "molbreeding",
+      "name": "博瑞迪",
+      "careers_url": "https://molbreeding.jobs.feishu.cn/",
+      "provider": "feishu",
+      "tags": [
+        "公共事业·农业·能源",
+        "农业"
+      ],
+      "source": "curated"
     }
   ]
 }
