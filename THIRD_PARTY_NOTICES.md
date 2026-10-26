@@ -51,7 +51,7 @@ PDF 字体使用用户本机已安装的字体或 `HUNT_PDF_FONT` 指定文件�
 
 ### career-ops-china
 
-- 仓库：<https://github.com/shuheng-mo/career-ops-china>（career-ops 的中国大陆定制分支）
+- 仓库：<https://github.com/shuheng-mo/career-ops-china>（career-ops 的中国大陆定制衍生项目，不是 GitHub 上的 fork）
 - commit：`bef1e7122d2d84a0bf7137a9d5ffb88808d05c5c`
 - 许可：MIT。版权行：Copyright (c) 2026 Santiago Fernández de Valderrama (original career-ops)；Copyright (c) 2026 Mo Shuheng (China mainland customization)（取自该仓库 GitHub 许可证接口）。
 
@@ -61,4 +61,4 @@ PDF 字体使用用户本机已安装的字体或 `HUNT_PDF_FONT` 指定文件�
 | `static/bookmarklets/_deliver.js` | `tools/bookmarklets/*.js` 的发送部分 | 请求与载荷形状（改写） |
 | `hunt/data/companies.cn.json`（由 `scripts/build_company_seeds.py` 生成） | `templates/portals-china.example.yml` | 其中 31 家公司的名称与招聘页链接 |
 
-书签脚本的本项目改动：改为发到带令牌的本地收件箱，用 3 秒页面提示代替 `alert`，发送前截短正文。`companies.cn.json` 共 53 家：上游 31 家、本项目内置公司目录 `hunt/catalog.py` 9 家、本项目自选 13 家（文件内每条记录的 `source` 字段标明）。
+书签脚本的本项目改动：改为发到带令牌的本地收件箱，用 3 秒页面提示代替 `alert`，发送前截短正文。`companies.cn.json` 共 53 家：上游 31 家、本项目内置公司目录 `hunt/catalog.py` 9 家、本项目自选 13 家（文件内每条记录的 `source` 字段标明）。其中 31 家带本项目加的 `status` 字段（`dead` 或 `needs_adapter`，2026-10-26 实测结果），不是上游数据。
