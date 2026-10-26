@@ -34,6 +34,13 @@ def parser():
     seeds.add_argument('--limit', type=int, default=300, help='最多列出的公司数，默认 300')
     seeds.add_argument('--data', type=Path, default=None, help='提供时，把该数据目录里遇到过的公司排在种子之后')
     seeds.add_argument('--json', action='store_true')
+    benchmark = commands.add_parser('benchmark', help='对照人工标准答案计算岗位召回率')
+    benchmark.add_argument('--truth', type=Path, required=True, help='人工核对的标准答案 JSON')
+    benchmark.add_argument('--data', type=Path, default=DEFAULT_DATA, help='与网页相同的本地数据目录')
+    benchmark.add_argument('--direction', help='仅比较此方向 ID 的岗位')
+    benchmark.add_argument('--since', help='仅比较此时间及之后采集的岗位，须为带时区的 ISO 8601 时间')
+    benchmark.add_argument('--output', type=Path, help='报告路径，默认写到标准答案同目录')
+    benchmark.add_argument('--json', action='store_true', help='输出结构化 JSON')
     status = commands.add_parser('status', help='查看候选资料、岗位 ID 和申请尝试数')
     resume = commands.add_parser('resume', help='本地导入 PDF/DOCX，生成待核对事实')
     resume.add_argument('path', type=Path, metavar='PATH')
@@ -221,6 +228,14 @@ def main(argv=None):
             else:
                 for row in result['companies']:
                     print('{:8} {} · {}'.format(row['kind'], row['company'], row.get('url') or row['careers_url']))
+            return 0
+        if args.command == 'benchmark':
+            from . import benchmark
+            result = benchmark.run(args.truth, args.data, direction=args.direction, since=args.since, output=args.output)
+            if args.json:
+                print(json.dumps(result, ensure_ascii=False, indent=2))
+            else:
+                benchmark.print_summary(result)
             return 0
         if args.command == 'ai':
             store = Store(args.data)
