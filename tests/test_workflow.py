@@ -134,6 +134,7 @@ class WorkflowTests(unittest.TestCase):
             self.store.action(dict(action='control',value='stopped'))
             self.assertFalse(kwargs['should_continue']())
             return dict(jobs=[],sources=[dict(source_id='boss',status='cancelled')],queries=['AI'])
+        self.store.action(dict(action='directions_set',directions=['backend'],terms=['后端开发']))  # run() has no default terms
         with patch('hunt.discovery.discover', side_effect=scan):
             result = self.store.run()
         self.assertEqual(result['status'],'stopped')

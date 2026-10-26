@@ -12,7 +12,8 @@ from datetime import datetime, timezone, timedelta
 from pathlib import Path
 from urllib.parse import urlsplit, urlunsplit
 
-from . import llm, network
+from . import llm, network, orient
+from .profile import build_profile
 
 
 def now():
@@ -53,6 +54,8 @@ def synthetic_profile(candidate):
 
 
 class Store:
+    llm_transport = None  # tests inject a fake; None means network.fetch
+
     def __init__(self, root, channel=None, executor=None):
         self.root = Path(root).resolve()
         self.root.mkdir(parents=True, exist_ok=True, mode=0o700)
@@ -73,7 +76,7 @@ class Store:
             CREATE TABLE IF NOT EXISTS runs(id TEXT PRIMARY KEY,data TEXT NOT NULL);
             CREATE TABLE IF NOT EXISTS interventions(id TEXT PRIMARY KEY, data TEXT NOT NULL);''')
             from .materials import synthetic_candidate
-            for key, value in [('candidate', synthetic_candidate()), ('config', DEFAULT_CONFIG), ('control', 'running'), ('candidate_draft', None), ('encountered_companies', []), ('ai_consent', None)]:
+            for key, value in [('candidate', synthetic_candidate()), ('config', DEFAULT_CONFIG), ('control', 'running'), ('candidate_draft', None), ('encountered_companies', []), ('ai_consent', None), ('orientation', None)]:
                 c.execute('INSERT OR IGNORE INTO meta VALUES(?,?)', (key, dumps(value)))
             saved_config = self.meta(c, 'config')
             self.setmeta(c, 'config', dict(DEFAULT_CONFIG, **saved_config))
@@ -388,16 +391,91 @@ class Store:
                     job.update(status='new', package=None, approval=None, match=None, recommendation=None, next_action='候选资料已更新，运行搜索或重新准备以更新匹配')
                     self.save(c, job)
 
+    def orientation(self):
+        with self.tx() as c:
+            return self.meta(c, 'orientation')
+
+    def _orient_inputs(self):
+        with self.tx() as c:
+            candidate, consent, current = self.meta(c, 'candidate'), self.meta(c, 'ai_consent'), self.meta(c, 'orientation')
+        settings = llm.load_settings(self.root)
+        key = llm.load_key(self.root, llm.host(settings))  # None for a key entered for another host
+        meter = llm.Meter(settings['budget_cny'], settings['price_in'], settings['price_out'])
+        return dict(candidate=candidate, consent=consent, current=current, settings=settings, key=key, meter=meter,
+                    facts=orient.confirmed_facts(candidate), names=orient.candidate_names(candidate),
+                    transport=self.llm_transport or network.fetch)
+
+    def _orient_save(self, change, spent):
+        with self.tx() as c:
+            o = self.meta(c, 'orientation') or dict(questions=[], answers={}, directions=[], conditions=orient.clean_conditions({}),
+                                                    terms=[], by='rules', notes=[], spent_cny=0.0)
+            o.update(change, spent_cny=round(float(o.get('spent_cny', 0)) + spent, 6), updated_at=now())
+            self.setmeta(c, 'orientation', o)
+            return o
+
+    def orient_questions(self):
+        a = self._orient_inputs()
+        profile = build_profile(a['candidate'], confirmed_only=True)
+        result = orient.questions(profile, a['facts'], a['names'], a['settings'], a['key'], a['consent'], a['meter'], a['transport'])
+        change = dict(questions=result['questions'], answers={}, notes=result['notes'], questions_by=result['by'])
+        if not (a['current'] or {}).get('directions'): change['by'] = result['by']
+        return self._orient_save(change, a['meter'].spent)
+
+    def orient_answer(self, payload):
+        a = self._orient_inputs()
+        asked = {q['id']: q for q in (a['current'] or {}).get('questions') or []}
+        if not asked: raise Error('请先获取追问')
+        answers = payload.get('answers')
+        if not isinstance(answers, dict): raise Error('回答须是对象')
+        for ident, value in answers.items():
+            q = asked.get(ident)
+            if not q: raise Error('回答里有不在追问中的问题')
+            values = [value] if isinstance(value, str) else value
+            if not (isinstance(values, list) and len(values) <= 20 and all(isinstance(v, str) and len(v) <= orient.ANSWER_CHARS for v in values)):
+                raise Error('回答须是不超过 %d 字的文字（选择题可多选）' % orient.ANSWER_CHARS)
+            if q['kind'] == 'choice' and not set(values) <= set(q['options']): raise Error('选择题的回答须在给出的选项里')
+            if q['kind'] == 'text' and not isinstance(value, str): raise Error('文字题须用文字回答')
+        profile = build_profile(a['candidate'], confirmed_only=True)
+        found = orient.propose(profile, answers, a['facts'], a['names'], list(asked.values()), a['settings'], a['key'], a['consent'],
+                               a['meter'], a['transport'])
+        return self._orient_save(dict(answers=answers, directions=found['directions'], conditions=found['conditions'], terms=found['terms'],
+                                      by=found['by'], notes=found['notes']), a['meter'].spent)
+
+    def directions_set(self, payload):
+        source = payload.get('source', 'user')
+        if source not in ('user', 'agent'): raise Error('来源须是 user 或 agent')
+        try:
+            rows = orient.clean_directions(payload)
+            terms = orient.clean_terms(payload['terms']) if 'terms' in payload else orient.terms_for([r['id'] for r in rows])
+            conditions = orient.clean_conditions(payload['conditions']) if 'conditions' in payload else None
+        except ValueError as e: raise Error(str(e)) from None
+        for row in rows: row['source'] = source
+        change = dict(directions=rows, terms=terms, by=source, notes=[])
+        if conditions is not None: change['conditions'] = conditions
+        return self._orient_save(change, 0.0)
+
     def start_run(self, demo=False):
         with self.start_lock:
             if self.run_lock.locked() or self.search_thread and self.search_thread.is_alive():
                 raise Error('本轮已在运行')
             if not self.is_running():
                 raise Error('活动已暂停或停止，先恢复再运行')
+            if not demo: self.search_config()
             self.search_thread = threading.Thread(target=self.run, kwargs={'demo': demo}, daemon=True)
             self.search_thread.start()
 
+    def search_config(self):
+        """Config for a real search: explicit keywords win, else the orientation's terms; neither is an error (no built-in default terms)."""
+        with self.tx() as c:
+            cfg, orientation = self.meta(c, 'config'), self.meta(c, 'orientation')
+        if self.channel is not None or cfg.get('keywords') or cfg.get('search_terms') or cfg.get('keyword'):
+            return cfg
+        terms = (orientation or {}).get('terms')
+        if not terms: raise Error('请先确定方向或填写关键词')
+        return dict(cfg, keywords=list(terms))
+
     def run(self, demo=False):
+        if not demo: self.search_config()
         if not self.run_lock.acquire(False):
             raise Error('本轮已在运行')
         run = dict(id=uuid.uuid4().hex, started_at=now(), kind='fixture' if demo else 'real_discovery', discovered=0,
@@ -422,6 +500,7 @@ class Store:
                 else:
                     from .discovery import discover
                     from .profile import build_profile
+                    cfg = self.search_config()
                     def source_progress(report):
                         run.setdefault('sources', []).append(copy.deepcopy(report))
                         with self.tx() as connection:
@@ -734,6 +813,9 @@ class Store:
         elif action=='ai_consent': self.grant_ai_consent(payload)
         elif action=='ai_revoke': self.revoke_ai_consent()
         elif action=='resume_confirm': self.confirm_resume(payload)
+        elif action=='orient_questions': self.orient_questions()
+        elif action=='orient_answer': self.orient_answer(payload)
+        elif action=='directions_set': self.directions_set(payload)
         elif action=='entry_verify': self.start_entry_verification(payload['job_id'])
         elif action in ('entry_finish', 'entry_cancel'):
             with self.entry_lock:
