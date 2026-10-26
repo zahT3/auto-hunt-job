@@ -39,7 +39,7 @@ class TableTests(unittest.TestCase):
                 self.assertEqual(owner.setdefault(key, r['id']), r['id'], (phrase, owner[key], r['id']))
 
     def test_new_families_exist(self):
-        self.assertTrue({'建筑工程与房地产', '酒店餐饮旅游', '咨询', '公共事业·农业·能源', '交通运输与生活服务'} <= {r['family'] for r in directions.load()})
+        self.assertTrue({'综合管理', '建筑工程与房地产', '酒店餐饮旅游', '咨询', '公共事业·农业·能源', '交通运输与生活服务'} <= {r['family'] for r in directions.load()})
 
     def test_header_says_curated(self):
         import json
@@ -169,7 +169,14 @@ class RuleMatchTests(unittest.TestCase):
             '财务分析': 'management-accountant', '门店店长': 'store-operations-management', 'Account Manager': 'customer-success',
             '内容运营经理': 'content-operations', '用户运营专员': 'user-operations', 'Customer Support Specialist': 'customer-service',
             '工程项目经理': 'construction-project-management', 'IT项目经理': 'it-project-manager', '农业银行客户经理': 'bank-credit-account',
-            '宠物医生': 'agriculture-technician', 'Software Project Manager': 'it-project-manager', 'Research Scientist, LLM': 'llm-algorithm',
+            # 宠物医生 is a veterinary job: agriculture-technician names it as an example title, so it wins on score, not row order.
+            '宠物医生': 'agriculture-technician', '兽医': 'agriculture-technician',
+            '酒店经理': 'hotel-management', '前厅接待': 'hotel-management', 'Hotel Front Desk': 'hotel-management',
+            'Hotel Front Desk Manager': 'hotel-management', '酒店前台': 'hotel-management', '酒店大堂经理': 'hotel-management',
+            '酒店总经理': 'hotel-management', 'Hotel General Manager': 'hotel-management', '前台': 'admin-specialist', 'Front Desk Coordinator': 'admin-specialist',
+            '银行大堂经理': 'bank-credit-account', '总经理': 'general-management', 'General Manager': 'general-management', 'CEO': 'general-management',
+            '总经理助理': 'executive-assistant', 'Executive Assistant to CEO': 'executive-assistant', '程序员': 'software-engineer', 'Programmer': 'software-engineer',
+            'SAS Programmer': 'clinical-data', 'Software Project Manager': 'it-project-manager', 'Research Scientist, LLM': 'llm-algorithm',
             '质量工程师': 'quality-engineer', '课程顾问': 'course-consultant', '会计': 'accountant', 'Product Designer': 'ui-ux-designer',
         }
         wrong = {}
