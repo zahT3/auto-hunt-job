@@ -166,5 +166,110 @@ class CLITests(unittest.TestCase):
         self.assertIn('minimax', [row['id'] for row in result['companies']])
 
 
+class AgentModeTests(unittest.TestCase):
+    """Commands an external agent (Claude Code, Codex) uses to orient and classify; every one prints JSON."""
+    def setUp(self):
+        temp = tempfile.TemporaryDirectory()
+        self.addCleanup(temp.cleanup)
+        self.root = Path(temp.name)
+        self.data = self.root / 'data'
+        store = Store(self.data)
+        source = dict(kind='resume', reference='test://cv')
+        facts = [dict(id='f-name', text='姓名：林测试', source=source, status='confirmed', version=1, disclosure='private'),
+                 dict(id='f-phone', text='电话 138 1234 5678，邮箱 lin.test@example.com', source=source, status='confirmed', version=1, disclosure='private'),
+                 dict(id='f-work', text='3 年 Python 后端开发，熟练使用 SQL。', source=source, status='confirmed', version=1, disclosure='private'),
+                 dict(id='f-draft', text='未确认：精通 Go', source=source, status='unconfirmed', version=1, disclosure='private')]
+        store.action(dict(action='candidate', candidate=dict(name='林测试', facts=facts)))
+        for n, (title, jd) in enumerate([('后端开发工程师', '任职要求：\n3年以上 Python 经验，熟悉 SQL 与 Docker。'),
+                                         ('软件工程师', '写页面为主。' + '长' * 5000), ('厨师', '负责后厨。')]):
+            store.import_job(dict(title=title, jd=jd, company='公司%d' % n, channel='local', platform_id='p%d' % n))
+        self.ids = {j['title']: j['id'] for j in store.state()['jobs']}
+
+    def run_cli(self, *arguments):
+        out = io.StringIO()
+        with contextlib.redirect_stdout(out), contextlib.redirect_stderr(io.StringIO()):
+            code = main(list(arguments) + ['--data', str(self.data)])
+        return code, json.loads(out.getvalue())
+
+    def write(self, name, value):
+        path = self.root / name
+        path.write_text(json.dumps(value, ensure_ascii=False), encoding='utf-8')
+        return str(path)
+
+    def choose(self, *ids):
+        return self.run_cli('directions', 'set', self.write('dirs.json', dict(directions=list(ids))))
+
+    def test_profile_has_redacted_confirmed_facts_and_no_contact_details(self):
+        code, result = self.run_cli('profile', '--json')
+        self.assertEqual(code, 0)
+        text = json.dumps(result, ensure_ascii=False)
+        for secret in ('138 1234 5678', '13812345678', 'lin.test@example.com', '林测试'):
+            self.assertNotIn(secret, text)
+        self.assertEqual([f['id'] for f in result['facts']], ['f-name', 'f-phone', 'f-work'])
+        self.assertIn('Python', text)
+        self.assertNotIn('精通 Go', text)
+        self.assertNotIn('fields', result['profile'])
+
+    def test_directions_list_and_set_by_agent(self):
+        code, listed = self.run_cli('directions', 'list')
+        self.assertEqual(code, 0)
+        row = next(r for r in listed['directions'] if r['id'] == 'backend')
+        self.assertEqual((row['name'], row['family']), ('后端开发', '技术研发'))
+        code, result = self.choose('backend', 'frontend')
+        self.assertEqual(code, 0)
+        self.assertEqual([d['id'] for d in result['directions']], ['backend', 'frontend'])
+        self.assertEqual(result['by'], 'agent')
+        code, result = self.run_cli('directions', 'set', self.write('bad.json', dict(directions=['no-such'])))
+        self.assertEqual(code, 1)
+        self.assertIn('no-such', result['error'])
+
+    def test_jobs_export_lists_unclassified_with_clipped_text(self):
+        self.choose('backend', 'frontend')
+        code, result = self.run_cli('jobs', 'export', '--unclassified')
+        self.assertEqual(code, 0)
+        self.assertEqual([d['id'] for d in result['directions']], ['backend', 'frontend'])
+        rows = {r['title']: r for r in result['jobs']}
+        self.assertEqual(set(rows), {'后端开发工程师', '软件工程师', '厨师'})  # nothing classified yet
+        self.assertEqual(set(rows['软件工程师']), {'id', 'title', 'company', 'jd', 'direction'})
+        self.assertEqual(len(rows['软件工程师']['jd']), 4000)
+        Store(self.data).action(dict(action='classify'))
+        code, result = self.run_cli('jobs', 'export', '--unclassified')
+        self.assertEqual([r['title'] for r in result['jobs']], ['软件工程师'])  # rules were unclear only here
+        code, result = self.run_cli('jobs', 'export', '--limit', '1')
+        self.assertEqual(len(result['jobs']), 1)
+
+    def test_classify_import_writes_agent_choices_all_or_nothing(self):
+        self.choose('backend', 'frontend')
+        good = [dict(job_id=self.ids['软件工程师'], direction_id='frontend', reason='写页面'), dict(job_id=self.ids['厨师'], direction_id=None)]
+        code, result = self.run_cli('classify', 'import', self.write('ok.json', good))
+        self.assertEqual((code, result['imported']), (0, 2))
+        jobs = {j['title']: j.get('direction') for j in Store(self.data).state()['jobs']}
+        self.assertEqual((jobs['软件工程师']['id'], jobs['软件工程师']['by'], jobs['软件工程师']['reason']), ('frontend', 'agent', '写页面'))
+        self.assertEqual((jobs['厨师']['id'], jobs['厨师']['by']), (None, 'agent'))
+        for bad in ([dict(job_id=self.ids['后端开发工程师'], direction_id='backend'), dict(job_id=self.ids['厨师'], direction_id='sales')],
+                    [dict(job_id='nope', direction_id='backend')], [dict(job_id=self.ids['厨师'])], {'not': 'a list'},
+                    [dict(job_id=self.ids['厨师'], direction_id='backend', reason='x' * 201)]):
+            code, result = self.run_cli('classify', 'import', self.write('bad.json', bad))
+            self.assertEqual(code, 1)
+            self.assertTrue(result['error'])
+        self.assertNotIn('direction', next(j for j in Store(self.data).state()['jobs'] if j['title'] == '后端开发工程师'))
+
+    def test_summary_per_direction_and_for_one(self):
+        self.choose('backend', 'frontend')
+        Store(self.data).action(dict(action='classify'))
+        code, result = self.run_cli('summary')
+        self.assertEqual(code, 0)
+        self.assertEqual([s['id'] for s in result['directions']], ['backend', 'frontend'])
+        backend = result['directions'][0]
+        self.assertEqual((backend['name'], backend['count']), ('后端开发', 1))
+        self.assertIn('Docker', backend['missing'])
+        self.assertEqual(backend['matched_facts'], ['f-work'])
+        self.assertEqual(result['other_count'], 2)
+        code, result = self.run_cli('summary', '--direction', 'frontend')
+        self.assertEqual([s['id'] for s in result['directions']], ['frontend'])
+        code, result = self.run_cli('summary', '--direction', 'sales')
+        self.assertEqual(code, 1)
+
+
 if __name__ == '__main__':
     unittest.main()

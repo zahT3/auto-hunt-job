@@ -36,6 +36,12 @@ def basis(job):
     return hashlib.sha256(text.encode('utf-8')).hexdigest()[:16]
 
 
+def stale(job, ids):
+    """True when rules or the model must (re)classify: no result yet, or directions or job text changed. Hand-made choices never go stale."""
+    d = job.get('direction') or {}
+    return d.get('by') not in ('user', 'agent') and (d.get('dirs') != ids or d.get('basis') != basis(job))
+
+
 def _family(ident):
     try:
         return directions.get(ident)['family']
@@ -98,7 +104,8 @@ def classify_jobs(jobs, dirs, settings, key, consent, meter, batch=20, transport
     unclear = []
     for job in jobs:
         job['direction'], doubt = _rules(job, allowed, families, names)
-        job['direction'].update(dirs=allowed, basis=basis(job))
+        # unclear stays True when no model decided; an external agent picks those up (jobs export --unclassified).
+        job['direction'].update(dirs=allowed, basis=basis(job), unclear=doubt)
         if doubt:
             unclear.append(job)
     errors, by_ai, capped = [], 0, 0
@@ -120,7 +127,7 @@ def classify_jobs(jobs, dirs, settings, key, consent, meter, batch=20, transport
                 continue
             for job in part:
                 ident = answer[job['id']]
-                job['direction'].update(id=ident, by='ai', reason='模型判断' + ('属于「%s」' % names[ident] if ident else '不属于所选方向'))
+                job['direction'].update(id=ident, by='ai', unclear=False, reason='模型判断' + ('属于「%s」' % names[ident] if ident else '不属于所选方向'))
                 by_ai += 1
         note = '已用 AI 归类 %d 个规则不明确的岗位，约花费 %.4f 元' % (by_ai, meter.spent)
         if capped:

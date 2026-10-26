@@ -463,11 +463,7 @@ class Store:
         if not dirs:
             return dict(directions=[], other_count=0, classify_spent_cny=0.0, classify_errors=[], classify_note='尚未确定方向，岗位未归类')
         ids = [d['id'] for d in dirs]
-
-        def stale(j):
-            d = j.get('direction') or {}
-            return d.get('by') not in ('user', 'agent') and (d.get('dirs') != ids or d.get('basis') != classify.basis(j))
-        todo = [j for j in jobs if stale(j)]
+        todo = [j for j in jobs if classify.stale(j, ids)]
         settings = llm.load_settings(self.root)
         meter = llm.Meter(settings['budget_cny'], settings['price_in'], settings['price_out'])
         out = classify.classify_jobs(todo, dirs, settings, llm.load_key(self.root, llm.host(settings)), consent, meter,
@@ -489,15 +485,27 @@ class Store:
         if 'job_id' not in payload:
             if self.run_lock.locked(): raise Error('本轮搜索正在运行，结束时会自动归类')
             return self.classify_run()
-        source, ident = payload.get('source', 'user'), payload.get('direction_id')
+        row = dict(job_id=payload['job_id'], direction_id=payload.get('direction_id'), reason=payload.get('reason'))
+        self.classify_many([row], payload.get('source', 'user'))
+
+    def classify_many(self, rows, source):
+        """Hand-made classifications [{job_id, direction_id|null, reason?}], all or nothing; returns how many were written."""
         if source not in ('user', 'agent'): raise Error('来源须是 user 或 agent')
-        with self.tx() as c:
+        if not isinstance(rows, list) or not 1 <= len(rows) <= 5000: raise Error('归类结果须是 1–5000 条的数组')
+        with self.tx() as c:  # any error below rolls back the rows already written
             ids = [d['id'] for d in (self.meta(c, 'orientation') or {}).get('directions') or []]
-            if ident is not None and ident not in ids: raise Error('方向须是当前所选方向之一，或 null 表示不属于所选方向')
-            j = self.job(c, str(payload['job_id']))
-            j['direction'] = dict(id=ident, by=source, score=1.0, reason='用户指定' if source == 'user' else '外部 agent 指定',
-                                  dirs=ids, basis=classify.basis(j))
-            self.save(c, j)
+            for n, row in enumerate(rows, 1):
+                if not isinstance(row, dict) or 'job_id' not in row or 'direction_id' not in row:
+                    raise Error('第 %d 条须有 job_id 与 direction_id（不属于所选方向时写 null）' % n)
+                ident, reason = row['direction_id'], row.get('reason')
+                if ident is not None and ident not in ids: raise Error('第 %d 条：方向须是当前所选方向之一，或 null 表示不属于所选方向' % n)
+                if reason is not None and not (isinstance(reason, str) and len(reason) <= 200): raise Error('第 %d 条：理由须是不超过 200 字的文字' % n)
+                try: j = self.job(c, str(row['job_id']))
+                except Error: raise Error('第 %d 条：岗位不存在：%s' % (n, str(row['job_id'])[:40])) from None
+                j['direction'] = dict(id=ident, by=source, score=1.0, reason=(reason or '').strip() or ('用户指定' if source == 'user' else '外部 agent 指定'),
+                                      dirs=ids, basis=classify.basis(j), unclear=False)
+                self.save(c, j)
+        return len(rows)
 
     def start_run(self, demo=False):
         with self.start_lock:

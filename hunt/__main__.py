@@ -53,7 +53,82 @@ def parser():
     for command in (status, resume, confirm, config):
         command.add_argument('--data', type=Path, default=DEFAULT_DATA, help='与网页相同的本地数据目录')
         command.add_argument('--json', action='store_true', help='输出结构化 JSON')
+    # Agent mode (docs/agent-mode.md): an external agent reads, decides and writes back; every command prints JSON.
+    agent = [commands.add_parser('profile', help='agent 模式：脱敏后的确认事实与画像（不含联系方式）')]
+    for name, help_text, children in (
+            ('directions', 'agent 模式：方向参考表与写入方向', (('list', '列出全行业方向参考表'), ('set', '从 JSON 文件写入方向（记为 agent）'))),
+            ('jobs', 'agent 模式：导出岗位', (('export', '导出岗位（id、标题、公司、正文前 4000 字）'),)),
+            ('classify', 'agent 模式：写回归类', (('import', '从 JSON 文件写回 [{job_id, direction_id|null, reason}]（记为 agent）'),))):
+        group = commands.add_parser(name, help=help_text).add_subparsers(dest='sub', required=True)
+        for child, child_help in children:
+            agent.append(group.add_parser(child, help=child_help))
+            if child in ('set', 'import'): agent[-1].add_argument('file', type=Path, metavar='FILE')
+            if child == 'export':
+                agent[-1].add_argument('--unclassified', action='store_true', help='只导出规则不明确或尚未归类的岗位')
+                agent[-1].add_argument('--limit', type=int, default=100, help='最多导出条数，1–1000，默认 100')
+    agent.append(commands.add_parser('summary', help='agent 模式：各方向概况'))
+    agent[-1].add_argument('--direction', metavar='ID', help='只看这个方向')
+    for command in agent:
+        command.add_argument('--data', type=Path, default=DEFAULT_DATA, help='与网页相同的本地数据目录')
+        command.add_argument('--json', action='store_true', help='保留参数；本组命令总是输出 JSON')
+        command.set_defaults(json=True)
     return result
+
+
+def read_json(path):
+    try:
+        return json.loads(path.read_text(encoding='utf-8'))
+    except ValueError:
+        raise Error('文件不是有效的 JSON：' + path.name) from None
+
+
+def agent_profile(store):
+    """Confirmed facts and the local profile with contact details and the name redacted; unconfirmed facts never leave."""
+    from . import directions, orient, redact
+    from .profile import build_profile
+    candidate = store.state()['candidate']
+    names = orient.candidate_names(candidate)
+    profile = build_profile(candidate, confirmed_only=True)
+    shown = dict(skills=[dict(name=s['name'], fact_ids=s['fact_ids']) for s in profile['skills']],
+                 experience=[dict(text=redact.redact(r['text'], names), fact_ids=r['fact_ids']) for r in profile['experience']],
+                 education=[dict(text=redact.redact(r['text'], names), fact_ids=r['fact_ids']) for r in profile['education']],
+                 years_experience=profile['years_experience'], unknowns=profile['unknowns'],
+                 suggested_directions=directions.suggest_from_profile(profile))
+    return dict(schema_version=1, facts=redact.redact_facts(orient.confirmed_facts(candidate), names), profile=shown,
+                directions=(store.orientation() or {}).get('directions') or [], notice='已去掉姓名与联系方式；只含已确认事实')
+
+
+def chosen(store):
+    return (store.orientation() or {}).get('directions') or []
+
+
+def agent_command(store, args):
+    from . import classify, directions, orient
+    if args.command == 'profile':
+        return agent_profile(store)
+    if args.command == 'directions' and args.sub == 'set':
+        payload = read_json(args.file)
+        payload = dict(directions=payload) if isinstance(payload, list) else payload
+        if not isinstance(payload, dict): raise Error('方向文件须是对象或数组')
+        return dict(schema_version=1, **store.directions_set(dict(payload, source='agent')))
+    if args.command == 'jobs':
+        if not 1 <= args.limit <= 1000: raise Error('--limit 必须是 1 至 1000')
+        ids = [d['id'] for d in chosen(store)]
+        jobs = [j for j in store.state()['jobs']
+                if not args.unclassified or classify.stale(j, ids) or (j.get('direction') or {}).get('unclear')]
+        return dict(schema_version=1, directions=[dict(id=d['id'], name=d['name']) for d in chosen(store)],
+                    jobs=[dict(id=j['id'], title=j['title'], company=j.get('company'), jd=str(j.get('jd') or '')[:4000],
+                               direction=j.get('direction')) for j in jobs[:args.limit]])
+    if args.command == 'classify':
+        return dict(schema_version=1, imported=store.classify_many(read_json(args.file), 'agent'))
+    dirs = chosen(store)
+    if args.direction is not None and args.direction not in [d['id'] for d in dirs]: raise Error('--direction 须是当前所选方向之一')
+    state = store.state()
+    facts = orient.confirmed_facts(state['candidate'])
+    _, other = classify.report(dirs, state['jobs'])
+    return dict(schema_version=1, other_count=other,
+                directions=[dict(id=d['id'], name=d['name'], **classify.summarize(d['id'], state['jobs'], facts))
+                            for d in dirs if args.direction in (None, d['id'])])
 
 
 def summary(store):
@@ -158,7 +233,15 @@ def main(argv=None):
                 ai['status'] = '已配置，可向所同意的内容发送' if ai['active'] else '未使用 AI（需要 key 与当前服务、模型下的同意）'
                 print(json.dumps(dict(schema_version=1, data_dir=str(store.root), **ai), ensure_ascii=False, indent=2))
             return 0
+        if args.command == 'directions' and args.sub == 'list':
+            from . import directions
+            rows = [dict(id=r['id'], name=r['name'], family=r['family'], titles=r['titles']) for r in directions.load()]
+            print(json.dumps(dict(schema_version=1, directions=rows), ensure_ascii=False, indent=2))
+            return 0
         store = Store(args.data)
+        if args.command in ('profile', 'directions', 'jobs', 'classify', 'summary'):
+            print(json.dumps(agent_command(store, args), ensure_ascii=False, indent=2))
+            return 0
         # Only the existing runner owns recovery and its OS lock. These local
         # commands must never reinterpret an active process as a crashed send.
         if args.command == 'status':
