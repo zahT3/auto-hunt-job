@@ -31,7 +31,7 @@ class Error(Exception):
 
 DEFAULT_CONFIG = dict(keyword='', keywords=[], cities=[], salary_min=None, max_jobs=20,
                       interval_minutes=60, submission_limit=0, targets_confirmed=False,
-                      sources=['boss', 'liepin', 'anker', 'greenhouse', 'lever', 'ashby'],
+                      sources=['anker', 'greenhouse', 'lever', 'ashby'],
                       company_boards=[dict(type='greenhouse', slug='anthropic', company='Anthropic'),
                                       dict(type='lever', slug='binance', company='Binance'),
                                       dict(type='ashby', slug='cursor', company='Cursor')], max_pages=2,

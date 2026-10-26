@@ -20,11 +20,12 @@ DEFAULT_BOARDS = [
     dict(type='lever', slug='binance', company='Binance'),
     dict(type='ashby', slug='cursor', company='Cursor'),
 ]
-DEFAULT_KINDS = ['boss', 'liepin', 'anker', 'greenhouse', 'lever', 'ashby']
+LOGIN_GATED = ('boss', 'liepin')
+DEFAULT_KINDS = ['anker', 'greenhouse', 'lever', 'ashby']
 
 
 def default_sources():
-    return [dict(id=k, kind=k, enabled=True, mode='public') for k in ('boss', 'liepin', 'anker')] + [
+    return [dict(id=k, kind=k, enabled=k not in LOGIN_GATED, mode='public') for k in (*LOGIN_GATED, 'anker')] + [
         dict(id=b['type'] + ':' + b['slug'], kind=b['type'], board=b['slug'], company=b['company'], enabled=True)
         for b in DEFAULT_BOARDS]
 
@@ -477,7 +478,7 @@ def main():
     parser.add_argument('--requests', type=int, default=30)
     parser.add_argument('--output', type=Path)
     args = parser.parse_args()
-    config = dict(sources=args.source or DEFAULT_KINDS, keywords=args.keyword or ['AI','Agent','Web3'],
+    config = dict(sources=list(dict.fromkeys((args.source or DEFAULT_KINDS) + args.browser_source)), keywords=args.keyword or ['AI','Agent','Web3'],
                   source_modes={kind:'browser' for kind in args.browser_source}, max_jobs=args.max_jobs,
                   max_pages=args.max_pages, discovery_requests=args.requests)
     config.update(official_only=args.official_only, browser_channel='chrome' if args.browser == 'chrome' else None)

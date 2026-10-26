@@ -7,6 +7,7 @@
 | pypdf | 本地 PDF 文字提取 | https://github.com/py-pdf/pypdf |
 | ReportLab | 本地简历 PDF 输出 | https://www.reportlab.com/ |
 | Playwright（可选） | 独立浏览器和本地夹具测试 | https://github.com/microsoft/playwright-python |
+| cryptography（可选） | 解密 `app.mokahr.com` 响应信封（`requirements-sources.txt`） | https://github.com/pyca/cryptography |
 
 PDF 字体使用用户本机已安装的字体或 `HUNT_PDF_FONT` 指定文件。发布包不包含 macOS 字体。
 
@@ -30,10 +31,34 @@ PDF 字体使用用户本机已安装的字体或 `HUNT_PDF_FONT` 指定文件�
 
 ## 移植代码
 
-- `hunt/providers/tencent.py` 移植自 [career-ops](https://github.com/career-ops-hq/career-ops)（commit `f4d7477c8d25f81e6e4a952b724378913ea8c86e`，MIT License）的 `providers/tencent.mjs`：请求参数、翻页规则和字段映射；改写为 Python 并接入本项目的来源注册表。
-- `hunt/providers/alibaba.py` 移植自 [career-ops](https://github.com/career-ops-hq/career-ops)（commit `f4d7477c8d25f81e6e4a952b724378913ea8c86e`，MIT License）的 `providers/alibaba.mjs`：请求体、XSRF 双提交令牌、翻页规则和字段映射；改写为 Python 并接入本项目的来源注册表。
-- `hunt/providers/meituan.py` 移植自 [career-ops](https://github.com/career-ops-hq/career-ops)（commit `f4d7477c8d25f81e6e4a952b724378913ea8c86e`，MIT License）的 `providers/meituan.mjs`：请求体（嵌套分页）、空页重试规则和字段映射；改写为 Python 并接入本项目的来源注册表。
-- `hunt/providers/feishu.py` 移植自 [career-ops](https://github.com/career-ops-hq/career-ops)（commit `f4d7477c8d25f81e6e4a952b724378913ea8c86e`，MIT License）的 `providers/feishu-jobs.mjs`：主机校验、macOS Chrome User-Agent 与同源 Referer、请求体、详情链接规则和字段映射（不含并发分页）；改写为 Python 并接入本项目的来源注册表。
-- `hunt/providers/mokahr.py` 移植自 [career-ops](https://github.com/career-ops-hq/career-ops)（commit `f4d7477c8d25f81e6e4a952b724378913ea8c86e`，MIT License）的 `providers/mokahr.mjs`：主机与租户路径校验、robots 排除路径、AES-128-CBC 响应信封解密（密钥随响应下发，IV 固定）、请求体、翻页规则和字段映射；改写为 Python 并接入本项目的来源注册表。解密依赖可选包 `cryptography`（`requirements-sources.txt`）。
-- `static/bookmarklets/{boss-zhipin,liepin,lagou,mokahr,universal}.js` 移植自 [career-ops-china](https://github.com/shuheng-mo/career-ops-china)（commit `bef1e7122d2d84a0bf7137a9d5ffb88808d05c5c`，MIT License）的 `tools/bookmarklets/` 同名脚本：页面字段选择器、BOSS 公司名纠偏、Mokahr 信息块解析和登录墙检测；改为发到本项目带令牌的本地收件箱，用 3 秒页面提示代替 `alert`，并在发送前截短正文。
-- `hunt/data/companies.cn.json` 的种子公司清单由 [career-ops-china](https://github.com/shuheng-mo/career-ops-china)（commit `bef1e7122d2d84a0bf7137a9d5ffb88808d05c5c`，MIT License）的 `templates/portals-china.example.yml` 中的公司名称与招聘页链接整理而来，由 `scripts/build_company_seeds.py` 生成，并加入本项目自选的公司。
+下列文件移植或派生自两个 MIT 许可的开源项目。每个文件头写明来源仓库、commit 与 MIT；改写为 Python 或改为发往本项目的本地收件箱，未复制其运行时或依赖。
+
+### career-ops
+
+- 仓库：<https://github.com/career-ops-hq/career-ops>
+- commit：`f4d7477c8d25f81e6e4a952b724378913ea8c86e`
+- 许可：MIT。版权行：Copyright (c) 2026 Santiago Fernández de Valderrama（取自该仓库 GitHub 许可证接口）。
+
+| 本项目文件 | 来自上游 | 移植内容 |
+| --- | --- | --- |
+| `hunt/providers/tencent.py` | `providers/tencent.mjs` | 请求参数、翻页规则、字段映射 |
+| `hunt/providers/alibaba.py` | `providers/alibaba.mjs` | 请求体、XSRF 双提交令牌、翻页规则、字段映射 |
+| `hunt/providers/meituan.py` | `providers/meituan.mjs` | 请求体（嵌套分页）、空页重试规则、字段映射 |
+| `hunt/providers/feishu.py` | `providers/feishu-jobs.mjs` | 主机校验、macOS Chrome User-Agent 与同源 Referer、请求体、详情链接规则、字段映射；不含并发分页 |
+| `hunt/providers/mokahr.py` | `providers/mokahr.mjs` | 主机与租户路径校验、robots 排除路径、AES-128-CBC 响应信封解密（密钥随响应下发，IV 固定）、请求体、翻页规则、字段映射 |
+
+以上均改写为 Python 并接入本项目的来源注册表。`mokahr.py` 的解密依赖可选包 `cryptography`（`requirements-sources.txt`），未安装时 `app.mokahr.com` 租户报告 `not_configured`。
+
+### career-ops-china
+
+- 仓库：<https://github.com/shuheng-mo/career-ops-china>（career-ops 的中国大陆定制分支）
+- commit：`bef1e7122d2d84a0bf7137a9d5ffb88808d05c5c`
+- 许可：MIT。版权行：Copyright (c) 2026 Santiago Fernández de Valderrama (original career-ops)；Copyright (c) 2026 Mo Shuheng (China mainland customization)（取自该仓库 GitHub 许可证接口）。
+
+| 本项目文件 | 来自上游 | 移植内容 |
+| --- | --- | --- |
+| `static/bookmarklets/boss-zhipin.js`、`liepin.js`、`lagou.js`、`mokahr.js`、`universal.js` | `tools/bookmarklets/` 同名脚本 | 页面字段选择器、BOSS 公司名纠偏、Mokahr 信息块解析、登录墙检测 |
+| `static/bookmarklets/_deliver.js` | `tools/bookmarklets/*.js` 的发送部分 | 请求与载荷形状（改写） |
+| `hunt/data/companies.cn.json`（由 `scripts/build_company_seeds.py` 生成） | `templates/portals-china.example.yml` | 其中 31 家公司的名称与招聘页链接 |
+
+书签脚本的本项目改动：改为发到带令牌的本地收件箱，用 3 秒页面提示代替 `alert`，发送前截短正文。`companies.cn.json` 共 53 家：上游 31 家、本项目内置公司目录 `hunt/catalog.py` 9 家、本项目自选 13 家（文件内每条记录的 `source` 字段标明）。

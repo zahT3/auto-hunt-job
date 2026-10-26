@@ -2,7 +2,8 @@ import json
 import unittest
 from unittest.mock import patch
 from types import SimpleNamespace
-from hunt.discovery import discover, search_terms, matches, expanded_terms
+from hunt.core import DEFAULT_CONFIG
+from hunt.discovery import discover, search_terms, matches, expanded_terms, default_sources, source_configs, DEFAULT_KINDS
 from hunt.sources import SourceError, Document, jd_text, gate, jsonld_jobs, platform_detail, platform_links
 
 
@@ -21,6 +22,19 @@ class DiscoveryTests(unittest.TestCase):
         self.assertEqual([j['platform_id'] for j in result['jobs']], ['100000000000002'])
         self.assertEqual(result['sources'][0]['status'], 'parse_error')
         self.assertEqual(result['sources'][0]['detail_errors'][0]['platform_id'], '100000000000001')
+
+    def test_login_gated_platforms_are_off_by_default(self):
+        gated = {'boss', 'liepin'}
+        self.assertEqual({s['id']: s['enabled'] for s in default_sources() if s['id'] in gated}, {'boss': False, 'liepin': False})
+        self.assertTrue(all(s['enabled'] for s in default_sources() if s['id'] not in gated))
+        self.assertFalse(gated & set(DEFAULT_KINDS))
+        self.assertFalse(gated & set(DEFAULT_CONFIG['sources']))
+        self.assertFalse(gated & {s['kind'] for s in source_configs({})})
+        self.assertFalse(gated & {s['kind'] for s in source_configs(dict(DEFAULT_CONFIG))})
+
+    def test_login_gated_platforms_still_selectable_explicitly(self):
+        self.assertEqual([s['kind'] for s in source_configs(dict(sources=['boss', 'liepin'], source_modes={'boss': 'browser'}))], ['boss', 'liepin'])
+        self.assertEqual([s['kind'] for s in source_configs(dict(discovery_sources=[dict(kind='boss')]))], ['boss'])
 
     def test_private_profile_never_becomes_search_query(self):
         calls = []
