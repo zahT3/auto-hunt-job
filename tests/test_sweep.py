@@ -324,6 +324,7 @@ class SweepRunTests(unittest.TestCase):
         status = {j['platform_id']: j['status'] for j in self.store.state()['jobs']}
         self.assertEqual([status['a-2'], status['a-3'], status['a-4']], ['review', 'review', 'new'])
         self.assertEqual(checked, ['a-2', 'a-3'])
+        self.assertEqual((result['entry_check']['mode'], result['entry_check']['checked']), ('after_discovery', 2))
 
     def test_run_marks_deadline_partial(self):
         now = [0.0]

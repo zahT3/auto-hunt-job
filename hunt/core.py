@@ -443,6 +443,7 @@ class Store:
                     run['sources'] = result.get('sources', [])
                     run['queries'] = result.get('queries', [])
                     run['expanded_terms'] = result.get('expanded_terms', {})
+                    if result.get('entry_check'): run['entry_check'] = result['entry_check']
                     if result.get('sweep'):
                         run.update(sweep=result['sweep'], deadline_reached=result.get('deadline_reached', False))
                     run['coverage_note'] = result.get('coverage_note', '仅覆盖本轮已配置来源与请求预算，不代表全网完整结果')
