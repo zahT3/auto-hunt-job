@@ -12,6 +12,8 @@ from datetime import datetime, timezone, timedelta
 from pathlib import Path
 from urllib.parse import urlsplit, urlunsplit
 
+from . import llm
+
 
 def now():
     return datetime.now(timezone.utc).isoformat(timespec='microseconds')
@@ -71,7 +73,7 @@ class Store:
             CREATE TABLE IF NOT EXISTS runs(id TEXT PRIMARY KEY,data TEXT NOT NULL);
             CREATE TABLE IF NOT EXISTS interventions(id TEXT PRIMARY KEY, data TEXT NOT NULL);''')
             from .materials import synthetic_candidate
-            for key, value in [('candidate', synthetic_candidate()), ('config', DEFAULT_CONFIG), ('control', 'running'), ('candidate_draft', None), ('encountered_companies', [])]:
+            for key, value in [('candidate', synthetic_candidate()), ('config', DEFAULT_CONFIG), ('control', 'running'), ('candidate_draft', None), ('encountered_companies', []), ('ai_consent', None)]:
                 c.execute('INSERT OR IGNORE INTO meta VALUES(?,?)', (key, dumps(value)))
             saved_config = self.meta(c, 'config')
             self.setmeta(c, 'config', dict(DEFAULT_CONFIG, **saved_config))
@@ -167,7 +169,7 @@ class Store:
                         candidate_draft=self.meta(c, 'candidate_draft'), candidate_profile=build_profile(candidate, confirmed_only=True),
                         search_running=self.run_lock.locked() or bool(self.search_thread and self.search_thread.is_alive()),
                         entry_verifications=entry_verifications,
-                        company_catalog=CATALOG, config=config, control=self.meta(c, 'control'), jobs=jobs, runs=runs,
+                        company_catalog=CATALOG, config=config, ai=self._ai(c), control=self.meta(c, 'control'), jobs=jobs, runs=runs,
                         tasks=tasks, interventions=[json.loads(r[0]) for r in c.execute('SELECT data FROM interventions ORDER BY rowid DESC')],
                         capabilities=[dict(channel='搜索', description='BOSS、猎聘与公司官网按已选来源检索；每轮结果显示实际覆盖与失败。'),
                                       dict(channel='候选人理解', description='本地规则提取与有来源的技能关联；不推断熟练度或录用概率。'),
@@ -678,10 +680,55 @@ class Store:
                         self.entry_signals.pop(job_id, None)
         threading.Thread(target=run, daemon=True).start()
 
+    def _ai(self, c):
+        settings, consent = llm.load_settings(self.root), self.meta(c, 'ai_consent')
+        hint = llm.key_hint(self.root)
+        current = any(llm.consent_ok(consent, settings, k) for k in llm.KINDS)
+        # Not the key: only its last four characters ever leave this module.
+        return dict(settings=settings, key_hint=hint, consent=consent, consent_current=current,
+                    active=bool(hint and current))
+
+    def ai_settings(self):
+        with self.tx() as c:
+            return self._ai(c)
+
+    def save_ai_settings(self, payload):
+        data = {k: payload[k] for k in llm.DEFAULTS if k in payload}
+        try:
+            settings = llm.clean_settings(dict(llm.load_settings(self.root), **data))
+            key = payload.get('api_key')
+            if key is not None and not isinstance(key, str): raise ValueError('密钥格式无效')
+            if key and key.strip(): llm.save_key(self.root, key)
+            llm.save_settings(self.root, settings)
+        except ValueError as e: raise Error(str(e)) from None
+        with self.tx() as c: self.intervene(c, '更新模型服务设置')
+        return self.ai_settings()
+
+    def grant_ai_consent(self, payload):
+        kinds = payload.get('kinds')
+        if not isinstance(kinds, list) or not kinds or any(k not in llm.KINDS for k in kinds):
+            raise Error('请选择要发送给模型服务的内容类别')
+        settings = llm.load_settings(self.root)
+        # The UI shows host and model when asking; a stale page must not grant consent for a different pair.
+        if payload.get('host', llm.host(settings)) != llm.host(settings) or payload.get('model', settings['model']) != settings['model']:
+            raise Error('模型服务或模型已变化，请刷新后重新确认')
+        consent = dict(host=llm.host(settings), model=settings['model'], kinds=[k for k in llm.KINDS if k in kinds], granted_at=now())
+        with self.tx() as c:
+            self.setmeta(c, 'ai_consent', consent); self.intervene(c, '同意向模型服务发送所选内容')
+        return self.ai_settings()
+
+    def revoke_ai_consent(self):
+        with self.tx() as c:
+            self.setmeta(c, 'ai_consent', None); self.intervene(c, '撤销模型服务同意')
+        return self.ai_settings()
+
     def action(self,payload):
         action=payload.get('action')
         if action=='run': self.start_run(demo=self.is_demo)
         elif action=='demo': self.start_run(demo=True)
+        elif action=='ai_settings': self.save_ai_settings(payload)
+        elif action=='ai_consent': self.grant_ai_consent(payload)
+        elif action=='ai_revoke': self.revoke_ai_consent()
         elif action=='resume_confirm': self.confirm_resume(payload)
         elif action=='entry_verify': self.start_entry_verification(payload['job_id'])
         elif action in ('entry_finish', 'entry_cancel'):

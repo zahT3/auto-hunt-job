@@ -1,6 +1,7 @@
 """One local CLI for the web workbench and its preparation workflow."""
 import argparse
 import base64
+import getpass
 import importlib
 import json
 import os
@@ -8,6 +9,7 @@ from pathlib import Path
 import sqlite3
 import sys
 
+from . import llm
 from .catalog import CATALOG, boards
 from .core import Error, Store, synthetic_profile
 
@@ -43,6 +45,11 @@ def parser():
     config.add_argument('--catalog', action='append', choices=['all'] + [r['id'] for r in CATALOG], help='公司 ID，可重复；提供时替换公司范围')
     config.add_argument('--keyword', action='append', help='搜索词，可重复；提供时替换搜索词')
     config.add_argument('--official-browser', action='store_true', default=None, help='开启独立的公开页面渲染')
+    ai = commands.add_parser('ai', help='模型服务：保存 API key、查看设置与同意（不显示 key）')
+    ai.set_defaults(json=False)
+    ai_commands = ai.add_subparsers(dest='ai_command', required=True)
+    for name, text in (('key', '保存 API key；终端里隐藏输入，非终端时从标准输入读一行'), ('show', '显示模型设置、key 末 4 位与同意记录')):
+        ai_commands.add_parser(name, help=text).add_argument('--data', type=Path, default=DEFAULT_DATA, help='与网页相同的本地数据目录')
     for command in (status, resume, confirm, config):
         command.add_argument('--data', type=Path, default=DEFAULT_DATA, help='与网页相同的本地数据目录')
         command.add_argument('--json', action='store_true', help='输出结构化 JSON')
@@ -139,6 +146,17 @@ def main(argv=None):
             else:
                 for row in result['companies']:
                     print('{:8} {} · {}'.format(row['kind'], row['company'], row.get('url') or row['careers_url']))
+            return 0
+        if args.command == 'ai':
+            store = Store(args.data)
+            if args.ai_command == 'key':
+                key = getpass.getpass('API key（输入不显示）：') if sys.stdin.isatty() else sys.stdin.readline()
+                llm.save_key(store.root, key.strip())
+                print('已保存 API key，末 4 位：' + llm.key_hint(store.root))
+            else:
+                ai = store.ai_settings()
+                ai['status'] = '已配置，可向所同意的内容发送' if ai['active'] else '未使用 AI（需要 key 与当前服务、模型下的同意）'
+                print(json.dumps(dict(schema_version=1, data_dir=str(store.root), **ai), ensure_ascii=False, indent=2))
             return 0
         store = Store(args.data)
         # Only the existing runner owns recovery and its OS lock. These local

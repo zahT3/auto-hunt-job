@@ -1,7 +1,7 @@
 """Bounded HTTPS fetching with validated DNS and pinned TLS destinations.
 
 No environment proxy or browser cookies are used (only a caller-minted XSRF token, see
-XSRF_COOKIE). Reserved benchmark fake-DNS answers used by some local VPNs are re-resolved via Cloudflare DoH before connecting.
+XSRF_COOKIE). The one credential fetch() sends is the keyword-only `bearer` for the model API. Reserved benchmark fake-DNS answers used by some local VPNs are re-resolved via Cloudflare DoH before connecting.
 """
 import http.client
 import ipaddress
@@ -142,8 +142,17 @@ def resolve_public(host, timeout=TIMEOUT):
 XSRF_COOKIE = re.compile('XSRF-TOKEN=[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}')
 
 
-def fetch(url, method='GET', data=None, headers=None, with_metadata=False):
-    """Fetch bytes; all redirects repeat URL/DNS validation and pin the result."""
+BEARER = re.compile(r'[A-Za-z0-9._\-]{8,512}')
+
+
+def fetch(url, method='GET', data=None, headers=None, with_metadata=False, *, bearer=None, timeout=TIMEOUT):
+    """Fetch bytes; all redirects repeat URL/DNS validation and pin the result.
+
+    `bearer` is the only way to send Authorization; with it no redirect is followed, so the token
+    cannot reach any host the caller did not name. `timeout` is the overall deadline, clamped to 1-180 s."""
+    if bearer is not None and not (isinstance(bearer, str) and BEARER.fullmatch(bearer)):
+        raise ValueError('bearer 格式无效')  # never echo the value
+    limit = min(180, max(1, float(timeout)))
     method = method.upper()
     if method not in ('GET', 'POST', 'HEAD'):
         raise FetchError('不支持的公开检索请求方式')
@@ -160,14 +169,16 @@ def fetch(url, method='GET', data=None, headers=None, with_metadata=False):
         if '\r' in k + str(v) or '\n' in k + str(v):
             raise FetchError('请求头无效')
         request_headers[k] = str(v)
+    if bearer is not None:
+        request_headers['Authorization'] = 'Bearer ' + bearer
     started = time.monotonic()
     for redirect in range(MAX_REDIRECTS + 1):
         p, host = validate_url(url)
-        remaining = TIMEOUT - (time.monotonic() - started)
+        remaining = limit - (time.monotonic() - started)
         if remaining <= 0:
             raise FetchError('公开抓取超时')
         ips = resolve_public(host, remaining)
-        remaining = TIMEOUT - (time.monotonic() - started)
+        remaining = limit - (time.monotonic() - started)
         if remaining <= 0:
             raise FetchError('公开抓取超时')
         conn = _PinnedHTTPS(host, ips[0], remaining)
@@ -188,6 +199,8 @@ def fetch(url, method='GET', data=None, headers=None, with_metadata=False):
             conn.request(method, path, body=data, headers=request_headers)
             response = conn.getresponse()
             if response.status in (301, 302, 303, 307, 308):
+                if bearer is not None:
+                    raise FetchError('带凭据的请求不跟随重定向')
                 location = response.getheader('Location')
                 if not location or redirect == MAX_REDIRECTS:
                     raise FetchError('重定向缺少目标或次数过多')
@@ -210,7 +223,7 @@ def fetch(url, method='GET', data=None, headers=None, with_metadata=False):
             raw = response.read(MAX_BYTES + 1)
             if len(raw) > MAX_BYTES:
                 raise FetchError('公开响应过大')
-            if time.monotonic() - started > TIMEOUT:
+            if time.monotonic() - started > limit:
                 raise FetchError('公开抓取超时')
             return dict(body=raw, url=url, status=response.status) if with_metadata else raw
         except (OSError, http.client.HTTPException, ValueError) as exc:
