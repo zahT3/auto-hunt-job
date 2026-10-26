@@ -12,7 +12,7 @@ from datetime import datetime, timezone, timedelta
 from pathlib import Path
 from urllib.parse import urlsplit, urlunsplit
 
-from . import llm, network, orient
+from . import classify, llm, network, orient
 from .profile import build_profile
 
 
@@ -454,6 +454,51 @@ class Store:
         if conditions is not None: change['conditions'] = conditions
         return self._orient_save(change, 0.0)
 
+    def classify_run(self):
+        """Classify jobs that have no classification or a stale one (directions or job text changed); user and agent choices stay."""
+        with self.tx() as c:
+            dirs = (self.meta(c, 'orientation') or {}).get('directions') or []
+            consent = self.meta(c, 'ai_consent')
+            jobs = [json.loads(r[0]) for r in c.execute('SELECT data FROM jobs ORDER BY rowid')]
+        if not dirs:
+            return dict(directions=[], other_count=0, classify_spent_cny=0.0, classify_errors=[], classify_note='尚未确定方向，岗位未归类')
+        ids = [d['id'] for d in dirs]
+
+        def stale(j):
+            d = j.get('direction') or {}
+            return d.get('by') not in ('user', 'agent') and (d.get('dirs') != ids or d.get('basis') != classify.basis(j))
+        todo = [j for j in jobs if stale(j)]
+        settings = llm.load_settings(self.root)
+        meter = llm.Meter(settings['budget_cny'], settings['price_in'], settings['price_out'])
+        out = classify.classify_jobs(todo, dirs, settings, llm.load_key(self.root, llm.host(settings)), consent, meter,
+                                     transport=self.llm_transport or network.fetch)
+        with self.tx() as c:
+            for j in todo:
+                current = json.loads((c.execute('SELECT data FROM jobs WHERE id=?', (j['id'],)).fetchone() or ['null'])[0])
+                # A choice made while the model was answering wins.
+                if current and (current.get('direction') or {}).get('by') not in ('user', 'agent'):
+                    current['direction'] = j['direction']
+                    self.save(c, current)
+            jobs = [json.loads(r[0]) for r in c.execute('SELECT data FROM jobs')]
+        rows, other = classify.report(dirs, jobs)
+        return dict(directions=rows, other_count=other, classify_spent_cny=round(meter.spent, 6), classify_errors=out['errors'],
+                    classify_note=out['note'] if todo else '方向与岗位都没有变化，沿用上次归类')
+
+    def classify(self, payload):
+        """One job by hand (user or agent; null means outside the chosen directions), or every stale job when job_id is absent."""
+        if 'job_id' not in payload:
+            if self.run_lock.locked(): raise Error('本轮搜索正在运行，结束时会自动归类')
+            return self.classify_run()
+        source, ident = payload.get('source', 'user'), payload.get('direction_id')
+        if source not in ('user', 'agent'): raise Error('来源须是 user 或 agent')
+        with self.tx() as c:
+            ids = [d['id'] for d in (self.meta(c, 'orientation') or {}).get('directions') or []]
+            if ident is not None and ident not in ids: raise Error('方向须是当前所选方向之一，或 null 表示不属于所选方向')
+            j = self.job(c, str(payload['job_id']))
+            j['direction'] = dict(id=ident, by=source, score=1.0, reason='用户指定' if source == 'user' else '外部 agent 指定',
+                                  dirs=ids, basis=classify.basis(j))
+            self.save(c, j)
+
     def start_run(self, demo=False):
         with self.start_lock:
             if self.run_lock.locked() or self.search_thread and self.search_thread.is_alive():
@@ -552,6 +597,10 @@ class Store:
                         run['applicable'] += int(not j['package'].get('blockers') and not synthetic_profile(candidate) and cfg['targets_confirmed'] and j['channel']=='anker' and not any(x.get('status') == 'not_met' for x in j['match'].get('hard', [])))
                 except Exception as e:
                     run['failures'].append(str(e))
+            try:
+                run.update(self.classify_run())
+            except Exception as e:
+                run['failures'].append('岗位归类失败：%s' % e)
             if run['status'] == 'running':
                 failed_sources = [s for s in run.get('sources', []) if s.get('status') not in ('ok', 'success', 'completed', 'empty', 'filtered_empty') or s.get('truncated')]
                 if run.get('deadline_reached'): run['truncated'] = True
@@ -815,6 +864,7 @@ class Store:
         elif action=='orient_questions': self.orient_questions()
         elif action=='orient_answer': self.orient_answer(payload)
         elif action=='directions_set': self.directions_set(payload)
+        elif action=='classify': self.classify(payload)
         elif action=='entry_verify': self.start_entry_verification(payload['job_id'])
         elif action in ('entry_finish', 'entry_cancel'):
             with self.entry_lock:
