@@ -12,7 +12,7 @@ from datetime import datetime, timezone, timedelta
 from pathlib import Path
 from urllib.parse import urlsplit, urlunsplit
 
-from . import classify, llm, network, orient
+from . import classify, directions, llm, network, orient
 from .profile import build_profile
 
 
@@ -454,6 +454,11 @@ class Store:
         if conditions is not None: change['conditions'] = conditions
         return self._orient_save(change, 0.0)
 
+    def chosen_families(self):
+        """Families of the chosen directions, in order; a sweep scans employers tagged with them first."""
+        rows = (self.orientation() or {}).get('directions') or []
+        return list(dict.fromkeys(directions.get(d['id'])['family'] for d in rows))
+
     def classify_run(self):
         """Classify jobs that have no classification or a stale one (directions or job text changed); user and agent choices stay."""
         with self.tx() as c:
@@ -563,7 +568,8 @@ class Store:
                         try:
                             with self.tx() as c: extra = companies.encountered(c)
                         except (ValueError, TypeError): extra = []
-                        cfg = dict(cfg, discovery_sources=companies.select(search_terms(cfg), cfg.get('sweep_max_companies', 300), extra, families=list(dict.fromkeys(orient.directions.get(d['id'])['family'] for d in ((self.orientation() or {}).get('directions') or [])))))
+                        cfg = dict(cfg, discovery_sources=companies.select(search_terms(cfg), cfg.get('sweep_max_companies', 300), extra,
+                                                                           families=self.chosen_families()))
                     def known(item):
                         # The identity import_job uses for discovered jobs, which always carry platform_id.
                         if not item.get('platform_id'): return False
