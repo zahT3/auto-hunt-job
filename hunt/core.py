@@ -475,7 +475,7 @@ class Store:
         return dict(cfg, keywords=list(terms))
 
     def run(self, demo=False):
-        if not demo: self.search_config()
+        search = None if demo else self.search_config()  # raises before the lock; reused below
         if not self.run_lock.acquire(False):
             raise Error('本轮已在运行')
         run = dict(id=uuid.uuid4().hex, started_at=now(), kind='fixture' if demo else 'real_discovery', discovered=0,
@@ -499,8 +499,7 @@ class Store:
                         run['discovery'] = self.channel.last_discovery
                 else:
                     from .discovery import discover
-                    from .profile import build_profile
-                    cfg = self.search_config()
+                    cfg = search
                     def source_progress(report):
                         run.setdefault('sources', []).append(copy.deepcopy(report))
                         with self.tx() as connection:

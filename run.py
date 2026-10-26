@@ -5,7 +5,7 @@ import json
 import os
 import threading
 from pathlib import Path
-from hunt.core import Store
+from hunt.core import Error, Store
 
 
 def main():
@@ -38,7 +38,9 @@ def main():
     store=Store(data,executor=executor)
     store.recover()
     if args.once or args.demo:
-        print(json.dumps(store.run(demo=args.demo),ensure_ascii=False,indent=2))
+        try: result=store.run(demo=args.demo)
+        except Error as e: parser.exit(1,'错误：%s\n'%e)
+        print(json.dumps(result,ensure_ascii=False,indent=2))
         if args.once: return
     from hunt.server import make_server,periodic
     server=make_server(store,args.port)

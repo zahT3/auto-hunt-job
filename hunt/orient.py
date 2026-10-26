@@ -35,6 +35,9 @@ def fixed_questions():
     ]
 
 
+FIXED_IDS = {q['id'] for q in fixed_questions()}
+
+
 def confirmed_facts(candidate):
     """Confirmed, source-backed facts only (the same filter the local profile uses)."""
     return [dict(id=f['id'], text=f['text']) for f in _source_facts(candidate, confirmed_only=True)]
@@ -115,7 +118,8 @@ def _clean_questions(raw):
         if not isinstance(q, dict):
             continue
         ident, text, kind, options = q.get('id'), q.get('text'), q.get('kind'), q.get('options', [])
-        if not (isinstance(ident, str) and ID.fullmatch(ident) and ident not in seen
+        # Fixed ids carry meaning (rule_conditions reads them), so a model question must not reuse one.
+        if not (isinstance(ident, str) and ID.fullmatch(ident) and ident not in seen and ident not in FIXED_IDS
                 and isinstance(text, str) and 0 < len(text.strip()) <= 200 and kind in ('choice', 'text')):
             continue
         if kind == 'choice':
@@ -201,9 +205,9 @@ def clean_terms(terms):
 
 
 def _lenient_terms(terms):
-    if not isinstance(terms, list):
-        return []
-    return discovery.search_terms(dict(keywords=[t for t in terms if isinstance(t, str)][:MAX_TERMS * 2])) if terms else []
+    # Never hand search_terms an empty list: it would answer with its built-in default terms.
+    strings = [t for t in terms if isinstance(t, str)][:MAX_TERMS * 2] if isinstance(terms, list) else []
+    return discovery.search_terms(dict(keywords=strings)) if strings else []
 
 
 def terms_for(direction_ids):

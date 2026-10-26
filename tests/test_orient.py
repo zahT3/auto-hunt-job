@@ -1,11 +1,16 @@
 """Orientation: follow-up questions and job directions, with and without a model. The model is always a fake transport."""
 import json
+import subprocess
+import sys
 import tempfile
+import threading
+import time
 import unittest
 from pathlib import Path
 from unittest.mock import patch
 
 from hunt import directions, orient
+from hunt.server import periodic
 from hunt.core import Error, Store
 
 KEY = 'test-key-0123456789abcd'
@@ -124,6 +129,15 @@ class QuestionTests(OrientCase):
             self.assertEqual(len(o['questions']), 6)
             self.assertTrue(o['notes'])
 
+    def test_model_question_ids_cannot_reuse_fixed_ids(self):
+        self.enable_ai()
+        clash = dict(questions=[dict(id=i, text='问题 ' + i, kind='text', options=[]) for i in ('city', 'years', 'remote', 'exclude', 'q1', 'q2')])
+        self.use(clash)
+        self.store.action(dict(action='orient_questions'))
+        o = self.store.orientation()
+        self.assertEqual(o['by'], 'rules')  # only q1 and q2 stay valid: fewer than 3
+        self.assertEqual(orient._clean_questions(clash['questions'])[0]['id'], 'q1')
+
     def test_model_questions_are_capped(self):
         self.enable_ai()
         many = dict(questions=[dict(id='q%d' % i, text='问题%d' % i, kind='text', options=[]) for i in range(10)])
@@ -203,6 +217,19 @@ class ProposeTests(OrientCase):
         self.assertNotIn('13900001111', sent)  # typed answers are redacted like the facts
         self.assertNotIn(EMAIL, sent)
         self.assertIn('杭州', sent)
+
+    def test_model_terms_without_strings_are_topped_up_not_defaulted(self):
+        self.enable_ai()
+        self.use(QUESTIONS)
+        self.ask()
+        for terms in ([1, 2], [None, ['a']], []):
+            self.use(dict(directions=[dict(id='backend', why='x', fact_ids=[])], terms=terms))
+            self.store.action(dict(action='orient_answer', answers={}))
+            o = self.store.orientation()
+            self.assertEqual(o['by'], 'ai')
+            self.assertTrue(len(o['terms']) >= 2)
+            self.assertFalse({'AI', 'Agent', 'Web3'} & set(o['terms']))
+            self.assertTrue(any('搜索词不足' in n for n in o['notes']))
 
     def test_model_may_not_pick_more_than_four_and_must_pick_one(self):
         self.enable_ai()
@@ -310,6 +337,39 @@ class RunTests(OrientCase):
         self.store.action(dict(action='config', config=dict(cfg, keywords=['产品经理'])))
         _, calls = self.search()
         self.assertEqual(calls[0]['keywords'], ['产品经理'])
+
+    def test_search_config_is_computed_once_per_run(self):
+        self.store.action(dict(action='directions_set', directions=['backend'], terms=['后端开发', 'Java 工程师']))
+        real, calls = self.store.search_config, []
+        self.store.search_config = lambda: calls.append(1) or real()
+        self.search()
+        self.assertEqual(len(calls), 1)
+
+    def test_periodic_survives_a_missing_direction(self):
+        with self.store.tx() as c:
+            self.store.setmeta(c, 'config', dict(self.store.meta(c, 'config'), interval_minutes=0.0003))
+        stop, calls = threading.Event(), []
+        # The real run() raises Error here: a fresh store has neither keywords nor a direction.
+        real = self.store.run
+        self.store.run = lambda *a, **k: calls.append(1) or real(*a, **k)
+        thread = threading.Thread(target=periodic, args=(self.store, stop), daemon=True)
+        thread.start()
+        deadline = time.time() + 5
+        while len(calls) < 2 and time.time() < deadline:
+            time.sleep(0.02)
+        alive = thread.is_alive()
+        stop.set()
+        thread.join(2)
+        self.assertGreaterEqual(len(calls), 2)
+        self.assertTrue(alive)
+
+    def test_once_prints_the_chinese_error_and_exits_nonzero(self):
+        root = Path(__file__).resolve().parent.parent
+        done = subprocess.run([sys.executable, str(root / 'run.py'), '--once', '--data', str(self.store.root)],
+                              capture_output=True, text=True, timeout=60)
+        self.assertNotEqual(done.returncode, 0)
+        self.assertIn('请先确定方向或填写关键词', done.stderr)
+        self.assertNotIn('Traceback', done.stderr)
 
     def test_orientation_without_terms_still_errors(self):
         with self.store.tx() as c:

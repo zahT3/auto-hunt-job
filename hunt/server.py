@@ -137,4 +137,6 @@ def periodic(store, stop):
     while not stop.is_set():
         with store.tx() as c: cfg=store.meta(c,'config')
         if stop.wait(float(cfg['interval_minutes'])*60): break
-        if store.is_running(): store.run()
+        if store.is_running():
+            try: store.run()
+            except Error: pass  # e.g. no direction or keywords yet: skip this tick, the next one may succeed
