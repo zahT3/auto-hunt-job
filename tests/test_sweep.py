@@ -174,6 +174,13 @@ class SweepDiscoveryTests(unittest.TestCase):
         self.assertTrue(big['truncated'])
         self.assertEqual((big['status'], big['passes']), ('ok', 2))
 
+    def test_second_pass_sums_elapsed_without_float_noise(self):
+        now, steps = [0.0], iter([0.1, 0.0, 0.0, 0.2])
+        def hook(entry, ctx): now[0] += next(steps)
+        result = run_discover(dict(sweep=True, sweep_max_jobs=60, discovery_sources=sources('big', 's1', 's2')),
+                              provider(dict(big=None, s1=3, s2=3), hook), clock=lambda: now[0])
+        self.assertEqual(result['sources'][0]['elapsed_seconds'], 0.3)
+
     def test_second_pass_ends_untruncated_when_source_runs_dry(self):
         result = run_discover(dict(sweep=True, sweep_max_jobs=60, discovery_sources=sources('big', 's1', 's2')),
                               provider(dict(big=30, s1=3, s2=3)))

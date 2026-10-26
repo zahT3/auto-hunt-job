@@ -494,6 +494,7 @@ def discover(config, profile=None, transport=None, *, browser_profile_root=None,
             for item in jobs[before:]: owners[id(item)] = report
             report.update(again, passes=2, search_url=report['search_url'] or again['search_url'], checked_at=report['checked_at'],
                           **{k: report[k] + again[k] for k in SUMMED})
+            report['elapsed_seconds'] = round(report['elapsed_seconds'], 2)
         if config.get('check_entries'):
             from .entries import check_job
             began = clock()
