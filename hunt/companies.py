@@ -16,6 +16,7 @@ BLOCKED_HOSTS = ('zhipin.com', 'liepin.com', 'lagou.com', 'zhaopin.com', '51job.
                  'mokahr.com', 'workable.com', 'jobs.feishu.cn', 'careers.tencent.com', 'talent.alibaba.com',
                  'zhaopin.meituan.com', 'jobs.bytedance.com')
 AGGREGATOR_CHANNELS = ('boss', 'liepin', 'websearch', 'import')
+FLAGGED = ('dead', 'needs_adapter')
 
 
 @functools.lru_cache(maxsize=4)
@@ -49,9 +50,12 @@ def _entry(seed):
     return dict(id=seed['id'], kind='website', url=seed['careers_url'], company=seed['name'])
 
 
-def select(terms, limit, extra=(), seeds=None):
-    """discovery_sources entries: keyword-search providers first, then seeds by tag overlap, then `extra`."""
+def select(terms, limit, extra=(), seeds=None, include_flagged=False):
+    """discovery_sources entries: keyword-search providers first, then seeds by tag overlap, then `extra`.
+
+    Seeds whose `status` is `dead` or `needs_adapter` are skipped unless include_flagged is set."""
     seeds = load_seeds() if seeds is None else seeds
+    if not include_flagged: seeds = [s for s in seeds if s.get('status') not in FLAGGED]
     keyword = [s for s in seeds if s.get('provider') in KEYWORD_PROVIDERS]
     rest = sorted((s for s in seeds if s.get('provider') not in KEYWORD_PROVIDERS), key=lambda s: -_overlap(terms, s))
     chosen, seen = [], set()

@@ -169,7 +169,8 @@
         "AI",
         "云"
       ],
-      "source": "curated"
+      "source": "curated",
+      "status": "needs_adapter"
     },
     {
       "id": "xiaomi",
@@ -182,7 +183,8 @@
         "AI",
         "汽车"
       ],
-      "source": "curated"
+      "source": "curated",
+      "status": "needs_adapter"
     },
     {
       "id": "antgroup",
@@ -195,7 +197,8 @@
         "AI",
         "数据"
       ],
-      "source": "curated"
+      "source": "curated",
+      "status": "needs_adapter"
     },
     {
       "id": "ctrip",
@@ -207,7 +210,8 @@
         "旅游",
         "数据"
       ],
-      "source": "curated"
+      "source": "curated",
+      "status": "needs_adapter"
     },
     {
       "id": "mihoyo",
@@ -218,7 +222,8 @@
         "游戏",
         "AI"
       ],
-      "source": "curated"
+      "source": "curated",
+      "status": "needs_adapter"
     },
     {
       "id": "dji",
@@ -230,7 +235,8 @@
         "机器人",
         "算法"
       ],
-      "source": "curated"
+      "source": "curated",
+      "status": "needs_adapter"
     },
     {
       "id": "lixiang",
@@ -242,7 +248,8 @@
         "智能驾驶",
         "算法"
       ],
-      "source": "curated"
+      "source": "curated",
+      "status": "needs_adapter"
     },
     {
       "id": "xiaopeng",
@@ -278,7 +285,8 @@
         "终端",
         "AI"
       ],
-      "source": "curated"
+      "source": "curated",
+      "status": "needs_adapter"
     },
     {
       "id": "pony-ai",
@@ -290,7 +298,8 @@
         "算法",
         "AI"
       ],
-      "source": "curated"
+      "source": "curated",
+      "status": "needs_adapter"
     },
     {
       "id": "weride",
@@ -326,7 +335,8 @@
         "互联网",
         "云"
       ],
-      "source": "career-ops-china"
+      "source": "career-ops-china",
+      "status": "dead"
     },
     {
       "id": "join-jd-com-home",
@@ -338,7 +348,8 @@
         "互联网",
         "云"
       ],
-      "source": "career-ops-china"
+      "source": "career-ops-china",
+      "status": "needs_adapter"
     },
     {
       "id": "careers-pinduoduo-com-social",
@@ -364,7 +375,8 @@
         "推荐",
         "广告"
       ],
-      "source": "career-ops-china"
+      "source": "career-ops-china",
+      "status": "needs_adapter"
     },
     {
       "id": "job-xiaohongshu-com",
@@ -391,7 +403,8 @@
         "AI",
         "推荐"
       ],
-      "source": "career-ops-china"
+      "source": "career-ops-china",
+      "status": "needs_adapter"
     },
     {
       "id": "hr-163-com-job-list-html",
@@ -405,7 +418,8 @@
         "云",
         "游戏"
       ],
-      "source": "career-ops-china"
+      "source": "career-ops-china",
+      "status": "needs_adapter"
     },
     {
       "id": "talent-didiglobal-com-social",
@@ -429,7 +443,8 @@
         "AI",
         "大模型"
       ],
-      "source": "career-ops-china"
+      "source": "career-ops-china",
+      "status": "needs_adapter"
     },
     {
       "id": "baichuan-ai-com-careers",
@@ -440,7 +455,8 @@
         "AI",
         "大模型"
       ],
-      "source": "career-ops-china"
+      "source": "career-ops-china",
+      "status": "dead"
     },
     {
       "id": "01-ai-careers",
@@ -451,7 +467,8 @@
         "AI",
         "大模型"
       ],
-      "source": "career-ops-china"
+      "source": "career-ops-china",
+      "status": "needs_adapter"
     },
     {
       "id": "modelbest-cn-careers",
@@ -462,7 +479,8 @@
         "AI",
         "大模型"
       ],
-      "source": "career-ops-china"
+      "source": "career-ops-china",
+      "status": "dead"
     },
     {
       "id": "manus-im-careers",
@@ -474,7 +492,8 @@
         "应用",
         "Agent"
       ],
-      "source": "career-ops-china"
+      "source": "career-ops-china",
+      "status": "dead"
     },
     {
       "id": "pingcap-com-careers",
@@ -485,7 +504,8 @@
         "数据",
         "数据库"
       ],
-      "source": "career-ops-china"
+      "source": "career-ops-china",
+      "status": "needs_adapter"
     },
     {
       "id": "starrocks-io-careers",
@@ -496,7 +516,8 @@
         "数据",
         "数据库"
       ],
-      "source": "career-ops-china"
+      "source": "career-ops-china",
+      "status": "dead"
     },
     {
       "id": "sensorsdata-cn-about-job-html",
@@ -507,7 +528,8 @@
         "数据",
         "数据库"
       ],
-      "source": "career-ops-china"
+      "source": "career-ops-china",
+      "status": "dead"
     },
     {
       "id": "deepexi-com-about-us",
@@ -518,7 +540,8 @@
         "数据",
         "数据库"
       ],
-      "source": "career-ops-china"
+      "source": "career-ops-china",
+      "status": "needs_adapter"
     },
     {
       "id": "kyligence-io-zh-careers",
@@ -541,7 +564,8 @@
         "数据",
         "数据库"
       ],
-      "source": "career-ops-china"
+      "source": "career-ops-china",
+      "status": "needs_adapter"
     },
     {
       "id": "siliconflow-cn-zh-cn-about",
@@ -553,7 +577,8 @@
         "Infra",
         "推理"
       ],
-      "source": "career-ops-china"
+      "source": "career-ops-china",
+      "status": "needs_adapter"
     },
     {
       "id": "luchentech-com-joinus",
@@ -565,7 +590,8 @@
         "Infra",
         "推理"
       ],
-      "source": "career-ops-china"
+      "source": "career-ops-china",
+      "status": "dead"
     },
     {
       "id": "infini-ai-com-careers",
@@ -577,7 +603,8 @@
         "Infra",
         "推理"
       ],
-      "source": "career-ops-china"
+      "source": "career-ops-china",
+      "status": "needs_adapter"
     },
     {
       "id": "4paradigm-com-about-jobs-html",
@@ -591,7 +618,8 @@
         "数据库",
         "大模型"
       ],
-      "source": "career-ops-china"
+      "source": "career-ops-china",
+      "status": "needs_adapter"
     },
     {
       "id": "sensetime-com-cn-career",
@@ -604,7 +632,8 @@
         "数据",
         "数据库"
       ],
-      "source": "career-ops-china"
+      "source": "career-ops-china",
+      "status": "dead"
     },
     {
       "id": "megvii-com-join-us",
@@ -632,7 +661,8 @@
         "大模型",
         "NLP"
       ],
-      "source": "career-ops-china"
+      "source": "career-ops-china",
+      "status": "dead"
     },
     {
       "id": "apply-workable-com-huggingface",
@@ -643,7 +673,8 @@
         "远程",
         "海外"
       ],
-      "source": "career-ops-china"
+      "source": "career-ops-china",
+      "status": "needs_adapter"
     }
   ]
 }

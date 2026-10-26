@@ -79,6 +79,30 @@ class SelectTests(unittest.TestCase):
         self.assertEqual(len(set(ids)), len(ids))
         self.assertNotIn('not_configured', {r['status'] for r in result['sources']})
 
+    def test_seed_status_marks_2026_10_26_failures(self):
+        seeds = companies.load_seeds()
+        flagged = {}
+        for s in seeds:
+            self.assertIn(s.get('status'), (None, 'dead', 'needs_adapter'), s)
+            if s.get('status'): flagged.setdefault(s['status'], set()).add(s['id'])
+        self.assertEqual(len(flagged['dead']), 9)
+        self.assertEqual(len(flagged['needs_adapter']), 22)
+        self.assertIn('baichuan-ai-com-careers', flagged['dead'])
+        self.assertIn('huawei', flagged['needs_adapter'])
+        self.assertFalse({s['id'] for s in seeds if s.get('provider')} & set().union(*flagged.values()))
+        self.assertEqual(builder.build([]), [dict(s) for s in seeds if s['source'] != 'career-ops-china' or s['id'] in ('tencent', 'alibaba', 'meituan', 'bytedance')])
+
+    def test_select_skips_dead_and_needs_adapter_unless_asked(self):
+        seeds = [seed('ok', 'https://ok.example.test/'), dict(seed('dead', 'https://dead.example.test/'), status='dead'),
+                 dict(seed('raw', 'https://raw.example.test/'), status='needs_adapter')]
+        self.assertEqual([c['id'] for c in companies.select(['AI'], 10, seeds=seeds)], ['ok'])
+        self.assertEqual([c['id'] for c in companies.select(['AI'], 10, seeds=seeds, include_flagged=True)], ['ok', 'dead', 'raw'])
+        default = {c['id'] for c in companies.select(['AI'], 300)}
+        self.assertNotIn('huawei', default)
+        self.assertNotIn('baichuan-ai-com-careers', default)
+        self.assertEqual(len(default), 53 - 31)
+        self.assertEqual(len(companies.select(['AI'], 300, include_flagged=True)), 53)
+
     def test_select_keyword_providers_survive_small_limit(self):
         chosen = companies.select(['AI'], 4)
         self.assertEqual(len(chosen), 4)

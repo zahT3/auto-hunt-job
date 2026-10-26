@@ -37,6 +37,42 @@ EXTRA = [('huawei', '华为', 'https://career.huawei.com/reccampportal/portal5/i
          ('pony-ai', '小马智行', 'https://pony.ai/careers', ['智能驾驶', '算法', 'AI']),
          ('weride', '文远知行', 'https://www.weride.ai/careers', ['智能驾驶', '算法', 'AI']),
          ('zhihu', '知乎', 'https://app.mokahr.com/apply/zhihu/78336', ['互联网', '内容', '社区'])]
+# Result of the first real sweep (2026-10-26, keyword 'AI 产品经理'): `dead` answered HTTP 404, `needs_adapter`
+# gave the generic website reader a parse_error. Sweeps skip both unless asked; the rows stay for a later recheck.
+STATUS = dict.fromkeys((
+    'baichuan-ai-com-careers',
+    'modelbest-cn-careers',
+    'manus-im-careers',
+    'luchentech-com-joinus',
+    'sensetime-com-cn-career',
+    'langboat-com-careers',
+    'talent-baidu-com-external-baidu-social-h',
+    'starrocks-io-careers',
+    'sensorsdata-cn-about-job-html',
+), 'dead') | dict.fromkeys((
+    'huawei',
+    'xiaomi',
+    'antgroup',
+    'mihoyo',
+    'oppo',
+    'pony-ai',
+    'zhaopin-kuaishou-cn-recruit-e',
+    'jobs-bilibili-com-campus-positions',
+    'hr-163-com-job-list-html',
+    'zhipuai-cn-joinus',
+    '01-ai-careers',
+    'siliconflow-cn-zh-cn-about',
+    'infini-ai-com-careers',
+    '4paradigm-com-about-jobs-html',
+    'ctrip',
+    'dji',
+    'lixiang',
+    'join-jd-com-home',
+    'pingcap-com-careers',
+    'deepexi-com-about-us',
+    'doris-apache-org',
+    'apply-workable-com-huggingface',
+), 'needs_adapter')
 # Upstream rows for companies that already have a dedicated reader in hunt/catalog.py.
 CATALOG_COVERS = ('DeepSeek', '月之暗面', 'MiniMax', '阶跃星辰')
 SECTION_TAGS = (('大厂', ['大厂', '互联网']), ('大模型', ['AI', '大模型']), ('AI 应用', ['AI', '应用']),
@@ -118,7 +154,7 @@ def build(rows):
         ident = _slug(url, taken); taken.add(ident)
         seeds.append(dict(id=ident, name=row['name'], careers_url=url, provider=provider,
                           tags=_tags(row['section'], row['name'], row.get('notes', '')), source='career-ops-china'))
-    return seeds
+    return [dict(s, status=STATUS[s['id']]) if s['id'] in STATUS else s for s in seeds]
 
 
 def pinned_commit(pins):
