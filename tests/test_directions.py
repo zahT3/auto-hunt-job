@@ -30,6 +30,17 @@ class TableTests(unittest.TestCase):
         with self.assertRaises(KeyError):
             directions.get('nope')
 
+    def test_no_phrase_is_shared_by_two_directions(self):
+        import re
+        owner = {}
+        for r in directions.load():
+            for phrase in r['keywords'] + r['en']:
+                key = '&'.join(re.sub(r'[^0-9a-z+#\u3400-\u9fff]', '', part.casefold()) for part in phrase.split('&'))
+                self.assertEqual(owner.setdefault(key, r['id']), r['id'], (phrase, owner[key], r['id']))
+
+    def test_new_families_exist(self):
+        self.assertTrue({'建筑工程与房地产', '酒店餐饮旅游', '咨询', '公共事业·农业·能源', '交通运输与生活服务'} <= {r['family'] for r in directions.load()})
+
     def test_header_says_curated(self):
         import json
         raw = json.loads(directions.DATA.read_text(encoding='utf-8'))
@@ -73,6 +84,14 @@ class RuleMatchTests(unittest.TestCase):
         got = directions.rule_match('Senior Product Manager, AI', '', ['product-manager', 'ai-product-manager'])
         self.assertEqual(got[0][0], 'ai-product-manager')
         self.assertEqual(directions.rule_match('Senior Product Manager', '', ['ai-product-manager', 'product-manager'])[0][0], 'product-manager')
+
+    def test_caller_order_does_not_change_ties(self):
+        a, b = ['content-operations', 'operations-management'], ['operations-management', 'content-operations']
+        self.assertEqual(directions.rule_match('运营经理', '', a), directions.rule_match('运营经理', '', b))
+
+    def test_and_phrase_does_not_span_title_and_body(self):
+        self.assertEqual(directions.rule_match('产品经理', '大模型', ['ai-product-manager']), [])
+        self.assertEqual(directions.rule_match('Product Manager', 'AI', ['ai-product-manager']), [])
 
     def test_unrelated_title_is_empty_and_scope_is_respected(self):
         self.assertEqual(directions.rule_match('门店店长', '', ['ai-product-manager']), [])
@@ -135,11 +154,30 @@ class RuleMatchTests(unittest.TestCase):
             '法务专员': 'legal-counsel', '短视频编导': 'short-video-director', '数据分析师': 'data-analyst',
             'Customer Success Manager': 'customer-success', 'Registered Nurse': 'nurse', 'Data Engineer': 'data-engineer',
             'Recruiter': 'recruiter', '客服': 'customer-service', 'Senior Product Manager, AI': 'ai-product-manager', '风控经理': 'risk-control', '药师': 'pharmacist', '室内设计师': 'interior-designer',
+            '项目经理': 'project-manager', 'Project Manager': 'project-manager', '运营经理': 'operations-management',
+            '运营总监': 'operations-management', 'Operations Manager': 'operations-management', 'Operations Analyst': 'operations-management',
+            '销售总监': 'b2b-enterprise-sales', 'Sales Director': 'b2b-enterprise-sales', '市场经理': 'marketing-planning', '数据运营': 'data-analyst',
+            '酒店前厅经理': 'hotel-management', '客房服务员': 'hotel-management', '厨师': 'chef-cook', '烘焙师': 'chef-cook', '导游': 'tour-guide-consultant',
+            '旅游顾问': 'tour-guide-consultant', '咖啡师': 'food-service-staff', '管理咨询顾问': 'management-consultant', 'Strategy Consultant': 'management-consultant',
+            '公务员': 'civil-servant', '农艺师': 'agriculture-technician', '电力工程师': 'power-engineer', '化工工程师': 'petrochemical-engineer',
+            '网约车司机': 'driver-courier', '快递员': 'driver-courier', '保安': 'security-guard', '保洁员': 'cleaning-housekeeping', '美容师': 'beauty-hair',
+            '焊工': 'skilled-trade', '电工': 'skilled-trade', '医生': 'clinical-doctor', '口腔医生': 'clinical-doctor', 'Physician': 'clinical-doctor',
+            '财务总监': 'finance-director', 'CFO': 'finance-director', 'Finance Manager': 'finance-director', '物业经理': 'property-management',
+            '招商经理': 'commercial-leasing', '房地产策划': 'real-estate-planning', 'Technical Writer': 'technical-writer',
+            '客户经理（银行）': 'bank-credit-account', '投资分析师': 'investment-research', 'Machine Learning Researcher': 'ml-algorithm-engineer',
+            'Research Scientist': 'ml-algorithm-engineer', '数据产品经理': 'data-product-manager', '销售运营': 'sales-operations', 'HRBP': 'hrbp',
+            '财务分析': 'management-accountant', '门店店长': 'store-operations-management', 'Account Manager': 'customer-success',
+            '内容运营经理': 'content-operations', '用户运营专员': 'user-operations', 'Customer Support Specialist': 'customer-service',
+            '工程项目经理': 'construction-project-management', 'IT项目经理': 'it-project-manager', '农业银行客户经理': 'bank-credit-account',
+            '宠物医生': 'agriculture-technician', 'Software Project Manager': 'it-project-manager', 'Research Scientist, LLM': 'llm-algorithm',
             '质量工程师': 'quality-engineer', '课程顾问': 'course-consultant', '会计': 'accountant', 'Product Designer': 'ui-ux-designer',
         }
+        wrong = {}
         for title, want in cases.items():
             got = directions.rule_match(title, '', every)
-            self.assertTrue(got and got[0][0] == want, (title, got[:3]))
+            if not (got and got[0][0] == want):
+                wrong[title] = (want, got[:2])
+        self.assertEqual(wrong, {})
 
 
 class SuggestTests(unittest.TestCase):

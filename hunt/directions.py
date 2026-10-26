@@ -17,7 +17,10 @@ rule_match scores each allowed direction in 0..1, deterministically:
   score       title part + min(body part, 0.2) when the title hit; body part alone otherwise.
 A body-only match therefore stays below 0.5, the threshold callers use to accept a rule result,
 so a direction needs a title hit to be assigned. Equal scores go to the direction whose best title hit
-has more '&' parts, then more letters ('product manager&ai' beats 'senior product manager'), then to the earlier `allowed`.
+has more '&' parts, then more letters ('product manager&ai' beats 'senior product manager'), then to the earlier table row
+(general directions such as 项目经理（综合） sit last in their family, so specific ones win ties; the caller's
+`allowed` order never changes the result). A '&' phrase is checked inside the title or inside the body, never
+across the two.
 Job text is data: it is only searched for these phrases, never interpreted.
 """
 import copy
@@ -103,9 +106,10 @@ def _names(row):
 def rule_match(title, jd, allowed):
     """[(direction_id, score)] for allowed directions with score > 0, best first; see module docstring."""
     by_id = {r['id']: r for r in _rows()}
+    rank = {r['id']: n for n, r in enumerate(_rows())}
     title_text, body_text = _Text(title), _Text(str(jd or '')[:MAX_BODY])
     result = []
-    for order, ident in enumerate(dict.fromkeys(i for i in (allowed or []) if isinstance(i, str) and i in by_id)):
+    for ident in dict.fromkeys(i for i in (allowed or []) if isinstance(i, str) and i in by_id):
         row = by_id[ident]
         in_title, in_body = _hits(row, title_text), _hits(row, body_text)
         body = min(BODY_CAP, BODY_EACH * len(in_body))
@@ -118,7 +122,7 @@ def rule_match(title, jd, allowed):
             score = body
         if score > 0:
             longest = max(((p.count('&'), len(p)) for p in in_title), default=(0, 0))
-            result.append((ident, round(score, 3), longest, order))
+            result.append((ident, round(score, 3), longest, rank[ident]))
     result.sort(key=lambda r: (-r[1], tuple(-x for x in r[2]), r[3]))
     return [(i, s) for i, s, _, _ in result]
 
