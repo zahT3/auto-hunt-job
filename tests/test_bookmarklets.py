@@ -31,6 +31,7 @@ class BuildCase(unittest.TestCase):
         for name in NAMES:
             with self.subTest(name=name):
                 self.assertNotIn('alert(', bookmarklets.source(name))
+                self.assertNotIn('alert(', bookmarklets.assemble(name))
                 self.assertNotIn('alert(', unquote(bookmarklets.build(name)))
 
     def test_every_source_keeps_the_upstream_notice(self):
@@ -41,9 +42,30 @@ class BuildCase(unittest.TestCase):
                 self.assertIn('bef1e7122d2d84a0bf7137a9d5ffb88808d05c5c', head)
                 self.assertIn('MIT License', head)
 
+    def test_every_built_bookmarklet_contains_the_shared_prelude_exactly_once(self):
+        prelude = bookmarklets.minify(bookmarklets.prelude())
+        self.assertIn('const deliver = async', prelude)
+        for name in NAMES:
+            code = unquote(bookmarklets.build(name))
+            with self.subTest(name=name):
+                self.assertEqual(code.count(prelude), 1)
+                self.assertEqual(code.count('const toast ='), 1)
+                self.assertEqual(code.count('const deliver ='), 1)
+                self.assertNotIn('@deliver', code)
+                self.assertEqual(bookmarklets.source(name).count('// @deliver'), 1)
+                self.assertNotIn('const deliver', bookmarklets.source(name))
+
+    def test_prelude_keeps_the_upstream_notice(self):
+        head = bookmarklets.prelude().split('\n\n')[0]
+        self.assertIn('bef1e7122d2d84a0bf7137a9d5ffb88808d05c5c', head)
+        self.assertIn('MIT License', head)
+
+    def test_boss_does_not_swallow_page_mouse_events(self):
+        self.assertNotIn('mousedown', bookmarklets.assemble('boss-zhipin'))
+
     def test_sources_hold_no_secret_or_fixed_address(self):
         for name in NAMES:
-            text = bookmarklets.source(name)
+            text = bookmarklets.assemble(name)
             with self.subTest(name=name):
                 self.assertNotIn('8787', text)
                 self.assertNotRegex(text, r'127\.0\.0\.1|localhost')
@@ -142,6 +164,17 @@ class PageCase(unittest.TestCase):
         self.assertIn("script-src 'self'", response.getheader('Content-Security-Policy'))
         self.assertEqual(response.headers.get_all('Referrer-Policy'), ['same-origin'])
         self.assertEqual(self.call('GET', '/')[2].headers.get_all('Referrer-Policy'), ['no-referrer'])
+
+    def test_page_says_plainly_who_can_see_the_token(self):
+        text = self.page()[1]
+        self.assertIn('能看到令牌', text)
+        self.assertIn('只能往工作台里添加', text)
+        self.assertNotIn('证明请求来自你装的书签', text)
+
+    def test_page_is_linked_from_the_workbench_and_readme(self):
+        root = Path(__file__).resolve().parent.parent
+        self.assertIn('href="/bookmarklets"', (root / 'static' / 'index.html').read_text(encoding='utf-8'))
+        self.assertIn('/bookmarklets', (root / 'README.md').read_text(encoding='utf-8'))
 
     def test_page_warns_that_reset_invalidates_installed_bookmarklets(self):
         text = self.page()[1]

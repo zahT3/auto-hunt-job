@@ -20,6 +20,18 @@ def source(name):
     return (DIR / (name + '.js')).read_text(encoding='utf-8')
 
 
+def prelude():
+    return (DIR / '_deliver.js').read_text(encoding='utf-8')
+
+
+def assemble(name):
+    """The script with the shared delivery code spliced in at its "// @deliver" line."""
+    text = source(name)
+    if len(re.findall(r'^ *// @deliver$', text, re.M)) != 1:
+        raise ValueError(name + ' needs exactly one "// @deliver" line')
+    return re.sub(r'^ *// @deliver$', lambda _: prelude(), text, flags=re.M)
+
+
 def minify(text):
     """Drop whole-line comments and indentation; lines stay separate so automatic semicolon insertion behaves as written."""
     lines = (line.strip() for line in text.splitlines())
@@ -28,12 +40,12 @@ def minify(text):
 
 def build(name):
     """The javascript: URL with the two placeholders still in it; render() fills them."""
-    return 'javascript:' + quote(minify(source(name)), safe="!()*'~")
+    return 'javascript:' + quote(minify(assemble(name)), safe="!()*'~")
 
 
 def render(name, inbox_url, token):
     # Both values land inside a JS string literal, so anything outside this shape is refused rather than escaped.
-    if not re.fullmatch(r'http://127\.0\.0\.1:\d{1,5}/api/inbox', inbox_url) or not re.fullmatch(r'[A-Za-z0-9_-]{16,128}|[A-Za-z0-9_-]{1,15}', token):
+    if not re.fullmatch(r'http://127\.0\.0\.1:\d{1,5}/api/inbox', inbox_url) or not re.fullmatch(r'[A-Za-z0-9_-]{1,128}', token):
         raise ValueError('收件地址或令牌的格式不能写入书签')
     return build(name).replace(URL_FIELD, quote(inbox_url, safe='')).replace(TOKEN_FIELD, quote(token, safe=''))
 
@@ -76,7 +88,7 @@ PAGE = '''<!doctype html>
 <p>点击时只发送当前页的网址、标题和页面文字（过长会截短），发到这台电脑的 127.0.0.1:%(port)d，不经过其他服务器。不读 Cookie，不保存密码。收到的文字只当资料保存，不会被当作指令执行。</p>
 <p>端口或令牌变了，已装的书签就不能用，需要回到本页重新拖一次。个别网站的安全策略禁止页面向外发请求，浏览器也可能询问是否允许访问本地网络；这两种情况下书签会显示红色提示。</p>
 <h2>重置令牌</h2>
-<p>令牌写在书签里，用来证明请求来自你装的书签。怀疑书签泄露或借给了别人时重置它。<strong>重置后，已经安装在浏览器里的书签立即全部失效</strong>，要回到本页重新拖一次。</p>
+<p>令牌写在书签里，书签靠它才能往工作台添加岗位。你点书签的那个网站，页面里的脚本能看到令牌。拿到令牌的人只能往工作台里添加岗位资料，不能读取或操作工作台里已有的内容。拿不准有没有泄露，就重置。<strong>重置后，已经安装在浏览器里的书签立即全部失效</strong>，要回到本页重新拖一次。</p>
 <form method="post" action="/bookmarklets/reset">
 <input type="hidden" name="csrf" value="%(csrf)s">
 <button class="secondary" type="submit">重置令牌</button>

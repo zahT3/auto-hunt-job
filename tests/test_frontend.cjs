@@ -233,48 +233,105 @@ test('saving local material review returns keyboard focus to the current job tit
 });
 
 const BOOKMARKLETS=['boss-zhipin','liepin','lagou','mokahr','universal'];
-const bookmarkletSource=name=>fs.readFileSync(path.join(__dirname,'../static/bookmarklets',name+'.js'),'utf8');
+const BM_DIR=path.join(__dirname,'../static/bookmarklets');
+// Mirrors hunt/bookmarklets.py assemble(): the shared delivery prelude replaces each script's "// @deliver" line.
+const bookmarkletSource=name=>fs.readFileSync(path.join(BM_DIR,name+'.js'),'utf8').replace(/^ *\/\/ @deliver$/m,()=>fs.readFileSync(path.join(BM_DIR,'_deliver.js'),'utf8'));
 
-test('bookmarklet sources are valid JavaScript',()=>{
+test('bookmarklet sources and the built scripts are valid JavaScript',()=>{
  const {spawnSync}=require('node:child_process');
- for(const name of BOOKMARKLETS){
-  const r=spawnSync(process.execPath,['--check',path.join(__dirname,'../static/bookmarklets',name+'.js')],{encoding:'utf8'});
+ for(const name of [...BOOKMARKLETS,'_deliver']){
+  const r=spawnSync(process.execPath,['--check',path.join(BM_DIR,name+'.js')],{encoding:'utf8'});
   assert.equal(r.status,0,name+': '+r.stderr);
  }
+ for(const name of BOOKMARKLETS)assert.doesNotThrow(()=>new vm.Script(bookmarkletSource(name)),name);
 });
 
-function runUniversal({text,fetchImpl}){
+// A minimal page: dom maps a selector to its elements; querySelector answers with the first one.
+function runBookmarklet(name,{text='',title='页面',dom={},fetchImpl}={}){
  const toasts=[],timers=[],calls=[];
  const el=()=>({style:{},remove(){this.removed=true;},appendChild(){}});
- const document={title:'后端工程师 - 示例',body:{innerText:text,appendChild(node){toasts.push(node);}},documentElement:{},
-  querySelectorAll:()=>[],querySelector:()=>null,getElementById:()=>null,createElement:el,addEventListener(){}};
- const context=vm.createContext({document,location:{href:'https://careers.example.com/jobs/1?utm_source=x'},TextEncoder,JSON,Object,String,Math,Date,
+ const document={title,body:{innerText:text,appendChild(node){toasts.push(node);}},documentElement:{},
+  querySelectorAll:s=>dom[s]||[],querySelector:s=>(dom[s]||[])[0]||null,getElementById:()=>null,createElement:el,addEventListener(){}};
+ const context=vm.createContext({document,location:{href:'https://careers.example.com/jobs/1?utm_source=x',pathname:'/jobs/1'},TextEncoder,JSON,Object,String,Math,Date,Array,
   setTimeout:(fn,ms)=>{timers.push({fn,ms});return 1;},
-  fetch:async(url,init)=>{calls.push({url,init});return fetchImpl(url,init);}});
- const code=bookmarkletSource('universal').replaceAll('__INBOX_URL__','http://127.0.0.1:8771/api/inbox').replaceAll('__INBOX_TOKEN__','tok-123');
- return {toasts,timers,calls:()=>calls,run:()=>vm.runInContext(code,context)};
+  fetch:async(url,init)=>{calls.push({url,init});return fetchImpl?fetchImpl(url,init):{ok:true,status:200,json:async()=>({ok:true,duplicate:false})};}});
+ const code=bookmarkletSource(name).replaceAll('__INBOX_URL__','http://127.0.0.1:8771/api/inbox').replaceAll('__INBOX_TOKEN__','tok-123');
+ return {toasts,timers,calls,payload:()=>JSON.parse(calls[0].init.body),run:()=>vm.runInContext(code,context)};
+}
+const visible=text=>({innerText:text,getClientRects:()=>[1],closest:()=>null});
+const inDialog=text=>({innerText:text,getClientRects:()=>[1],closest:()=>({})});
+const hidden=text=>({innerText:text,getClientRects:()=>[],closest:()=>null});
+
+for(const name of ['universal','liepin','lagou']){
+ test(name+' bookmarklet posts with the inbox token, stays under the size limit, and uses a self-removing toast',async()=>{
+  const h=runBookmarklet(name,{text:'负责后端服务开发。'.repeat(20000)});
+  await h.run();
+  const [{url,init}]=h.calls;
+  assert.equal(url,'http://127.0.0.1:8771/api/inbox');
+  assert.equal(init.method,'POST');assert.equal(init.headers['X-Inbox-Token'],'tok-123');assert.equal(init.credentials,'omit');
+  const bytes=Buffer.byteLength(init.body);
+  assert.ok(bytes<=180000,'body bytes '+bytes);
+  const payload=JSON.parse(init.body);
+  assert.equal(payload.url,'https://careers.example.com/jobs/1?utm_source=x');
+  assert.ok(payload.extracted.raw_text.length>1000&&payload.extracted.raw_text.length<100000);
+  assert.equal(h.toasts.length,1);assert.match(h.toasts[0].textContent,/已发送到工作台/);assert.equal(h.toasts[0].style.background,'#38634d');
+  assert.equal(h.timers.at(-1).ms,3000);h.timers.at(-1).fn();assert.equal(h.toasts[0].removed,true);
+ });
+
+ test(name+' bookmarklet reports a rejected token and an unreachable inbox without blocking dialogs',async()=>{
+  const rejected=runBookmarklet(name,{text:'正文'.repeat(300),fetchImpl:async()=>({ok:false,status:403,json:async()=>({error:'收件令牌无效'})})});
+  await rejected.run();
+  assert.match(rejected.toasts[0].textContent,/令牌无效或已重置/);assert.equal(rejected.toasts[0].style.background,'#a04841');
+  const down=runBookmarklet(name,{text:'正文'.repeat(300),fetchImpl:async()=>{throw new TypeError('Failed to fetch');}});
+  await down.run();
+  assert.match(down.toasts[0].textContent,/连不上本地工作台/);assert.equal(down.timers.at(-1).ms,3000);
+ });
 }
 
-test('bookmarklet posts with the inbox token, stays under the size limit, and uses a self-removing toast',async()=>{
- const h=runUniversal({text:'负责后端服务开发。'.repeat(20000),fetchImpl:async()=>({ok:true,status:200,json:async()=>({ok:true,duplicate:false})})});
- await h.run();
- const [{url,init}]=h.calls();
- assert.equal(url,'http://127.0.0.1:8771/api/inbox');
- assert.equal(init.method,'POST');assert.equal(init.headers['X-Inbox-Token'],'tok-123');assert.equal(init.credentials,'omit');
- const bytes=Buffer.byteLength(init.body);
- assert.ok(bytes<=180000,'body bytes '+bytes);
- const payload=JSON.parse(init.body);
- assert.equal(payload.platform,'universal');assert.equal(payload.url,'https://careers.example.com/jobs/1?utm_source=x');
- assert.ok(payload.extracted.raw_text.length>1000&&payload.extracted.raw_text.length<100000);
- assert.equal(h.toasts.length,1);assert.match(h.toasts[0].textContent,/已发送到工作台/);assert.equal(h.toasts[0].style.background,'#38634d');
- assert.equal(h.timers.at(-1).ms,3000);h.timers.at(-1).fn();assert.equal(h.toasts[0].removed,true);
+test('universal title skips a decoy h1 and prefers the h1 that appears in the page title',async()=>{
+ const h=runBookmarklet('universal',{text:'正文'.repeat(30),title:'云mall-java后端开发工程师 | 腾讯招聘',
+  dom:{h1:[visible('分享岗位'),visible('云mall-java后端开发工程师')]}});
+ await h.run();assert.equal(h.payload().extracted.job_title,'云mall-java后端开发工程师');
 });
 
-test('bookmarklet reports a rejected token and an unreachable inbox without blocking dialogs',async()=>{
- const rejected=runUniversal({text:'正文'.repeat(300),fetchImpl:async()=>({ok:false,status:403,json:async()=>({error:'收件令牌无效'})})});
- await rejected.run();
- assert.match(rejected.toasts[0].textContent,/令牌无效或已重置/);assert.equal(rejected.toasts[0].style.background,'#a04841');
- const down=runUniversal({text:'正文'.repeat(300),fetchImpl:async()=>{throw new TypeError('Failed to fetch');}});
- await down.run();
- assert.match(down.toasts[0].textContent,/连不上本地工作台/);assert.equal(down.timers.at(-1).ms,3000);
+test('universal title ignores a hidden h1 and falls back to the document title',async()=>{
+ const h=runBookmarklet('universal',{text:'正文'.repeat(30),title:'数据工程师 - 示例公司',dom:{h1:[hidden('数据工程师')]}});
+ await h.run();assert.equal(h.payload().extracted.job_title,'数据工程师 - 示例公司');
+});
+
+test('universal title prefers JSON-LD JobPosting over h1 and og:title, through @graph, arrays and bad blocks',async()=>{
+ const ld=json=>({textContent:json});
+ const dom={'script[type="application/ld+json"]':[ld('{not json'),ld(JSON.stringify([{'@type':'Organization'},{'@graph':[{'@type':['Thing','JobPosting'],title:'数据工程师'}]}]))],
+  'meta[property="og:title"]':[{content:'OG 标题'}],h1:[visible('分享岗位')]};
+ const h=runBookmarklet('universal',{text:'正文'.repeat(30),title:'分享岗位',dom});
+ await h.run();assert.equal(h.payload().extracted.job_title,'数据工程师');
+});
+
+test('universal title uses og:title before any h1',async()=>{
+ const h=runBookmarklet('universal',{text:'正文'.repeat(30),dom:{'meta[property="og:title"]':[{content:'后端工程师'}],h1:[visible('分享岗位')]}});
+ await h.run();assert.equal(h.payload().extracted.job_title,'后端工程师');
+});
+
+test('universal title takes the first usable h1 inside the chosen main container, skipping share dialogs',async()=>{
+ const main={innerText:'岗位职责'.repeat(80),querySelectorAll:s=>s==='h1'?[inDialog('分享岗位'),visible('算法工程师')]:[]};
+ const h=runBookmarklet('universal',{text:'x',title:'招聘',dom:{main:[main],h1:[visible('分享岗位')]}});
+ await h.run();assert.equal(h.payload().extracted.job_title,'算法工程师');
+});
+
+test('universal title falls back to the page title when every h1 sits in a share dialog (Tencent case)',async()=>{
+ const main={innerText:'岗位职责'.repeat(80),querySelectorAll:s=>s==='h1'?[inDialog('分享岗位')]:[]};
+ const h=runBookmarklet('universal',{text:'x',title:'岗位详情 | 腾讯招聘',dom:{main:[main],h1:[inDialog('分享岗位')]}});
+ await h.run();assert.equal(h.payload().extracted.job_title,'岗位详情 | 腾讯招聘');
+});
+
+test('mokahr warns and sends nothing when the iframe is cross-origin (contentDocument is null, no throw)',async()=>{
+ const h=runBookmarklet('mokahr',{text:'壳页面',dom:{'iframe[src*="mokahr.com"]':[{contentDocument:null}]}});
+ await h.run();
+ assert.equal(h.calls.length,0);assert.match(h.toasts[0].textContent,/跨域/);assert.equal(h.toasts[0].style.background,'#a04841');assert.equal(h.timers.at(-1).ms,3000);
+});
+
+test('mokahr reads a same-origin iframe document',async()=>{
+ const inner={body:{innerText:'分享\n职位信息\n职位名称\n职位名称\n数据策略工程师\n工作地点\n工作地点\n杭州'},querySelector:()=>null};
+ const h=runBookmarklet('mokahr',{text:'壳页面',dom:{'iframe[src*="mokahr.com"]':[{contentDocument:inner}]}});
+ await h.run();assert.equal(h.payload().extracted.job_title,'数据策略工程师');assert.equal(h.payload().extracted.location,'杭州');
 });
