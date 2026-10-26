@@ -63,6 +63,15 @@ class BearerTests(unittest.TestCase):
             with self.subTest(name=name, with_bearer=True), self.assertRaises(network.FetchError):
                 network.fetch('https://api.example.com/', headers={name: 'Bearer other-key-12345'}, bearer=KEY)
 
+    def test_header_name_whitespace_and_control_refused(self):
+        for name in ('Authorization ', ' Authorization', 'Authorization\t', 'Cookie ', 'Host\x00', 'X Y', 'X:Y', ''):
+            with self.subTest(name=name), self.assertRaises(network.FetchError):
+                network.fetch('https://api.example.com/', headers={name: 'Bearer other-key-12345'})
+        seen, dns, conn = fake_https(body=b'ok')
+        with dns, conn:
+            network.fetch('https://api.example.com/', headers={'X-Requested-With': 'XMLHttpRequest', 'Content-Type': 'application/json'})
+        self.assertEqual(seen[0][2]['X-Requested-With'], 'XMLHttpRequest')
+
     def test_timeout_is_clamped(self):
         seen = []
         class Conn:
@@ -104,22 +113,66 @@ class SettingsTests(unittest.TestCase):
         self.assertEqual(llm.load_settings(self.root), saved)
         self.assertEqual(llm.host(saved), 'example.com')
 
+    def test_temp_file_removed_when_replace_fails(self):
+        with patch('os.replace', side_effect=OSError('disk')), self.assertRaises(OSError):
+            llm.save_key(self.root, KEY, 'api.deepseek.com')
+        self.assertEqual(list(self.root.iterdir()), [])
+        with patch('os.chmod', side_effect=OSError('perm')), self.assertRaises(OSError):
+            llm.save_settings(self.root, {})
+        self.assertEqual(list(self.root.iterdir()), [])
+
     def test_key_file_permissions_and_hint(self):
         self.assertIsNone(llm.key_hint(self.root))
         with self.assertRaises(ValueError):
-            llm.save_key(self.root, 'bad key')
-        llm.save_key(self.root, KEY)
+            llm.save_key(self.root, 'bad key', 'api.deepseek.com')
+        llm.save_key(self.root, KEY, 'api.deepseek.com')
         path = self.root / 'secrets.json'
         self.assertEqual(stat.S_IMODE(os.stat(path).st_mode), 0o600)
         self.assertEqual(llm.key_hint(self.root), KEY[-4:])
-        self.assertEqual(llm.load_key(self.root), KEY)
-        llm.save_key(self.root, KEY[::-1])  # overwrite keeps the mode
+        self.assertEqual(llm.load_key(self.root, 'api.deepseek.com'), KEY)
+        llm.save_key(self.root, KEY[::-1], 'api.deepseek.com')  # overwrite keeps the mode
         self.assertEqual(stat.S_IMODE(os.stat(path).st_mode), 0o600)
         self.assertEqual([p.name for p in self.root.iterdir()], ['secrets.json'])
         store = Store(self.root)
         self.assertNotIn(KEY, json.dumps(store.state()))
         self.assertNotIn(KEY[::-1], json.dumps(store.state()))
         self.assertEqual(store.state()['ai']['key_hint'], KEY[::-1][-4:])
+
+
+class KeyHostTests(unittest.TestCase):
+    def setUp(self):
+        self.temp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.temp.cleanup)
+        self.root = Path(self.temp.name)
+
+    def test_key_bound_to_host(self):
+        llm.save_key(self.root, KEY, 'api.deepseek.com')
+        self.assertEqual(llm.load_key(self.root, 'api.deepseek.com'), KEY)
+        self.assertIsNone(llm.load_key(self.root, 'api.other.com'))
+        self.assertEqual(llm.key_host(self.root), 'api.deepseek.com')
+        (self.root / 'secrets.json').write_text(json.dumps(dict(api_key=KEY)))  # legacy file without host
+        self.assertIsNone(llm.load_key(self.root, 'api.deepseek.com'))
+
+    def test_changing_base_url_stops_old_key(self):
+        store = Store(self.root / 'data')
+        store.action(dict(action='ai_settings', api_key=KEY))
+        ai = store.state()['ai']
+        self.assertEqual((ai['key_hint'], ai['key_host'], ai['key_mismatch']), (KEY[-4:], 'api.deepseek.com', False))
+        ai = store.action(dict(action='ai_settings', base_url='https://api.other.com'))['ai']
+        self.assertEqual((ai['key_hint'], ai['key_host'], ai['key_mismatch'], ai['active']), (None, 'api.deepseek.com', True, False))
+        settings = ai['settings']
+        key = llm.load_key(store.root, llm.host(settings))
+        self.assertIsNone(key)
+        calls = []
+        with self.assertRaises(llm.LLMError) as cm:
+            llm.chat_json(settings, key, [dict(role='user', content='x')], ['a'], llm.Meter(5, 1, 2),
+                          transport=lambda *a, **k: calls.append(1))
+        self.assertEqual(cm.exception.code, 'no_key')
+        self.assertIn('重新输入', cm.exception.message)
+        self.assertEqual(calls, [])
+        # Entering a key with the new settings binds it to the new host.
+        ai = store.action(dict(action='ai_settings', api_key=KEY))['ai']
+        self.assertEqual((ai['key_host'], ai['key_mismatch'], ai['key_hint']), ('api.other.com', False, KEY[-4:]))
 
 
 class ConsentTests(unittest.TestCase):
@@ -200,6 +253,28 @@ class ChatTests(unittest.TestCase):
         self.assertEqual(cm.exception.code, 'budget')
         self.assertEqual(cm.exception.calls, [])  # no request when the budget is spent
 
+    def test_max_tokens_sent_and_projected_cost_blocks_request(self):
+        _, calls, _ = self.call(reply('{"a": 1}', dict(prompt_tokens=1, completion_tokens=1)))
+        self.assertEqual(json.loads(calls[0][1]['data'])['max_tokens'], 2000)
+        # 2000 completion tokens at 2 CNY/M = 0.004 > 0.003 left: refuse before any request.
+        with self.assertRaises(llm.LLMError) as cm:
+            self.call(reply('{"a": 1}'), meter=llm.Meter(0.003, 1, 2))
+        self.assertEqual((cm.exception.code, cm.exception.calls), ('budget', []))
+        # Same budget, smaller max_tokens fits.
+        calls = []
+        llm.chat_json(dict(llm.DEFAULTS), KEY, self.messages, ['a'], llm.Meter(0.003, 1, 2),
+                      transport=lambda url, **kw: calls.append(kw) or reply('{"a": 1}'), max_tokens=500)
+        self.assertEqual(json.loads(calls[0]['data'])['max_tokens'], 500)
+        # Raised prices: one call alone would exceed the whole budget.
+        with self.assertRaises(llm.LLMError) as cm:
+            self.call(reply('{"a": 1}'), meter=llm.Meter(1, 1000, 1000))
+        self.assertEqual((cm.exception.code, cm.exception.calls), ('budget', []))
+        # Already-spent amount counts toward the projection.
+        meter = llm.Meter(1, 1, 2); meter.charge(997_000, 0)
+        with self.assertRaises(llm.LLMError) as cm:
+            self.call(reply('{"a": 1}'), meter=meter, )
+        self.assertEqual(cm.exception.code, 'budget')
+
     def test_missing_usage_is_estimated(self):
         _, _, meter = self.call(reply('{"a": "xxxxxxxxxxxxxxx"}'))
         self.assertTrue(meter.estimated)
@@ -233,14 +308,14 @@ class StoreAIActionTests(unittest.TestCase):
         state = self.store.action(dict(action='ai_settings', model='m-2', budget_cny=3, api_key=KEY))
         ai = state['ai']
         self.assertEqual((ai['settings']['model'], ai['settings']['budget_cny'], ai['key_hint']), ('m-2', 3, KEY[-4:]))
-        self.assertEqual(llm.load_key(self.store.root), KEY)
+        self.assertEqual(llm.load_key(self.store.root, 'api.deepseek.com'), KEY)
         with self.store.tx() as c:
             meta = json.dumps([tuple(r) for r in c.execute('SELECT * FROM meta')])
             log = json.dumps([tuple(r) for r in c.execute('SELECT * FROM interventions')])
         self.assertNotIn(KEY, meta + log + json.dumps(state))
         # Omitting api_key keeps the saved key.
         self.store.action(dict(action='ai_settings', budget_cny=4))
-        self.assertEqual(llm.load_key(self.store.root), KEY)
+        self.assertEqual(llm.load_key(self.store.root, 'api.deepseek.com'), KEY)
         for bad in (dict(kinds=[]), dict(kinds=['everything']), dict(kinds='resume_full'), dict(kinds=['job_text'], model='old-model')):
             with self.subTest(bad=bad), self.assertRaises(Error):
                 self.store.action(dict(action='ai_consent', **bad))
@@ -256,12 +331,27 @@ class StoreAIActionTests(unittest.TestCase):
         state = self.store.action(dict(action='ai_revoke'))
         self.assertIsNone(state['ai']['consent'])
 
+    def test_write_failures_become_error_without_paths_or_key(self):
+        for target in ('save_key', 'save_settings'):
+            with self.subTest(target=target), patch.object(llm, target, side_effect=OSError('/secret/path ' + KEY)):
+                with self.assertRaises(Error) as cm:
+                    self.store.action(dict(action='ai_settings', model='m-9', api_key=KEY))
+                self.assertNotIn(KEY, str(cm.exception))
+                self.assertNotIn('/secret/path', str(cm.exception))
+        # Settings are written before the key, so a failing key write never leaves a key bound to stale settings.
+        order = []
+        real_settings, real_key = llm.save_settings, llm.save_key
+        with patch.object(llm, 'save_settings', side_effect=lambda *a: order.append('settings') or real_settings(*a)), \
+             patch.object(llm, 'save_key', side_effect=lambda *a: order.append('key') or real_key(*a)):
+            self.store.action(dict(action='ai_settings', api_key=KEY))
+        self.assertEqual(order, ['settings', 'key'])
+
     def test_invalid_settings_change_nothing(self):
         self.store.action(dict(action='ai_settings', api_key=KEY))
         with self.assertRaises(Error) as cm:
             self.store.action(dict(action='ai_settings', base_url='http://insecure.example.com', api_key='another-key-1234567'))
         self.assertNotIn('another-key', str(cm.exception))
-        self.assertEqual(llm.load_key(self.store.root), KEY)
+        self.assertEqual(llm.load_key(self.store.root, 'api.deepseek.com'), KEY)
         with self.assertRaises(Error):
             self.store.action(dict(action='ai_settings', api_key='bad key'))
         with self.assertRaises(Error):
@@ -294,7 +384,14 @@ class AICLITests(unittest.TestCase):
         self.assertEqual(shown['key_hint'], KEY[-4:])
         self.assertEqual(shown['settings']['base_url'], 'https://api.deepseek.com')
         self.assertIsNone(shown['consent'])
+        self.assertEqual(shown['key_host'], 'api.deepseek.com')
         self.assertIn('未使用 AI', shown['status'])
+
+    def test_cli_key_binds_to_current_settings_host(self):
+        Store(self.data).action(dict(action='ai_settings', base_url='https://api.other.com'))
+        self.assertEqual(self.invoke(['ai', 'key', '--data', str(self.data)], KEY + '\n')[0], 0)
+        self.assertEqual(llm.key_host(self.data), 'api.other.com')
+        self.assertEqual(llm.load_key(self.data, 'api.other.com'), KEY)
 
     def test_getpass_used_on_a_terminal(self):
         class TTY(io.StringIO):
@@ -303,7 +400,7 @@ class AICLITests(unittest.TestCase):
         with contextlib.redirect_stdout(out), patch('sys.stdin', TTY()), patch('getpass.getpass', return_value=KEY) as gp:
             self.assertEqual(main(['ai', 'key', '--data', str(self.data)]), 0)
         gp.assert_called_once()
-        self.assertEqual(llm.load_key(self.data), KEY)
+        self.assertEqual(llm.load_key(self.data, 'api.deepseek.com'), KEY)
 
     def test_bad_key_is_rejected_without_echo(self):
         code, out, err = self.invoke(['ai', 'key', '--data', str(self.data)], 'bad key with spaces\n')

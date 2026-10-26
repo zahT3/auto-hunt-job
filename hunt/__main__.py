@@ -151,7 +151,7 @@ def main(argv=None):
             store = Store(args.data)
             if args.ai_command == 'key':
                 key = getpass.getpass('API key（输入不显示）：') if sys.stdin.isatty() else sys.stdin.readline()
-                llm.save_key(store.root, key.strip())
+                llm.save_key(store.root, key.strip(), llm.host(llm.load_settings(store.root)))
                 print('已保存 API key，末 4 位：' + llm.key_hint(store.root))
             else:
                 ai = store.ai_settings()

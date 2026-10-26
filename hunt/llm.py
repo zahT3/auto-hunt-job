@@ -83,23 +83,38 @@ def host(settings):
     return (urlsplit(settings['base_url']).hostname or '').lower()
 
 
-def save_key(root, key):
+def save_key(root, key, host_name):
+    """The key is stored with the host it was entered for; it is never sent anywhere else."""
     if not isinstance(key, str) or not network.BEARER.fullmatch(key.strip()):
         raise ValueError('密钥格式无效（8–512 位字母、数字、点、下划线、横线）')
-    _write_private(Path(root) / SECRETS_FILE, json.dumps(dict(api_key=key.strip())))
+    _write_private(Path(root) / SECRETS_FILE, json.dumps(dict(api_key=key.strip(), host=host_name)))
 
 
-def load_key(root):
+def _read_secrets(root):
     try:
-        key = json.loads((Path(root) / SECRETS_FILE).read_text(encoding='utf-8')).get('api_key')
-    except (OSError, ValueError, AttributeError):
+        data = json.loads((Path(root) / SECRETS_FILE).read_text(encoding='utf-8'))
+    except (OSError, ValueError):
+        return {}
+    return data if isinstance(data, dict) else {}
+
+
+def key_host(root):
+    data = _read_secrets(root)
+    return data['host'] if isinstance(data.get('host'), str) and data.get('api_key') else None
+
+
+def load_key(root, host_name):
+    """None when no key is saved or it was entered for another host (a legacy file without host counts as other)."""
+    data = _read_secrets(root)
+    key = data.get('api_key')
+    if not (isinstance(key, str) and network.BEARER.fullmatch(key)) or data.get('host') != host_name:
         return None
-    return key if isinstance(key, str) and network.BEARER.fullmatch(key) else None
+    return key
 
 
 def key_hint(root):
-    key = load_key(root)
-    return key[-4:] if key else None
+    key = _read_secrets(root).get('api_key')
+    return key[-4:] if isinstance(key, str) and network.BEARER.fullmatch(key) else None
 
 
 def consent_ok(consent, settings, kind):
@@ -128,6 +143,10 @@ class Meter:
     def spent(self):
         return (self.prompt_tokens * self.price_in + self.completion_tokens * self.price_out) / 1e6
 
+    def projected(self, prompt_chars, max_tokens):
+        """Spent so far plus the worst case of one more call (estimated prompt, full max_tokens reply)."""
+        return self.spent + (math.ceil(prompt_chars / 1.5) * self.price_in + max_tokens * self.price_out) / 1e6
+
     @property
     def exhausted(self):
         return self.spent >= self.budget_cny
@@ -137,11 +156,16 @@ def _scrub(text, key):
     return str(text).replace(key, '***') if key else str(text)
 
 
-def chat_json(settings, key, messages, schema_keys, meter, transport=network.fetch):
+def chat_json(settings, key, messages, schema_keys, meter, transport=network.fetch, max_tokens=2000):
     """One JSON-mode chat completion. Raises LLMError('budget'|'fetch_error'|'bad_output', ...)."""
+    if not key:
+        raise LLMError('no_key', '未保存当前服务主机的 API key（换服务地址后需要重新输入）')
     if meter.exhausted:
         raise LLMError('budget', '已达本轮模型花费上限，不再调用模型')
-    body = json.dumps(dict(model=settings['model'], messages=messages,
+    prompt_chars = sum(len(str(m.get('content', ''))) for m in messages)
+    if meter.projected(prompt_chars, max_tokens) > meter.budget_cny:
+        raise LLMError('budget', '这次调用的最坏花费会超过本轮上限，不再调用模型')
+    body = json.dumps(dict(model=settings['model'], messages=messages, max_tokens=max_tokens,
                            response_format={'type': 'json_object'}), ensure_ascii=False).encode('utf-8')
     try:
         raw = transport(settings['base_url'].rstrip('/') + '/chat/completions', method='POST', data=body,
@@ -155,14 +179,14 @@ def chat_json(settings, key, messages, schema_keys, meter, transport=network.fet
         if not isinstance(content, str):
             raise TypeError
     except (ValueError, KeyError, IndexError, TypeError):
-        meter.estimate(sum(len(str(m.get('content', ''))) for m in messages), len(raw or b''))
+        meter.estimate(prompt_chars, len(raw or b''))
         raise LLMError('bad_output', '模型服务返回了无法识别的响应') from None
     usage = outer.get('usage') if isinstance(outer, dict) else None
     pt, ct = (usage.get('prompt_tokens'), usage.get('completion_tokens')) if isinstance(usage, dict) else (None, None)
     if isinstance(pt, int) and isinstance(ct, int) and not isinstance(pt, bool) and not isinstance(ct, bool):
         meter.charge(pt, ct)
     else:
-        meter.estimate(sum(len(str(m.get('content', ''))) for m in messages), len(content))
+        meter.estimate(prompt_chars, len(content))
     try:
         result = json.loads(content)
     except ValueError:

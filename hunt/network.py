@@ -142,6 +142,7 @@ def resolve_public(host, timeout=TIMEOUT):
 XSRF_COOKIE = re.compile('XSRF-TOKEN=[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}')
 
 
+HEADER_NAME = re.compile(r"[!#$%&'*+\-.^_`|~0-9A-Za-z]+")
 BEARER = re.compile(r'[A-Za-z0-9._\-]{8,512}')
 
 
@@ -162,9 +163,13 @@ def fetch(url, method='GET', data=None, headers=None, with_metadata=False, *, be
         raise FetchError('请求正文过大')
     request_headers = {'User-Agent': 'auto-hunt-job/0.1', 'Accept-Encoding': 'identity'}
     for k, v in (headers or {}).items():
-        if k.lower() == 'cookie' and XSRF_COOKIE.fullmatch(str(v)):
+        # A name like 'Authorization ' must not slip past the denylist below, so only RFC 7230 tokens pass.
+        if not isinstance(k, str) or not HEADER_NAME.fullmatch(k):
+            raise FetchError('请求头无效')
+        name = k.strip().lower()
+        if name == 'cookie' and XSRF_COOKIE.fullmatch(str(v)):
             pass  # self-minted double-submit token, carries no identity
-        elif k.lower() in ('host', 'cookie', 'authorization', 'proxy-authorization', 'connection', 'transfer-encoding', 'content-length'):
+        elif name in ('host', 'cookie', 'authorization', 'proxy-authorization', 'connection', 'transfer-encoding', 'content-length'):
             raise FetchError('公开检索不允许认证或连接覆盖头')
         if '\r' in k + str(v) or '\n' in k + str(v):
             raise FetchError('请求头无效')

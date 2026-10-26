@@ -12,7 +12,7 @@ from datetime import datetime, timezone, timedelta
 from pathlib import Path
 from urllib.parse import urlsplit, urlunsplit
 
-from . import llm
+from . import llm, network
 
 
 def now():
@@ -682,10 +682,11 @@ class Store:
 
     def _ai(self, c):
         settings, consent = llm.load_settings(self.root), self.meta(c, 'ai_consent')
-        hint = llm.key_hint(self.root)
+        stored_host = llm.key_host(self.root)
+        hint = llm.key_hint(self.root) if llm.load_key(self.root, llm.host(settings)) else None
         current = any(llm.consent_ok(consent, settings, k) for k in llm.KINDS)
         # Not the key: only its last four characters ever leave this module.
-        return dict(settings=settings, key_hint=hint, consent=consent, consent_current=current,
+        return dict(settings=settings, key_hint=hint, key_host=stored_host, key_mismatch=bool(stored_host and not hint), consent=consent, consent_current=current,
                     active=bool(hint and current))
 
     def ai_settings(self):
@@ -698,9 +699,12 @@ class Store:
             settings = llm.clean_settings(dict(llm.load_settings(self.root), **data))
             key = payload.get('api_key')
             if key is not None and not isinstance(key, str): raise ValueError('密钥格式无效')
-            if key and key.strip(): llm.save_key(self.root, key)
+            if key and key.strip() and not network.BEARER.fullmatch(key.strip()): raise ValueError('密钥格式无效')
+            # Settings first: a failing key write then leaves the old key bound to its old host, which is inert.
             llm.save_settings(self.root, settings)
+            if key and key.strip(): llm.save_key(self.root, key, llm.host(settings))
         except ValueError as e: raise Error(str(e)) from None
+        except OSError: raise Error('无法写入模型设置或密钥，请检查数据目录权限') from None
         with self.tx() as c: self.intervene(c, '更新模型服务设置')
         return self.ai_settings()
 
