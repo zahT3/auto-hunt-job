@@ -27,7 +27,7 @@ class PhoneTests(unittest.TestCase):
 class EmailTests(unittest.TestCase):
     def test_variants(self):
         for raw in ['lin@example.com', 'lin.shi+jobs@mail.example.co.uk', 'LIN_1@sub.a-b.example.invalid',
-                    'lin＠example.com', '13800138000@qq.com']:
+                    'lin＠example.com', '13800138000@mail.example.com']:
             with self.subTest(raw=raw):
                 self.assertEqual(redact(f'x\n邮箱：{raw}。'), 'x\n邮箱：[邮箱]。')
 
@@ -51,7 +51,8 @@ class SocialTests(unittest.TestCase):
         cases = {'x\n微信：abc_12345': 'x\n微信：[微信号]', 'x\n微信号 lin12345': 'x\n微信号 [微信号]',
                  'x\nWeChat: lin_shi': 'x\nWeChat: [微信号]', 'x\nQQ 12345678': 'x\nQQ [QQ号]',
                  'x\nQQ：12345678': 'x\nQQ：[QQ号]', 'x\nQQ号：987654321': 'x\nQQ号：[QQ号]',
-                 'x\n微信/QQ：lin12345': 'x\n微信/QQ：[QQ号]'}
+                 'x\n微信/QQ：lin12345': 'x\n微信/QQ：[微信号]',
+                 'x\nQQ/微信：12345678': 'x\nQQ/微信：[QQ号]'}
         for raw, want in cases.items():
             with self.subTest(raw=raw):
                 self.assertEqual(redact(raw), want)
@@ -106,6 +107,138 @@ class AddressTests(unittest.TestCase):
         for text in ['现居北京，期望城市：上海', '在示例科技负责路径规划与网络优化', '带领团队完成 3 个项目，覆盖 5 号线',
                      '获得第 2 名，高铁 G12 次，实验室 3 个']:
             self.assertEqual(redact('x\n' + text), 'x\n' + text)
+
+
+class UrlTests(unittest.TestCase):
+    def test_urls_and_profile_forms(self):
+        cases = {'详见 https://example.com/lin/cv?x=1 谢谢': '详见 [链接] 谢谢', '主页 http://lin.example.invalid': '主页 [链接]',
+                 'github.com/linshi': '[链接]', 'https://github.com/linshi/repo': '[链接]', 'linkedin.com/in/lin-shi-123': '[链接]',
+                 'www.linkedin.com/in/lin-shi/': '[链接]', 'gitee.com/linshi': '[链接]', 'zhihu.com/people/lin-shi': '[链接]',
+                 'linshi.github.io': '[链接]', 'linshi.github.io/blog': '[链接]',
+                 '个人网站：linshi.example.invalid': '个人网站：[链接]', 'Blog: www.linshi.example.invalid/posts': 'Blog: [链接]',
+                 '博客：linshi.cn': '博客：[链接]', 'Website：https://linshi.example.invalid': 'Website：[链接]'}
+        for raw, want in cases.items():
+            with self.subTest(raw=raw):
+                self.assertEqual(redact('产品经理\n' + raw), '产品经理\n' + want)
+
+    def test_brand_mentions_survive(self):
+        for text in ['维护 GitHub 开源项目，star 3000', '使用 github.com 托管代码', '参与 LinkedIn 招聘产品运营', '博客系统开发']:
+            self.assertEqual(redact('产品经理\n' + text), '产品经理\n' + text)
+
+    def test_email_still_wins_over_domain(self):
+        self.assertEqual(redact('产品经理\nlin@linshi.github.io'), '产品经理\n[邮箱]')
+
+
+class LeadingNameTests(unittest.TestCase):
+    def test_name_with_more_on_the_first_line(self):
+        cases = {'张三 | 产品经理 | 13800138000': '[姓名] | 产品经理 | [手机号]',
+                 '张三  男  28岁  本科': '[姓名]  男  [年龄]  本科', '张三/产品经理': '[姓名]/产品经理',
+                 '张三·男': '[姓名]·男', '张三，产品经理': '[姓名]，产品经理', '欧阳示例、男': '[姓名]、男',
+                 '个人简历\n张三 | 138-0013-8000': '个人简历\n[姓名] | [手机号]'}
+        for raw, want in cases.items():
+            with self.subTest(raw=raw):
+                self.assertEqual(redact(raw), want)
+
+    def test_heading_and_job_title_first_lines_are_kept(self):
+        for first in ['产品经理', '后端工程师', '资深设计师 | 5年', '运营', '数据分析师', '教育背景 2017-2021', '工作经历：示例科技',
+                      '求职意向 产品运营', '销售总监，上海', '技术顾问', 'Java开发']:
+            with self.subTest(first=first):
+                self.assertEqual(redact(first + '\n软件工程师'), first + '\n软件工程师')
+
+    def test_field_label_first_line_is_not_a_name(self):
+        for raw, want in {'电话 13800138000': '电话 [手机号]', '邮箱 a@b.com': '邮箱 [邮箱]', '手机：13800138000': '手机：[手机号]',
+                          '微信 lin12345': '微信 [微信号]', '地址 示例路8号': '地址 [地址]'}.items():
+            with self.subTest(raw=raw):
+                self.assertEqual(redact(raw), want)
+
+    def test_company_run_is_not_a_leading_name(self):
+        self.assertEqual(redact('示例科技有限公司 | 产品经理'), '示例科技有限公司 | 产品经理')
+
+    def test_provided_names_are_redacted_everywhere(self):
+        text = '负责人林示例 与 Lin Shili 对接；林示例带队，林示 不变。'
+        self.assertEqual(redact(text, names=['林示例', 'lin  shili']), '负责人[姓名] 与 [姓名] 对接；[姓名]带队，林示 不变。')
+        self.assertEqual(redact(text, names=['林', '', ' ']), text)
+        self.assertEqual(redact('姓名：林示例\n简历', names=['林示例']), '姓名：[姓名]\n简历')
+
+    def test_provided_names_in_facts(self):
+        facts = [dict(id='a', text='项目由林示例主导'), dict(id='b', text='增长 30%')]
+        self.assertEqual(redact_facts(facts, names=['林示例']), [dict(id='a', text='项目由[姓名]主导'), dict(id='b', text='增长 30%')])
+        self.assertEqual(redact_facts(facts)[0]['text'], '项目由林示例主导')
+
+
+class BirthAgeTests(unittest.TestCase):
+    def test_labelled_birth_and_age(self):
+        cases = {'出生日期：1995-03-07': '出生日期：[出生日期]', '出生年月: 1995.03': '出生年月: [出生日期]',
+                 '出生：1995年3月': '出生：[出生日期]', '生日：1995年3月7日  性别：女': '生日：[出生日期]  性别：女',
+                 'Date of Birth: 1995/03/07': 'Date of Birth: [出生日期]', 'DOB: 1995-03': 'DOB: [出生日期]',
+                 '出生日期：１９９５年３月': '出生日期：[出生日期]',
+                 '年龄：28': '年龄：[年龄]', '年龄：28岁': '年龄：[年龄]', 'Age: 28': 'Age: [年龄]'}
+        for raw, want in cases.items():
+            with self.subTest(raw=raw):
+                self.assertEqual(redact('产品经理\n' + raw), '产品经理\n' + want)
+
+    def test_prose_forms(self):
+        cases = {'1995年3月出生': '[出生日期]', '1995年出生，本科': '[出生日期]，本科', '出生于1995年3月': '[出生日期]',
+                 '1995-03-07 出生': '[出生日期]', '男，28岁，已婚': '男，[年龄]，已婚'}
+        for raw, want in cases.items():
+            with self.subTest(raw=raw):
+                self.assertEqual(redact('产品经理\n' + raw), '产品经理\n' + want)
+
+    def test_other_dates_and_ages_survive(self):
+        text = '2020年3月入职示例科技，2021年毕业，出生地：北京，带 3 岁以下儿童产品线，2020.03—2022.06，满 5 年'
+        self.assertEqual(redact('产品经理\n' + text), '产品经理\n' + text)
+
+
+class AddressMoreTests(unittest.TestCase):
+    def test_numbers_with_prefix_letter(self):
+        for raw in ['北京市海淀区知春路甲48号', '朝阳区建国路乙12号院', '示例路A8号']:
+            with self.subTest(raw=raw):
+                self.assertEqual(redact('产品经理\n' + raw), '产品经理\n[地址]')
+
+    def test_company_text_before_a_known_city_survives(self):
+        cases = {'在腾讯科技深圳市南山区科苑路15号任职': '在腾讯科技[地址]任职',
+                 '就职于示例网络科技北京市海淀区中关村大街1号': '就职于示例网络科技[地址]',
+                 '阿里巴巴杭州市余杭区文一西路969号': '阿里巴巴[地址]',
+                 '腾讯广东省深圳市南山区科苑路15号': '腾讯[地址]'}
+        for raw, want in cases.items():
+            with self.subTest(raw=raw):
+                self.assertEqual(redact('产品经理\n' + raw), '产品经理\n' + want)
+
+
+class CardAndOldIdTests(unittest.TestCase):
+    def test_bank_cards(self):
+        for raw in ['4111111111111111', '4111 1111 1111 1111', '6222020200112233446', '6222 0202 0011 2233 446',
+                    '4111-1111-1111-1111', '４１１１１１１１１１１１１１１１']:
+            with self.subTest(raw=raw):
+                self.assertEqual(redact(f'产品经理\n卡 {raw} 完'), '产品经理\n卡 [银行卡号] 完')
+
+    def test_labelled_card_without_luhn(self):
+        self.assertEqual(redact('产品经理\n银行卡号：6222 0202 0011 2233 445'), '产品经理\n银行卡号：[银行卡号]')
+
+    def test_non_luhn_long_numbers_survive(self):
+        text = '处理 4111111111111112 条记录，流水 1234567890123456'
+        self.assertEqual(redact('产品经理\n' + text), '产品经理\n' + text)
+
+    def test_fifteen_digit_ids(self):
+        self.assertEqual(redact('产品经理\n证 110101900307123 完'), '产品经理\n证 [身份证号] 完')
+        self.assertEqual(redact('产品经理\n证 110101900307123'), '产品经理\n证 [身份证号]')
+        text = '编号 123456789012345 共计'  # month 90 at positions 9-10: not a date
+        self.assertEqual(redact('产品经理\n' + text), '产品经理\n' + text)
+
+
+class TopLineInteractionTests(unittest.TestCase):
+    def test_contact_on_the_very_first_line(self):
+        self.assertEqual(redact('13800138000\n软件工程师'), '[手机号]\n软件工程师')
+        self.assertEqual(redact('a@b.com\n软件工程师'), '[邮箱]\n软件工程师')
+
+    def test_name_field_and_top_line_together(self):
+        self.assertEqual(redact('林示例\n姓名：林示例\n邮箱：a@b.com'), '[姓名]\n姓名：[姓名]\n邮箱：[邮箱]')
+
+    def test_top_line_name_then_address_line(self):
+        self.assertEqual(redact('林示例\n示例路88号'), '[姓名]\n[地址]')
+
+    def test_top_line_that_is_a_field_is_not_double_redacted(self):
+        self.assertEqual(redact('姓名：林示例\n软件工程师'), '姓名：[姓名]\n软件工程师')
 
 
 class SampleTests(unittest.TestCase):
