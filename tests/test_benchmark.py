@@ -68,6 +68,15 @@ class MatchingTests(unittest.TestCase):
         self.assertEqual(result['overall']['found'], 1)
         self.assertNotIn('AI 产品经理', result['companies'][0]['missing'])
 
+    def test_hash_route_fragments_keep_jobs_apart(self):
+        # Moka puts the job id in a '#/job/<id>' route; dropping it made every job on a board one URL.
+        board = 'https://app.mokahr.com/social-recruitment/acme/1'
+        truth = dict(direction_id='x', collected_at='2026-10-27T10:00:00+08:00', companies=[dict(
+            name='星河', careers_url=board, jobs=[dict(title='甲', url=board + '#/job/a'), dict(title='乙', url=board + '#/job/b')])])
+        jobs = [job('甲', url=board + '#/job/a'), job('丙', url=board + '#/job/c'), job('丁', url=board + '#/job/d')]
+        overall = benchmark.match_truth(truth, jobs)['overall']
+        self.assertEqual((overall['found'], overall['extra'], overall['duplicates']), (1, 2, 0))
+
     def test_url_query_and_scheme_are_preserved(self):
         self.truth['companies'][0]['jobs'][0]['url'] += '?id=1&source=A'
         jobs = [job('未知岗位甲', url='https://careers.example/0/0?id=2&source=A'),

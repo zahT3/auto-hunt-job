@@ -44,7 +44,9 @@ def _url(value):
         _ = parts.port
         user, at, host = parts.netloc.rpartition('@')
         netloc = user + at + host.lower()
-        return urlunsplit((parts.scheme.lower(), netloc, parts.path.rstrip('/'), parts.query, ''))
+        # A '#/...' fragment is a single-page-app route (Moka keeps the job id there); other fragments are page anchors.
+        route = parts.fragment if parts.fragment.startswith('/') else ''
+        return urlunsplit((parts.scheme.lower(), netloc, parts.path.rstrip('/'), parts.query, route))
     except ValueError:
         raise ValueError('链接必须是有效的 HTTP(S) 地址') from None
 
