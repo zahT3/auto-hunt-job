@@ -402,6 +402,62 @@ class AICLITests(unittest.TestCase):
         gp.assert_called_once()
         self.assertEqual(llm.load_key(self.data, 'api.deepseek.com'), KEY)
 
+    def tty(self, arguments, typed):
+        class TTY(io.StringIO):
+            def isatty(self): return True
+        out, err = io.StringIO(), io.StringIO()
+        with contextlib.redirect_stdout(out), contextlib.redirect_stderr(err), patch('sys.stdin', TTY(typed)):
+            code = main(arguments)
+        return code, out.getvalue(), err.getvalue()
+
+    def consent(self):
+        return Store(self.data).ai_settings()['consent']
+
+    def test_consent_shows_host_and_model_and_needs_yes(self):
+        code, out, err = self.tty(['ai', 'consent', '--kind', 'resume_redacted', '--kind', 'job_text', '--data', str(self.data)], 'no\n')
+        self.assertEqual(code, 1)
+        self.assertIn('api.deepseek.com', out)
+        self.assertIn('deepseek-v4-flash', out)
+        self.assertIn('脱敏简历', out)
+        self.assertIn('岗位原文', out)
+        self.assertIn('还没有保存', out)  # no key yet for this host
+        self.assertIsNone(self.consent())
+        code, out, err = self.tty(['ai', 'consent', '--kind', 'resume_redacted', '--kind', 'job_text', '--data', str(self.data)], 'yes\n')
+        self.assertEqual(code, 0, err)
+        consent = self.consent()
+        self.assertEqual((consent['host'], consent['model'], consent['kinds']), ('api.deepseek.com', 'deepseek-v4-flash', ['resume_redacted', 'job_text']))
+
+    def test_consent_asks_for_kinds_on_a_terminal_and_warns_about_the_full_resume(self):
+        code, out, err = self.tty(['ai', 'consent', '--data', str(self.data)], '2,3\nyes\n')
+        self.assertEqual(code, 0, err)
+        self.assertEqual(self.consent()['kinds'], ['resume_full', 'job_text'])
+        self.assertIn('完整简历', out)
+        self.assertIn('不脱敏', out)
+
+    def test_consent_without_a_terminal_needs_kinds_and_yes(self):
+        code, out, err = self.invoke(['ai', 'consent', '--kind', 'job_text', '--data', str(self.data)])
+        self.assertEqual(code, 1)
+        self.assertIn('--yes', err)
+        self.assertIsNone(self.consent())
+        code, out, err = self.invoke(['ai', 'consent', '--yes', '--data', str(self.data)])
+        self.assertEqual(code, 1)
+        self.assertIn('--kind', err)
+        code, out, err = self.invoke(['ai', 'consent', '--kind', 'job_text', '--yes', '--data', str(self.data)])
+        self.assertEqual(code, 0, err)
+        self.assertEqual(self.consent()['kinds'], ['job_text'])
+
+    def test_bad_kind_number_is_rejected(self):
+        code, out, err = self.tty(['ai', 'consent', '--data', str(self.data)], '9\n')
+        self.assertEqual(code, 1)
+        self.assertIsNone(self.consent())
+
+    def test_revoke_clears_consent(self):
+        self.invoke(['ai', 'consent', '--kind', 'job_text', '--yes', '--data', str(self.data)])
+        code, out, err = self.invoke(['ai', 'revoke', '--data', str(self.data)])
+        self.assertEqual(code, 0, err)
+        self.assertIn('已撤销', out)
+        self.assertIsNone(self.consent())
+
     def test_bad_key_is_rejected_without_echo(self):
         code, out, err = self.invoke(['ai', 'key', '--data', str(self.data)], 'bad key with spaces\n')
         self.assertEqual(code, 1)

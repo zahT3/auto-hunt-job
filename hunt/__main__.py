@@ -22,6 +22,32 @@ FORWARD = {
 }
 
 
+KIND_LABELS = dict(resume_redacted='脱敏简历', resume_full='完整简历', job_text='岗位原文')
+
+
+def ai_consent(store, args):
+    """Show where content would go, then write consent bound to exactly that host and model."""
+    settings, tty = llm.load_settings(store.root), sys.stdin.isatty()
+    kinds = args.kind
+    if not kinds:
+        if not tty: raise Error('请用 --kind 指定内容类别：' + '、'.join('%s（%s）' % kv for kv in KIND_LABELS.items()))
+        for n, (kind, label) in enumerate(KIND_LABELS.items(), 1): print('%d. %s（%s）' % (n, label, kind))
+        picked = input('选择要同意发送的内容，填编号，可用逗号分隔：').replace('，', ',').split(',')
+        if not all(x.strip() in ('1', '2', '3') for x in picked): raise Error('编号须是 1、2、3，未做任何更改')
+        kinds = [list(KIND_LABELS)[int(x) - 1] for x in picked]
+    host = llm.host(settings)
+    print('将发往：%s（模型 %s）' % (host, settings['model']))
+    print('内容：' + '、'.join(KIND_LABELS[k] for k in llm.KINDS if k in kinds))
+    if 'resume_full' in kinds: print('注意：「完整简历」不脱敏，姓名和联系方式会原样发送。')
+    if not llm.load_key(store.root, host): print('提示：还没有保存这个主机的 API key；同意会记下，但在保存 key 之前不会发送任何内容。')
+    if not args.yes:
+        if not tty: raise Error('非交互环境请加 --yes 确认；未做任何更改')
+        if input('确认同意吗？输入 yes 继续：').strip().lower() not in ('yes', 'y'): raise Error('未同意，未做任何更改')
+    # Passing what was shown makes the store refuse if settings changed in between.
+    store.grant_ai_consent(dict(kinds=kinds, host=host, model=settings['model']))
+    print('已同意。可随时用 python -m hunt ai revoke 撤销。')
+
+
 def parser():
     result = argparse.ArgumentParser(prog='python -m hunt', description='本地求职助手：找岗位、核对事实、准备材料。')
     commands = result.add_subparsers(dest='command', required=True)
@@ -55,8 +81,14 @@ def parser():
     ai = commands.add_parser('ai', help='模型服务：保存 API key、查看设置与同意（不显示 key）')
     ai.set_defaults(json=False)
     ai_commands = ai.add_subparsers(dest='ai_command', required=True)
-    for name, text in (('key', '保存 API key；终端里隐藏输入，非终端时从标准输入读一行'), ('show', '显示模型设置、key 末 4 位与同意记录')):
-        ai_commands.add_parser(name, help=text).add_argument('--data', type=Path, default=DEFAULT_DATA, help='与网页相同的本地数据目录')
+    for name, text in (('key', '保存 API key；终端里隐藏输入，非终端时从标准输入读一行'), ('show', '显示模型设置、key 末 4 位与同意记录'),
+                       ('consent', '同意向当前模型服务发送所选内容；先显示主机和模型，确认后写入'), ('revoke', '撤销对模型服务的全部同意')):
+        command = ai_commands.add_parser(name, help=text)
+        command.add_argument('--data', type=Path, default=DEFAULT_DATA, help='与网页相同的本地数据目录')
+        if name == 'consent':
+            command.add_argument('--kind', action='append', choices=llm.KINDS, metavar='KIND',
+                                 help='内容类别，可重复：' + '、'.join('%s=%s' % kv for kv in KIND_LABELS.items()))
+            command.add_argument('--yes', action='store_true', help='不再询问，直接同意（用于脚本）')
     for command in (status, resume, confirm, config):
         command.add_argument('--data', type=Path, default=DEFAULT_DATA, help='与网页相同的本地数据目录')
         command.add_argument('--json', action='store_true', help='输出结构化 JSON')
@@ -243,6 +275,11 @@ def main(argv=None):
                 key = getpass.getpass('API key（输入不显示）：') if sys.stdin.isatty() else sys.stdin.readline()
                 llm.save_key(store.root, key.strip(), llm.host(llm.load_settings(store.root)))
                 print('已保存 API key，末 4 位：' + llm.key_hint(store.root))
+            elif args.ai_command == 'consent':
+                ai_consent(store, args)
+            elif args.ai_command == 'revoke':
+                store.revoke_ai_consent()
+                print('已撤销对模型服务的全部同意；之后不会再发送任何内容，直到重新同意。')
             else:
                 ai = store.ai_settings()
                 ai['status'] = '已配置，可向所同意的内容发送' if ai['active'] else '未使用 AI（需要 key 与当前服务、模型下的同意）'
