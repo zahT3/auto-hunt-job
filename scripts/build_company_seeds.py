@@ -104,14 +104,12 @@ STATUS = dict.fromkeys((
     'pony-ai',
     'zhaopin-kuaishou-cn-recruit-e',
     'jobs-bilibili-com-campus-positions',
-    'hr-163-com-job-list-html',
     'siliconflow-cn-zh-cn-about',
     'infini-ai-com-careers',
     '4paradigm-com-about-jobs-html',
     'ctrip',
     'dji',
     'lixiang',
-    'join-jd-com-home',
     'pingcap-com-careers',
     'deepexi-com-about-us',
     'doris-apache-org',
@@ -119,7 +117,9 @@ STATUS = dict.fromkeys((
 ), 'needs_adapter')
 # 2026-10-27 benchmark: these seeds pointed at marketing pages while the jobs sit on a Moka or Feishu tenant the
 # readers already support (found from each official careers page). Applied to seed rows only; hunt/catalog.py keeps its URLs.
+# 京东使用其公开社招列表，由专用 API 读取器承接。
 SEED_URLS = {
+    'join-jd-com-home': 'https://zhaopin.jd.com/web/job/job_info_list/3',
     'kimi': 'https://app.mokahr.com/apply/moonshot/148506',
     'minimax': 'https://vrfi1sk8a0.jobs.feishu.cn/379481',
     'stepfun': 'https://app.mokahr.com/social-recruitment/step/94904',
