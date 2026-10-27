@@ -52,10 +52,11 @@ class SeedFileTests(unittest.TestCase):
 
 class NontechSeedTests(unittest.TestCase):
     def test_original_53_records_are_unchanged(self):
-        # Changed on purpose once (2026-10-27): six seeds moved to their Moka/Feishu tenants (builder.SEED_URLS).
+        # Changed on purpose (2026-10-27): six seeds moved to their Moka/Feishu tenants (builder.SEED_URLS), and
+        # 小鹏/蔚来 gained the AI tag so an AI-direction sweep counts them as relevant.
         original = json.dumps(companies.load_seeds()[:53], ensure_ascii=False, sort_keys=True).encode()
         self.assertEqual(hashlib.sha256(original).hexdigest(),
-                         '883e400ef54b8e384fddaf62cf20a49e556fecb51315dcecf86cb17f8a6805ca')
+                         '238a223a8132a97fe6e241ca23282bb9ac03408a93485b328ad3d9cf0a9d68dc')
 
     def test_seed_url_fixes_route_to_supported_readers(self):
         from hunt.providers import route
@@ -178,6 +179,8 @@ class SelectTests(unittest.TestCase):
         tiers = {c['company']: c['tier'] for c in companies.select(['AI 产品经理'], 10, extra, seeds=seeds, families=['销售与商务'])}
         # A small unrelated tenant waits with the tail even though its provider searches by keyword.
         self.assertEqual(tiers, dict(k=0, u=0, t=2, y=1, f=1, x=2, Z=3))
+        broad = {c['company']: c['broad'] for c in companies.select(['AI 产品经理'], 10, extra, seeds=seeds)}
+        self.assertEqual(broad, dict(k=True, u=False, t=False, y=False, f=False, x=False, Z=False))
 
     def test_select_extra_dedupes_against_seeds(self):
         seeds = [seed('x', 'https://x.example.test/jobs')]

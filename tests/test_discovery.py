@@ -222,5 +222,11 @@ class NoDefaultTermsTests(unittest.TestCase):
         self.assertFalse(matches('UI Designer', ['芯片设计']))  # only '设计师' style terms pull in design titles
         self.assertIn('ai', ' '.join(expanded_terms(['AI'])['AI']).lower())  # the old groups stay
 
+    def test_product_lead_titles_and_maas_count_as_ai_product_roles(self):
+        self.assertTrue(matches('智能体-移动端产品负责人-WorkBuddy', ['Agent 产品经理']))
+        self.assertTrue(matches('腾讯营销-投放 Agent 产品专家-北京/深圳', ['Agent 产品经理']))
+        self.assertTrue(matches('腾讯云-MaaS海外高级产品经理', ['AI 产品经理']))
+        self.assertFalse(matches('仓库产品专员', ['AI 产品经理']))
+
 
 if __name__=='__main__': unittest.main()

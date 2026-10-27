@@ -54,7 +54,7 @@ def search_terms(config, profile=None):
 
 ROLE_ALIASES = [
     (('开发', '工程师', '研发'), ['engineer', 'engineering', 'developer', 'development']),
-    (('产品经理',), ['product manager', 'product owner']),
+    (('产品经理',), ['product manager', 'product owner', '产品专家', '产品负责人']),
 ]
 
 
@@ -68,7 +68,7 @@ def _segment_aliases(segment):
 def expanded_terms(terms):
     """Explicit, inspectable recall aliases; this does not assert candidate fit."""
     groups = {
-        'ai': ['AI', '人工智能', 'machine learning', '机器学习', 'LLM', '大模型', '深度学习'],
+        'ai': ['AI', '人工智能', 'machine learning', '机器学习', 'LLM', '大模型', '深度学习', 'MaaS'],
         'web3': ['web3', 'blockchain', '区块链', 'smart contract', '智能合约'],
         'agent': ['agent', '智能体'],
         'rag': ['RAG', 'retrieval augmented generation', '检索增强', 'retrieval'],
@@ -370,7 +370,7 @@ def _websearch(source, read, terms, limit, pages, report):
             if page == pages: report['truncated'] = True
 
 
-SUMMED = ('pages', 'fetched', 'requests', 'entry_requests', 'rendered_pages', 'elapsed_seconds')
+SUMMED = ('pages', 'fetched', 'filtered', 'requests', 'entry_requests', 'rendered_pages', 'elapsed_seconds')
 
 
 def sweep_limits(config):
@@ -415,7 +415,7 @@ def discover(config, profile=None, transport=None, *, browser_profile_root=None,
 
     def new_report(source):
         return dict(source_id=source.get('id') or str(source.get('kind')), kind=source.get('kind'), company=source.get('company'), status='empty',
-                    fetched=0, returned=0, pages=0, requests=0, error=None, search_url=None, checked_at=now(), truncated=False,
+                    fetched=0, returned=0, filtered=0, pages=0, requests=0, error=None, search_url=None, checked_at=now(), truncated=False,
                     mode=source.get('mode', 'public'), passes=1)
 
     def run_source(source, report, quota, request_quota, pages):
@@ -457,7 +457,11 @@ def discover(config, profile=None, transport=None, *, browser_profile_root=None,
                     report['kind'] = provider.id
                     report['source_id'] = sid = source.get('id') or (
                         provider.id + (':' + parts.netloc + parts.path.rstrip('/') if parts.netloc else ''))
-                generator = provider.fetch(source, Context(read, terms, quota, pages, report, renderer))
+                # In a sweep, a broad platform's remote keyword search must also match the terms locally (by title, as the
+                # job is named) before it takes a job slot; a company's own board, and any search outside a sweep, is
+                # trusted as before. Sources configured without the flag count as broad.
+                keep = (lambda job: matches(job['title'], terms)) if sweep and source.get('broad', True) else None
+                generator = provider.fetch(source, Context(read, terms, quota, pages, report, renderer, keep=keep))
                 for item in generator:
                     key = (item['channel'], item['platform_id'])
                     if key in seen: continue

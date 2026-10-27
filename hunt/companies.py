@@ -45,9 +45,12 @@ def _overlap(terms, seed):
 
 
 def _entry(seed, tier=1):
+    # broad: a big multi-business platform whose remote keyword search returns loose matches, so a sweep re-checks them
+    # locally; a single company's own board (every role there is the company's) is taken as the search returns it.
+    common = dict(id=seed['id'], company=seed['name'], tier=tier, broad='大厂' in seed.get('tags', ()))
     provider = seed.get('provider')
-    if provider: return dict(id=seed['id'], kind=provider, careers_url=seed['careers_url'], company=seed['name'], tier=tier)
-    return dict(id=seed['id'], kind='website', url=seed['careers_url'], company=seed['name'], tier=tier)
+    if provider: return dict(common, kind=provider, careers_url=seed['careers_url'])
+    return dict(common, kind='website', url=seed['careers_url'])
 
 
 def select(terms, limit, extra=(), seeds=None, include_flagged=False, families=()):

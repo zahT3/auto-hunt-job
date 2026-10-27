@@ -14,9 +14,13 @@ from ..sources import SourceError
 
 
 class Context:
-    """What a provider may use: the budgeted reader, search terms, quotas and the source report."""
-    def __init__(self, read, terms, limit, pages, report, renderer=None):
+    """What a provider may use: the budgeted reader, search terms, quotas and the source report.
+
+    keep(job), when set, is a local check for remote keyword search: a job it rejects is dropped before it counts
+    toward `limit` and tallied in report['filtered'] (a sweep uses it so loose remote matches cannot take job slots)."""
+    def __init__(self, read, terms, limit, pages, report, renderer=None, keep=None):
         self.read, self.terms, self.limit, self.pages, self.report, self.renderer = read, terms, limit, pages, report, renderer
+        self.keep = keep
 
 
 def _no_detect(entry): return None
@@ -66,6 +70,9 @@ def paged_jobs(ctx, fetch_page, make_job, row_id, page_size):
                     record_detail_error(ctx.report, row_id(row), e)
                     continue
                 if job['platform_id'] in seen: continue
+                if ctx.keep and not ctx.keep(job):
+                    seen.add(job['platform_id']); ctx.report['filtered'] = ctx.report.get('filtered', 0) + 1
+                    continue
                 if count >= ctx.limit: ctx.report['truncated'] = True; return
                 seen.add(job['platform_id']); count += 1
                 yield job

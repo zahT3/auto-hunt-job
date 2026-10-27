@@ -61,5 +61,56 @@ class ProviderRegistryTests(unittest.TestCase):
         load.assert_called_once_with('hunt.providers.demo')
 
 
+
+def keyword_board(titles):
+    """A remote keyword-search provider over a fixed board: paged_jobs pages through `titles`, 3 per page."""
+    def fetch(entry, ctx):
+        def fetch_page(term, page):
+            return [dict(id=str(n), title=t) for n, t in enumerate(titles)][(page - 1) * 3:page * 3], len(titles)
+        make = lambda row: normalize('kw-test', row['id'], row['title'], 'JD ' + row['title'], 'https://kw.example.test/' + row['id'], company='K')
+        return providers.paged_jobs(ctx, fetch_page, make, lambda row: row['id'], 3)
+    return Provider(id='kw-test', fetch=fetch)
+
+
+class KeywordBudgetFilterTests(unittest.TestCase):
+    TITLES = ['厨师', 'AI 产品经理', '仓库管理员', 'AI产品经理（高级）', '财务', '前台', 'AI 产品经理-搜索', '保安', 'AI 产品专员']
+
+    def collect(self, keep, limit=2, pages=5):
+        report = dict(pages=0, fetched=0, truncated=False)
+        ctx = providers.Context(lambda url, **kw: b'', ['AI 产品经理'], limit, pages, report, keep=keep)
+        return [j['title'] for j in keyword_board(self.TITLES).fetch({}, ctx)], report
+
+    def test_dropped_jobs_do_not_count_toward_the_limit(self):
+        titles, report = self.collect(lambda job: 'AI' in job['title'] and '产品经理' in job['title'])
+        self.assertEqual(titles, ['AI 产品经理', 'AI产品经理（高级）'])
+        # Truncated only once another *kept* job turns up past the limit ('AI 产品经理-搜索'); the four dropped
+        # on the way (厨师, 仓库管理员, 财务, 前台) say nothing about whether the board has more.
+        self.assertEqual(report['filtered'], 4)
+        self.assertTrue(report['truncated'])
+
+    def test_without_keep_every_job_counts(self):
+        titles, report = self.collect(None)
+        self.assertEqual(titles, ['厨师', 'AI 产品经理'])
+        self.assertNotIn('filtered', report)
+
+    def test_sweep_keeps_only_title_matches_from_keyword_providers(self):
+        with patch.dict(REGISTRY):
+            register(keyword_board(self.TITLES))
+            sweep = discover(dict(keywords=['AI 产品经理'], sweep=True, check_entries=False, discovery_sources=[dict(id='k', kind='kw-test')]),
+                             transport=lambda u, **kw: b'{}')
+            plain = discover(dict(keywords=['AI 产品经理'], check_entries=False, max_pages=5, discovery_sources=[dict(id='k', kind='kw-test')]),
+                             transport=lambda u, **kw: b'{}')
+        self.assertEqual([j['title'] for j in sweep['jobs']], ['AI 产品经理', 'AI产品经理（高级）', 'AI 产品经理-搜索'])
+        self.assertEqual(sweep['sources'][0]['filtered'], 6)
+        self.assertEqual(len(plain['jobs']), 9)  # outside a sweep nothing changes: the remote search is trusted as before
+
+    def test_a_company_board_is_not_filtered_even_in_a_sweep(self):
+        with patch.dict(REGISTRY):
+            register(keyword_board(self.TITLES))
+            own = discover(dict(keywords=['AI 产品经理'], sweep=True, check_entries=False,
+                                discovery_sources=[dict(id='k', kind='kw-test', broad=False)]), transport=lambda u, **kw: b'{}')
+        self.assertEqual((len(own['jobs']), own['sources'][0]['filtered']), (9, 0))
+
+
 if __name__ == '__main__':
     unittest.main()
