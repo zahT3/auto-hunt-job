@@ -44,10 +44,10 @@ def _overlap(terms, seed):
     return sum(any(t in tag or tag in t for tag in tags) for t in (x.lower() for x in terms if x.strip()))
 
 
-def _entry(seed):
+def _entry(seed, tier=1):
     provider = seed.get('provider')
-    if provider: return dict(id=seed['id'], kind=provider, careers_url=seed['careers_url'], company=seed['name'])
-    return dict(id=seed['id'], kind='website', url=seed['careers_url'], company=seed['name'])
+    if provider: return dict(id=seed['id'], kind=provider, careers_url=seed['careers_url'], company=seed['name'], tier=tier)
+    return dict(id=seed['id'], kind='website', url=seed['careers_url'], company=seed['name'], tier=tier)
 
 
 def select(terms, limit, extra=(), seeds=None, include_flagged=False, families=()):
@@ -58,14 +58,19 @@ def select(terms, limit, extra=(), seeds=None, include_flagged=False, families=(
     if not include_flagged: seeds = [s for s in seeds if s.get('status') not in FLAGGED]
     keyword = [s for s in seeds if s.get('provider') in KEYWORD_PROVIDERS]
     families = set(families)
-    rest = sorted((s for s in seeds if s.get('provider') not in KEYWORD_PROVIDERS),
-                  key=lambda s: (-len(families.intersection(s.get('tags', ()))), -_overlap(terms, s)))
+    def score(s): return len(families.intersection(s.get('tags', ()))), _overlap(terms, s)
+    rest = sorted((s for s in seeds if s.get('provider') not in KEYWORD_PROVIDERS), key=lambda s: tuple(-x for x in score(s)))
+    # Tier tells a sweep what the search is about: 0 keyword search on a big platform (it hires in every direction) or on a
+    # matching tenant, 1 tags match the direction or terms, 2 unrelated seeds and tenants, 3 employers met while importing.
+    # Tiers 0-1 get both sweep passes before the rest starts.
+    ranked = ([(s, 0 if '大厂' in s.get('tags', ()) or any(score(s)) else 2) for s in keyword]
+              + [(s, 1 if any(score(s)) else 2) for s in rest] + [(s, 3) for s in extra])
     chosen, seen = [], set()
-    for seed in keyword + rest + list(extra):
+    for seed, tier in ranked:
         key = _key(seed.get('careers_url'))
         if key is None or key in seen: continue
         seen.add(key)
-        chosen.append(_entry(seed))
+        chosen.append(_entry(seed, tier))
         if len(chosen) >= limit: break
     return chosen
 

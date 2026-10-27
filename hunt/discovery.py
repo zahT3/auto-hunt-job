@@ -496,18 +496,20 @@ def discover(config, profile=None, transport=None, *, browser_profile_root=None,
         report['rendered_pages'] = getattr(renderer, 'used', 0)
         report['elapsed_seconds'] = round(clock() - began, 2)
 
-    for index, source in enumerate(sources):
-        report = new_report(source)
-        reports.append(report)
-        remaining, before = len(sources) - index, len(jobs)
-        # Reserve work for later sources, so one large board cannot starve all others.
-        run_source(source, report, max(1, math.ceil((limit - len(jobs)) / remaining)),
-                   max(1, math.ceil((maximum - budget.used) / remaining)), pages)
-        for item in jobs[before:]: owners[id(item)] = report
-        if on_source: on_source(dict(report))
-    if sweep:
+    def scan(group):
+        pairs = []
+        for index, source in enumerate(group):
+            report = new_report(source)
+            reports.append(report); pairs.append((source, report))
+            remaining, before = len(group) - index, len(jobs)
+            # Reserve work for later sources, so one large board cannot starve all others.
+            run_source(source, report, max(1, math.ceil((limit - len(jobs)) / remaining)),
+                       max(1, math.ceil((maximum - budget.used) / remaining)), pages)
+            for item in jobs[before:]: owners[id(item)] = report
+            if on_source: on_source(dict(report))
+        if not sweep: return
         # Shares that small sources left unused flow back to the ones cut off by their share or page cap.
-        candidates = [(s, r) for s, r in zip(sources, reports) if r['status'] == 'ok' and r['truncated']]
+        candidates = [(s, r) for s, r in pairs if r['status'] == 'ok' and r['truncated']]
         for index, (source, report) in enumerate(candidates):
             if len(jobs) >= limit or budget.used >= maximum or not should_continue(): break
             remaining, before = len(candidates) - index, len(jobs)
@@ -519,6 +521,14 @@ def discover(config, profile=None, transport=None, *, browser_profile_root=None,
             report.update(again, passes=2, search_url=report['search_url'] or again['search_url'], checked_at=report['checked_at'],
                           **{k: report[k] + again[k] for k in SUMMED})
             report['elapsed_seconds'] = round(report['elapsed_seconds'], 2)
+
+    # companies.select marks a sweep's sources by relevance (tier 0 keyword search, 1 matching tags, 2+ the rest).
+    # Relevant sources get both passes, sharing jobs and requests among themselves, before the unrelated tail starts,
+    # so the deadline cuts the tail instead of the big boards' top-up. Untiered sources all count as relevant.
+    tiered = sweep and any('tier' in s for s in sources)
+    for group in ([s for s in sources if s.get('tier', 1) <= 1], [s for s in sources if s.get('tier', 1) > 1]) if tiered else (sources,):
+        scan(group)
+    if sweep:
         if config.get('check_entries'):
             from .entries import check_job
             began = clock()

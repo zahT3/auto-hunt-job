@@ -181,6 +181,30 @@ class SweepDiscoveryTests(unittest.TestCase):
                               provider(dict(big=None, s1=3, s2=3), hook), clock=lambda: now[0])
         self.assertEqual(result['sources'][0]['elapsed_seconds'], 0.3)
 
+    def test_first_pass_shares_split_among_relevant_sources_only(self):
+        rows = sources('big', 's1', 't1', 't2', 't3', 't4', 't5')
+        for row in rows: row['tier'] = 0 if row['name'] == 'big' else 1 if row['name'] == 's1' else 2
+        result = run_discover(dict(sweep=True, sweep_max_jobs=60, discovery_sources=rows), provider(dict(big=None, s1=3)))
+        # 60 jobs over the 2 relevant sources, not over all 7: big's first pass takes 30, its top-up the rest.
+        self.assertEqual([j['platform_id'] for j in result['jobs'][:30]], ['big-%d' % n for n in range(30)])
+        self.assertEqual(result['jobs'][30]['platform_id'], 's1-0')
+        self.assertEqual({r['source_id']: r['returned'] for r in result['sources']}['big'], 57)
+
+    def test_relevant_top_up_runs_before_the_unrelated_tail(self):
+        now = [0.0]
+        def hook(entry, ctx):
+            if entry['name'].startswith('t'): now[0] += 200  # slow, empty, unrelated sources
+        rows = sources('big', 's1', 't1', 't2', 't3', 't4')
+        for row in rows: row['tier'] = 0 if row['name'] == 'big' else 1 if row['name'] == 's1' else 2
+        result = run_discover(dict(sweep=True, sweep_max_jobs=1000, sweep_deadline_seconds=600, discovery_sources=rows),
+                              provider(dict(big=700, s1=3), hook), clock=lambda: now[0])
+        reports = {r['source_id']: r for r in result['sources']}
+        self.assertEqual(reports['big']['passes'], 2)
+        self.assertEqual(reports['big']['returned'], 700)  # first pass 500 (1000 over 2 relevant), top-up the rest
+        self.assertEqual([r['source_id'] for r in result['sources']], ['big', 's1', 't1', 't2', 't3', 't4'])
+        self.assertEqual(reports['t4']['status'], 'cancelled')  # the deadline cut the tail, not the top-up
+        self.assertTrue(result['deadline_reached'])
+
     def test_second_pass_ends_untruncated_when_source_runs_dry(self):
         result = run_discover(dict(sweep=True, sweep_max_jobs=60, discovery_sources=sources('big', 's1', 's2')),
                               provider(dict(big=30, s1=3, s2=3)))

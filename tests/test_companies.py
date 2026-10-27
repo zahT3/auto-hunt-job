@@ -52,9 +52,20 @@ class SeedFileTests(unittest.TestCase):
 
 class NontechSeedTests(unittest.TestCase):
     def test_original_53_records_are_unchanged(self):
+        # Changed on purpose once (2026-10-27): six seeds moved to their Moka/Feishu tenants (builder.SEED_URLS).
         original = json.dumps(companies.load_seeds()[:53], ensure_ascii=False, sort_keys=True).encode()
         self.assertEqual(hashlib.sha256(original).hexdigest(),
-                         '4f71674f01323cf47bc0ff9b5155c1a10df6f604737a8d221b2abdac5ac9aba0')
+                         '883e400ef54b8e384fddaf62cf20a49e556fecb51315dcecf86cb17f8a6805ca')
+
+    def test_seed_url_fixes_route_to_supported_readers(self):
+        from hunt.providers import route
+        rows = {s['id']: s for s in companies.load_seeds()}
+        for ident, url in builder.SEED_URLS.items():
+            row = rows[ident]
+            self.assertEqual(row['careers_url'], url)
+            self.assertIn(row['provider'], ('mokahr', 'feishu'), ident)
+            self.assertIsNone(row.get('status'), ident)
+            self.assertEqual(route(dict(careers_url=url)).id, row['provider'])
 
     def test_at_least_40_nontech_employers_cover_families_and_industries(self):
         from hunt import directions
@@ -124,7 +135,7 @@ class SelectTests(unittest.TestCase):
             self.assertIn(s.get('status'), (None, 'dead', 'needs_adapter'), s)
             if s.get('status'): flagged.setdefault(s['status'], set()).add(s['id'])
         self.assertEqual(len(flagged['dead']), 9)
-        self.assertEqual(len(flagged['needs_adapter']), 22)
+        self.assertEqual(len(flagged['needs_adapter']), 20)  # 智谱 and 零一万物 left the list once their Feishu tenants were found
         self.assertIn('baichuan-ai-com-careers', flagged['dead'])
         self.assertIn('huawei', flagged['needs_adapter'])
         self.assertFalse({s['id'] for s in seeds if s.get('provider')} & set().union(*flagged.values()))
@@ -138,7 +149,7 @@ class SelectTests(unittest.TestCase):
         default = {c['id'] for c in companies.select(['AI'], 300)}
         self.assertNotIn('huawei', default)
         self.assertNotIn('baichuan-ai-com-careers', default)
-        self.assertEqual(len(default), len(companies.load_seeds()) - 31)
+        self.assertEqual(len(default), len(companies.load_seeds()) - 29)
         self.assertEqual(len(companies.select(['AI'], 300, include_flagged=True)), len(companies.load_seeds()))
 
     def test_select_keyword_providers_survive_small_limit(self):
@@ -158,6 +169,15 @@ class SelectTests(unittest.TestCase):
         extra = [seed('z', 'https://z.example.test/', tags=['AI'], name='Z')]
         order = [c['company'] for c in companies.select(['agent', 'AI'], 10, extra, seeds=seeds)]
         self.assertEqual(order, ['k', 'y', 'x', 'Z'])
+
+    def test_select_marks_relevance_tiers_for_the_sweep(self):
+        seeds = [seed('x', 'https://x.example.test/', tags=['游戏']), seed('y', 'https://y.example.test/', tags=['AI', 'Agent']),
+                 seed('f', 'https://f.example.test/', tags=['销售与商务']), seed('k', 'https://careers.tencent.com/', provider='tencent', tags=['大厂']),
+                 seed('t', 'https://t.jobs.feishu.cn/', provider='feishu', tags=['食品']), seed('u', 'https://u.jobs.feishu.cn/', provider='feishu', tags=['AI'])]
+        extra = [seed('z', 'https://z.example.test/', tags=['AI'], name='Z')]
+        tiers = {c['company']: c['tier'] for c in companies.select(['AI 产品经理'], 10, extra, seeds=seeds, families=['销售与商务'])}
+        # A small unrelated tenant waits with the tail even though its provider searches by keyword.
+        self.assertEqual(tiers, dict(k=0, u=0, t=2, y=1, f=1, x=2, Z=3))
 
     def test_select_extra_dedupes_against_seeds(self):
         seeds = [seed('x', 'https://x.example.test/jobs')]

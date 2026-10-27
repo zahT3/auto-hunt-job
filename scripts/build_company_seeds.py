@@ -105,8 +105,6 @@ STATUS = dict.fromkeys((
     'zhaopin-kuaishou-cn-recruit-e',
     'jobs-bilibili-com-campus-positions',
     'hr-163-com-job-list-html',
-    'zhipuai-cn-joinus',
-    '01-ai-careers',
     'siliconflow-cn-zh-cn-about',
     'infini-ai-com-careers',
     '4paradigm-com-about-jobs-html',
@@ -119,6 +117,16 @@ STATUS = dict.fromkeys((
     'doris-apache-org',
     'apply-workable-com-huggingface',
 ), 'needs_adapter')
+# 2026-10-27 benchmark: these seeds pointed at marketing pages while the jobs sit on a Moka or Feishu tenant the
+# readers already support (found from each official careers page). Applied to seed rows only; hunt/catalog.py keeps its URLs.
+SEED_URLS = {
+    'kimi': 'https://app.mokahr.com/apply/moonshot/148506',
+    'minimax': 'https://vrfi1sk8a0.jobs.feishu.cn/379481',
+    'stepfun': 'https://app.mokahr.com/social-recruitment/step/94904',
+    'zhipuai-cn-joinus': 'https://zhipu-ai.jobs.feishu.cn/',
+    '01-ai-careers': 'https://01ai.jobs.feishu.cn/index/',
+    'megvii-com-join-us': 'https://app.mokahr.com/social-recruitment/megviihr/38641',
+}
 # Upstream rows for companies that already have a dedicated reader in hunt/catalog.py.
 CATALOG_COVERS = ('DeepSeek', '月之暗面', 'MiniMax', '阶跃星辰')
 SECTION_TAGS = (('大厂', ['大厂', '互联网']), ('大模型', ['AI', '大模型']), ('AI 应用', ['AI', '应用']),
@@ -201,6 +209,7 @@ def build(rows):
         seeds.append(dict(id=ident, name=row['name'], careers_url=url, provider=provider,
                           tags=_tags(row['section'], row['name'], row.get('notes', '')), source='career-ops-china'))
     seeds.extend(dict(s) for s in NONTECH)
+    seeds = [dict(s, careers_url=SEED_URLS[s['id']], provider=provider_of(SEED_URLS[s['id']])) if s['id'] in SEED_URLS else s for s in seeds]
     return [dict(s, status=STATUS[s['id']]) if s['id'] in STATUS else s for s in seeds]
 
 

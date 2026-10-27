@@ -87,8 +87,8 @@
     {
       "id": "kimi",
       "name": "Kimi / 月之暗面",
-      "careers_url": "https://careers.kimi.com/",
-      "provider": null,
+      "careers_url": "https://app.mokahr.com/apply/moonshot/148506",
+      "provider": "mokahr",
       "tags": [
         "AI",
         "Agent"
@@ -98,8 +98,8 @@
     {
       "id": "stepfun",
       "name": "阶跃星辰",
-      "careers_url": "https://www.stepfun.com/about",
-      "provider": null,
+      "careers_url": "https://app.mokahr.com/social-recruitment/step/94904",
+      "provider": "mokahr",
       "tags": [
         "AI",
         "Agent"
@@ -150,8 +150,8 @@
     {
       "id": "minimax",
       "name": "MiniMax",
-      "careers_url": "https://www.minimaxi.com/careers",
-      "provider": null,
+      "careers_url": "https://vrfi1sk8a0.jobs.feishu.cn/379481",
+      "provider": "feishu",
       "tags": [
         "AI",
         "Agent"
@@ -437,14 +437,13 @@
     {
       "id": "zhipuai-cn-joinus",
       "name": "智谱 AI",
-      "careers_url": "https://www.zhipuai.cn/joinUs",
-      "provider": null,
+      "careers_url": "https://zhipu-ai.jobs.feishu.cn/",
+      "provider": "feishu",
       "tags": [
         "AI",
         "大模型"
       ],
-      "source": "career-ops-china",
-      "status": "needs_adapter"
+      "source": "career-ops-china"
     },
     {
       "id": "baichuan-ai-com-careers",
@@ -461,14 +460,13 @@
     {
       "id": "01-ai-careers",
       "name": "零一万物",
-      "careers_url": "https://01.ai/careers",
-      "provider": null,
+      "careers_url": "https://01ai.jobs.feishu.cn/index/",
+      "provider": "feishu",
       "tags": [
         "AI",
         "大模型"
       ],
-      "source": "career-ops-china",
-      "status": "needs_adapter"
+      "source": "career-ops-china"
     },
     {
       "id": "modelbest-cn-careers",
@@ -638,8 +636,8 @@
     {
       "id": "megvii-com-join-us",
       "name": "旷视",
-      "careers_url": "https://www.megvii.com/join_us",
-      "provider": null,
+      "careers_url": "https://app.mokahr.com/social-recruitment/megviihr/38641",
+      "provider": "mokahr",
       "tags": [
         "AI",
         "应用",
