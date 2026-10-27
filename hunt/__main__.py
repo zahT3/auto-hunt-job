@@ -25,16 +25,31 @@ FORWARD = {
 KIND_LABELS = dict(resume_redacted='脱敏简历', resume_full='完整简历', job_text='岗位原文')
 
 
+def choose_kinds():
+    """Arrow-key menu on a real terminal; typed numbers when output is not a terminal or curses cannot start."""
+    from . import menu
+    items = ['%s（%s）' % (label, kind) for kind, label in KIND_LABELS.items()]
+    if sys.stdout.isatty():
+        try:
+            picked = menu.pick('选择要同意发送给模型服务的内容', items)
+        except menu.Unavailable:
+            pass  # e.g. TERM unset or unknown: ask for numbers below
+        else:
+            if picked is None: raise Error('已取消，未做任何更改')
+            return [list(KIND_LABELS)[n] for n in picked]
+    for n, item in enumerate(items, 1): print('%d. %s' % (n, item))
+    typed = input('选择要同意发送的内容，填编号，可用逗号分隔：').replace('，', ',').split(',')
+    if not all(x.strip() in ('1', '2', '3') for x in typed): raise Error('编号须是 1、2、3，未做任何更改')
+    return [list(KIND_LABELS)[int(x) - 1] for x in typed]
+
+
 def ai_consent(store, args):
     """Show where content would go, then write consent bound to exactly that host and model."""
     settings, tty = llm.load_settings(store.root), sys.stdin.isatty()
     kinds = args.kind
     if not kinds:
         if not tty: raise Error('请用 --kind 指定内容类别：' + '、'.join('%s（%s）' % kv for kv in KIND_LABELS.items()))
-        for n, (kind, label) in enumerate(KIND_LABELS.items(), 1): print('%d. %s（%s）' % (n, label, kind))
-        picked = input('选择要同意发送的内容，填编号，可用逗号分隔：').replace('，', ',').split(',')
-        if not all(x.strip() in ('1', '2', '3') for x in picked): raise Error('编号须是 1、2、3，未做任何更改')
-        kinds = [list(KIND_LABELS)[int(x) - 1] for x in picked]
+        kinds = choose_kinds()
     host = llm.host(settings)
     print('将发往：%s（模型 %s）' % (host, settings['model']))
     print('内容：' + '、'.join(KIND_LABELS[k] for k in llm.KINDS if k in kinds))
