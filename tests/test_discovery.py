@@ -228,5 +228,13 @@ class NoDefaultTermsTests(unittest.TestCase):
         self.assertTrue(matches('腾讯云-MaaS海外高级产品经理', ['AI 产品经理']))
         self.assertFalse(matches('仓库产品专员', ['AI 产品经理']))
 
+    def test_unspaced_term_with_an_alias_word_needs_both_parts(self):
+        # '大模型产品经理' is 大模型 + 产品经理, not a synonym of every AI title.
+        for title in ('AI全栈工程师', '大模型算法工程师', '游戏AI研发工程师'):
+            self.assertFalse(matches(title, ['大模型产品经理']), title)
+        for title in ('大模型应用产品经理', 'AI 产品经理', 'Senior LLM Product Manager', '混元大模型平台产品经理'):
+            self.assertTrue(matches(title, ['大模型产品经理']), title)
+        self.assertTrue(matches('机器学习平台工程师', ['大模型']))  # a bare alias word keeps its whole group
+
 
 if __name__=='__main__': unittest.main()

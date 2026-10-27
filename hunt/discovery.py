@@ -65,21 +65,24 @@ def _segment_aliases(segment):
     return extra
 
 
+ALIAS_GROUPS = {
+    'ai': ['AI', '人工智能', 'machine learning', '机器学习', 'LLM', '大模型', '深度学习', 'MaaS'],
+    'web3': ['web3', 'blockchain', '区块链', 'smart contract', '智能合约'],
+    'agent': ['agent', '智能体'],
+    'rag': ['RAG', 'retrieval augmented generation', '检索增强', 'retrieval'],
+    # Non-tech groups. Every Chinese value is also a trigger, so keys stay specific: '设计师', not '设计' ('芯片设计' is not a designer).
+    '销售': ['销售', 'sales', '业务拓展', 'business development', '大客户', 'account manager', 'account executive', '客户经理'],
+    '运营': ['运营', 'operations', '用户运营', '内容运营', 'growth'],
+    '财务': ['财务', 'finance', 'financial', '会计', 'accounting', 'accountant', '出纳', '审计', 'audit', 'auditor'],
+    '人力资源': ['人力资源', 'HR', 'HRBP', 'human resources', '招聘', 'recruiter', 'recruiting', 'talent acquisition'],
+    '设计师': ['设计师', 'designer', 'UI设计', 'UX', '视觉设计', '平面设计', 'graphic design'],
+    '供应链': ['供应链', 'supply chain', '采购', 'procurement', 'purchasing', '物流', 'logistics', '仓储', 'warehouse'],
+}
+
+
 def expanded_terms(terms):
     """Explicit, inspectable recall aliases; this does not assert candidate fit."""
-    groups = {
-        'ai': ['AI', '人工智能', 'machine learning', '机器学习', 'LLM', '大模型', '深度学习', 'MaaS'],
-        'web3': ['web3', 'blockchain', '区块链', 'smart contract', '智能合约'],
-        'agent': ['agent', '智能体'],
-        'rag': ['RAG', 'retrieval augmented generation', '检索增强', 'retrieval'],
-        # Non-tech groups. Every Chinese value is also a trigger, so keys stay specific: '设计师', not '设计' ('芯片设计' is not a designer).
-        '销售': ['销售', 'sales', '业务拓展', 'business development', '大客户', 'account manager', 'account executive', '客户经理'],
-        '运营': ['运营', 'operations', '用户运营', '内容运营', 'growth'],
-        '财务': ['财务', 'finance', 'financial', '会计', 'accounting', 'accountant', '出纳', '审计', 'audit', 'auditor'],
-        '人力资源': ['人力资源', 'HR', 'HRBP', 'human resources', '招聘', 'recruiter', 'recruiting', 'talent acquisition'],
-        '设计师': ['设计师', 'designer', 'UI设计', 'UX', '视觉设计', '平面设计', 'graphic design'],
-        '供应链': ['供应链', 'supply chain', '采购', 'procurement', 'purchasing', '物流', 'logistics', '仓储', 'warehouse'],
-    }
+    groups = ALIAS_GROUPS
     result = {}
     for term in terms:
         aliases = [term]
@@ -103,13 +106,28 @@ def _found(words, text):
     return False
 
 
+def _segments(term):
+    """Words of a term. An unspaced Chinese term made of an alias word and a role word ('大模型产品经理') splits into the
+    two, so both must match, as in 'AI 产品经理'; otherwise the alias word alone would match every AI title."""
+    words = term.split()
+    if len(words) > 1 or term.isascii(): return words
+    triggers = sorted({w for key, values in ALIAS_GROUPS.items() for w in [key] + values if not w.isascii() and len(w) > 1},
+                      key=len, reverse=True)
+    for t in triggers:
+        at = term.find(t)
+        rest = [x for x in (term[:at], term[at + len(t):]) if x] if at >= 0 else []
+        if rest and all(_segment_aliases(x) for x in rest):
+            return [x for x in (term[:at], t, term[at + len(t):]) if x]
+    return words
+
+
 def matches(text, terms):
     """Local filter. A multi-word term matches as the whole phrase, or when every segment
     (each through its own alias group) matches: '大模型算法工程师' is not an 'AI 产品经理'."""
     if not terms: return False
     text = plain(text)
     for term, words in expanded_terms(terms).items():
-        segments = term.split()
+        segments = _segments(term)
         if len(segments) < 2:
             if _found(words, text): return True
         elif _found([term], text) or all(_found(expanded_terms([s])[s] + _segment_aliases(s), text) for s in segments): return True
