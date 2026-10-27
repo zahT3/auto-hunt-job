@@ -91,19 +91,25 @@ def _bounded_call(fn, timeout):
     return value
 
 
+# Fixed public DNS-over-HTTPS endpoints, tried in order: Cloudflare, then AliDNS, then Tencent DNSPod (the user chose
+# these fallbacks on 2026-10-27, after Cloudflare connections kept dropping behind a VPN). Only hostnames, never user
+# materials, go to them. Each is reached by IP with normal IP SAN certificate validation; all speak the JSON form.
+DOH_ENDPOINTS = (('1.1.1.1', '/dns-query'), ('1.0.0.1', '/dns-query'), ('223.5.5.5', '/resolve'), ('223.6.6.6', '/resolve'),
+                 ('1.12.12.12', '/resolve'), ('120.53.53.53', '/resolve'))
+DOH_EACH_SECONDS = 5  # one stalled endpoint must leave time for the fallbacks
+
+
 def _doh(host, timeout):
-    # Fixed public bootstrap endpoints. Only hostnames, never user materials, go
-    # to the resolver. Each endpoint keeps normal IP SAN certificate validation.
     from urllib.parse import urlencode
     started = time.monotonic()
     failures = []
-    for bootstrap in ('1.1.1.1', '1.0.0.1'):
+    for bootstrap, path in DOH_ENDPOINTS:
         remaining = timeout - (time.monotonic() - started)
         if remaining <= 0:
             break
-        conn = _PinnedHTTPS(bootstrap, bootstrap, min(remaining, 8))
+        conn = _PinnedHTTPS(bootstrap, bootstrap, min(remaining, DOH_EACH_SECONDS))
         try:
-            conn.request('GET', '/dns-query?' + urlencode({'name': host, 'type': 'A'}),
+            conn.request('GET', path + '?' + urlencode({'name': host, 'type': 'A'}),
                          headers={'Accept': 'application/dns-json', 'User-Agent': 'auto-hunt-job/0.1'})
             response = conn.getresponse()
             if response.status != 200:
@@ -114,7 +120,10 @@ def _doh(host, timeout):
             data = json.loads(raw)
             if data.get('Status') != 0:
                 raise FetchError('公开 DNS 未找到主机')
-            return [a['data'] for a in data.get('Answer', []) if a.get('type') in (1, 28)]
+            found = [a['data'] for a in data.get('Answer', []) if a.get('type') in (1, 28)]
+            if not found:
+                raise FetchError('公开 DNS 没有返回地址')  # ask the next endpoint
+            return found
         except (OSError, http.client.HTTPException, ValueError) as exc:
             failures.append(type(exc).__name__)
         finally:
