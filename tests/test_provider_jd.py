@@ -104,6 +104,22 @@ class JDTests(unittest.TestCase):
         self.assertEqual(len(result['jobs']),2)
         self.assertEqual(result['sources'][0]['fetched'],4)
 
+    def test_spaced_terms_are_also_searched_without_spaces(self):
+        # 京东 matches jobSearch literally: 'AI 产品经理' never finds 'AI产品经理'.
+        board = [post(1, positionNameOpen='AI产品经理'), post(2, positionNameOpen='AI 产品经理-财务方向'), post(3, positionNameOpen='厨师')]
+        calls = []
+        def literal(url, **kwargs):
+            term = parse_qs(kwargs['data'].decode())['jobSearch'][0]
+            calls.append((urlsplit(url).path, term))
+            hits = [p for p in board if term in p['positionNameOpen']]
+            return json.dumps(len(hits) if url.endswith('/job_count') else hits).encode()
+        result = run(literal, keywords=['AI 产品经理'])
+        self.assertEqual(sorted(j['title'] for j in result['jobs']), ['AI 产品经理-财务方向', 'AI产品经理'])
+        calls.clear()
+        run(literal, keywords=['AI 产品经理', '产品经理'])
+        searched = list(dict.fromkeys(term for path, term in calls))
+        self.assertEqual(searched, ['AI 产品经理', 'AI产品经理', '产品经理'])  # an unspaced term is searched once
+
     def test_sweep_keep_filters_loose_titles_before_limit(self):
         def transport(url,**kwargs):
             if url.endswith('/job_count'): return b'2'

@@ -2,7 +2,7 @@
 from urllib.parse import urlencode, urlsplit
 
 from ..sources import SourceError, json_data, normalize
-from . import Provider, paged_jobs, register
+from . import Context, Provider, paged_jobs, register
 
 HOST = 'zhaopin.jd.com'
 PAGE_SIZE = 100
@@ -62,7 +62,10 @@ def fetch(entry, ctx):
         if repeated and len(seen[term]) < totals[term]: ctx.report['truncated'] = True
         return rows, min(totals[term], page * PAGE_SIZE) if repeated else totals[term]
 
-    return paged_jobs(ctx, fetch_page, lambda row: _job(row, entry.get('company') or '京东'), _row_id, PAGE_SIZE)
+    # jobSearch matches literally, so 'AI 产品经理' misses every 'AI产品经理'; a spaced term is also searched unspaced.
+    terms = list(dict.fromkeys(t for term in ctx.terms for t in (term, ''.join(term.split())) if t))
+    searched = Context(ctx.read, terms, ctx.limit, ctx.pages, ctx.report, ctx.renderer, keep=ctx.keep)
+    return paged_jobs(searched, fetch_page, lambda row: _job(row, entry.get('company') or '京东'), _row_id, PAGE_SIZE)
 
 
 PROVIDER = register(Provider('jd', fetch, detect))
