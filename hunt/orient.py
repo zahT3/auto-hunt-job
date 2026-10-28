@@ -217,7 +217,14 @@ def terms_for(direction_ids):
         row = directions.get(ident)
         name = re.sub(r'[（(].*?[）)]', '', row['name']).strip()
         # '会计 / 总账' is a label; as a search term its '/' segment never matches a title, so only plain names are searched.
-        pools.append(([] if '/' in name else [name]) + row['titles'])
+        pool = ([] if '/' in name else [name]) + row['titles']
+        # The first keyword is the field's core word ('风控', '会计'): employers title the same work differently (a bank's
+        # 授信审批岗), and keyword search finds them by it. It is skipped when it only repeats a term ('ai产品经理').
+        core = row['keywords'][0] if row['keywords'] else ''
+        tight = lambda t: ''.join(t.split()).casefold()
+        if core and '&' not in core and all(tight(core) != tight(t) for t in pool):
+            pool.insert(0 if '/' in name else 1, core)
+        pools.append(pool)
     out = []
     for i in range(max((len(p) for p in pools), default=0)):
         out += [p[i] for p in pools if i < len(p) and p[i] not in out]

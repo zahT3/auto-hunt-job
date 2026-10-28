@@ -389,6 +389,15 @@ class TermsTests(unittest.TestCase):
             self.assertFalse([t for t in terms if '/' in t], ids[n:n + 4])
         self.assertTrue(discovery.matches('总账会计', orient.terms_for(['accountant'])))
 
+    def test_core_keyword_joins_the_terms_unless_it_repeats_one(self):
+        # Banks title risk roles 授信审批岗 or 风险管理岗; searching only '风控经理' misses them, '风控' does not.
+        self.assertEqual(orient.terms_for(['risk-control'])[:2], ['风控', '风控经理'])
+        self.assertEqual(orient.terms_for(['ai-product-manager']), ['AI 产品经理', '大模型产品经理', 'AIGC 产品经理', 'Agent 产品经理'])
+        four = orient.terms_for(['risk-control', 'accountant', 'auditor', 'treasury-cashier'])
+        self.assertLessEqual(len(four), 8)
+        for ident in ('risk-control', 'accountant', 'auditor', 'treasury-cashier'):
+            self.assertIn(directions.get(ident)['keywords'][0], [t.lower() for t in four], ident)
+
 
 
 class RuleProposalUsesProfileTests(unittest.TestCase):
