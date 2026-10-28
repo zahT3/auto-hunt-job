@@ -27,6 +27,32 @@ def _clean_text(text):
     return text
 
 
+# pypdf writes a glyph its font cannot map to text as '/cid123' (or '(cid:123)'); it is not résumé text.
+_UNMAPPED = re.compile(r'\(cid:\d+\)|/cid\d+')
+# Résumés exported from design tools often lose line breaks, so one "line" holds a whole section; such a line is split
+# after sentence ends, at bullets and at wide gaps, so each fact stays one checkable claim.
+LONG_LINE = 160
+_BREAKS = re.compile(r'(?<=[。；;！？!?])|\s*[•●▪■◆]\s*|\s{3,}|\t+')
+
+
+def _tidy_rows(rows):
+    """(rows without glyph codes and with long lines split, number of glyph codes removed)."""
+    out, removed = [], 0
+    for row in rows:
+        text, n = _UNMAPPED.subn('', row['text'])
+        removed += n
+        if n: text = re.sub(r'[ \t]+', ' ', text).strip()
+        if len(''.join(text.split())) < 2: continue
+        parts = [text] if len(text) <= LONG_LINE else [x.strip() for x in _BREAKS.split(text) if x and x.strip()]
+        merged = []
+        for part in parts:  # a stray '1.' or '|' joins the piece after it
+            if merged and len(''.join(merged[-1].split())) < 6: merged[-1] = merged[-1] + ' ' + part
+            else: merged.append(part)
+        if len(merged) == 1: out.append(dict(row, text=merged[0]))
+        else: out.extend(dict(row, text=part, segment=k) for k, part in enumerate(merged, 1))
+    return out, removed
+
+
 class _SafeTreeBuilder(ElementTree.TreeBuilder):
     def doctype(self, name, pubid, system):
         raise ValueError('DOCX 不支持 XML 实体或 DTD')
@@ -191,11 +217,15 @@ def analyze_resume(filename: str, content: bytes, synthetic=False) -> dict:
         metadata, warnings = {}, []
     if sum(len(row['text']) for row in rows) > MAX_TEXT_CHARS:
         raise ValueError('提取文字超过 200000 字符')
+    rows, glyphs = _tidy_rows(rows)
+    if glyphs:
+        warnings.append(f'有 {glyphs} 处文字因 PDF 字体缺少字符映射无法提取，已去除；请核对相关段落，或换一种方式重新导出 PDF。')
     facts = []
     for row in rows:
         if '\ufffd' in row['text']:
             warnings.append('原文含替换字符，可能存在乱码；请核对后重新导出。')
-        locator = ('page=' + str(row['page']) + '&' if row.get('page') else '') + 'paragraph=' + str(row['paragraph'])
+        locator = (('page=' + str(row['page']) + '&' if row.get('page') else '') + 'paragraph=' + str(row['paragraph'])
+                   + ('&segment=' + str(row['segment']) if row.get('segment') else ''))
         source = dict(kind='user_resume_draft', reference=f'upload://{sha}#{locator}', sha256=sha, label=label, synthetic=bool(synthetic),
                       **{key: value for key, value in row.items() if key != 'text'})
         facts.append(dict(id='intake-' + hashlib.sha256((sha + '#' + locator).encode()).hexdigest()[:18],
@@ -210,7 +240,7 @@ def analyze_resume(filename: str, content: bytes, synthetic=False) -> dict:
     if not facts:
         status = 'needs_ocr' if metadata.get('pages_needing_ocr') else 'needs_review'
         warnings.append('未得到可用简历文字，暂不能生成岗位检索建议。')
-    elif metadata.get('pages_needing_ocr') or metadata.get('pages_with_bad_text'):
+    elif metadata.get('pages_needing_ocr') or metadata.get('pages_with_bad_text') or glyphs:
         status = 'partial'
     else:
         status = 'ready_for_review'

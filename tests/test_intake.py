@@ -37,6 +37,29 @@ class IntakeTests(unittest.TestCase):
             root=Path(tmp);(root/'x.pdf').write_bytes(b'%PDF-invalid')
             with self.assertRaises(ValueError): extract([root/'x.pdf'],root/'out')
 
+    def test_unmapped_glyph_codes_are_removed_and_flagged(self):
+        from hunt.intake import analyze_resume
+        result = analyze_resume('cv.txt', '负责/cid003/cid5482产品规划\n/cid12/cid13/cid14\n熟悉 SQL'.encode(), synthetic=True)
+        texts = [f['text'] for f in result['candidate']['facts']]
+        self.assertEqual(texts, ['负责产品规划', '熟悉 SQL'])  # a line that was only glyph codes is dropped
+        self.assertEqual(result['status'], 'partial')
+        self.assertTrue(any('字符映射' in w for w in result['warnings']))
+        clean = analyze_resume('cv.txt', '负责产品规划\n熟悉 SQL'.encode(), synthetic=True)
+        self.assertEqual((clean['status'], clean['warnings']), ('ready_for_review', []))
+
+    def test_long_lines_split_into_sentences_with_stable_ids(self):
+        from hunt.intake import analyze_resume
+        long = '负责华东区域大客户销售与渠道拓展工作，年销售额两千万元以上。' * 6 + '主导三个重点项目从立项到交付的全过程管理；协调研发与运营团队按期上线。'
+        self.assertGreater(len(long), 160)
+        result = analyze_resume('cv.txt', ('姓名：测试\n' + long).encode(), synthetic=True)
+        facts = result['candidate']['facts']
+        self.assertGreater(len(facts), 4)
+        self.assertTrue(all(len(f['text']) <= 160 for f in facts[1:]))
+        self.assertEqual(len({f['id'] for f in facts}), len(facts))
+        self.assertTrue(facts[1]['source']['reference'].endswith('paragraph=2&segment=1'))
+        short = analyze_resume('cv.txt', '姓名：测试\n熟悉 SQL'.encode(), synthetic=True)['candidate']['facts']
+        self.assertTrue(short[1]['source']['reference'].endswith('paragraph=2'))  # unsplit lines keep their old id
+
 
 class UploadTests(unittest.TestCase):
     def analyze(self, filename, content):
