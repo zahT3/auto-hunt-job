@@ -12,7 +12,8 @@ from hunt import bookmarklets
 from hunt.core import Store
 from hunt.server import make_server
 
-NAMES = ('boss-zhipin', 'liepin', 'lagou', 'mokahr', 'universal')
+NAMES = ('boss-zhipin', 'liepin', 'liepin-list', 'lagou', 'mokahr', 'universal')
+PORTED = ('boss-zhipin', 'liepin', 'lagou', 'mokahr', 'universal')  # liepin-list was written here
 BOSS = 'https://www.zhipin.com'
 FORM = 'application/x-www-form-urlencoded'
 
@@ -35,7 +36,7 @@ class BuildCase(unittest.TestCase):
                 self.assertNotIn('alert(', unquote(bookmarklets.build(name)))
 
     def test_every_source_keeps_the_upstream_notice(self):
-        for name in NAMES:
+        for name in PORTED:
             head = bookmarklets.source(name).split('\n\n')[0]
             with self.subTest(name=name):
                 self.assertIn('shuheng-mo/career-ops-china', head)
@@ -152,10 +153,10 @@ class PageCase(unittest.TestCase):
         self.assertEqual(status, 403)
         self.assertNotIn(self.token, text)
 
-    def test_page_lists_five_draggable_links_and_works_under_the_csp(self):
+    def test_page_lists_every_draggable_links_and_works_under_the_csp(self):
         status, text, response = self.page()
         links = re.findall(r'<a [^>]*class="bm-link"[^>]*href="(javascript:[^"]+)"', text)
-        self.assertEqual(len(links), 5)
+        self.assertEqual(len(links), len(NAMES))
         for link in links:
             self.assertNotIn('__INBOX', link)
         self.assertNotIn('<script', text)

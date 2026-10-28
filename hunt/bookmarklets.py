@@ -9,6 +9,7 @@ DIR = Path(__file__).resolve().parent.parent / 'static' / 'bookmarklets'
 ITEMS = (('universal', '通用岗位页', '多数官网招聘页、内推页和其他没有专用书签的站点；只有它能用于白名单之外的网站。'),
          ('boss-zhipin', 'BOSS直聘', 'zhipin.com 岗位详情页，需要自己先登录。'),
          ('liepin', '猎聘', 'liepin.com 岗位详情页，需要自己先登录。'),
+         ('liepin-list', '猎聘搜索页', 'liepin.com 搜索结果页：一次收下本页每个岗位的标题、公司、地点和薪资，不含职位描述；想要完整 JD 时打开岗位详情页再点「猎聘」书签。'),
          ('lagou', '拉勾', 'lagou.com 岗位详情页，需要自己先登录。'),
          ('mokahr', 'Moka', 'mokahr.com 上的岗位页；页面把岗位放在跨域 iframe 里时，先在新标签页单独打开它。'))
 URL_FIELD, TOKEN_FIELD = '__INBOX_URL__', '__INBOX_TOKEN__'

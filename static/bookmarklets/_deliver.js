@@ -25,7 +25,11 @@ const toast = (message, bad) => {
 
 const bytes = (text) => new TextEncoder().encode(text).length;
 
-const deliver = async (payload) => {
+const UNREACHABLE = '连不上本地工作台。请确认它在运行；若本站禁止向外发请求，或浏览器拦截了对本机的访问，这个书签在此页无法使用。';
+const TOKEN_BAD = '令牌无效或已重置，请回到安装页重新拖一次书签。';
+
+// Fits one payload under the inbox limit and POSTs it; throws when the inbox cannot be reached.
+const post = async (payload) => {
   const ex = payload.extracted;
   for (const key of Object.keys(ex)) {
     if (key !== 'raw_text' && typeof ex[key] === 'string') ex[key] = ex[key].slice(0, 2000);
@@ -39,21 +43,24 @@ const deliver = async (payload) => {
     body = JSON.stringify(payload);
     size = bytes(body);
   }
-  const title = ex.job_title || payload.page_title || '';
-  try {
-    const res = await fetch(INBOX_URL, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json', 'X-Inbox-Token': INBOX_TOKEN },
-      body,
-      credentials: 'omit',
-      referrerPolicy: 'no-referrer',
-    });
-    let data = {};
-    try { data = await res.json(); } catch {}
-    if (res.ok && data.ok) toast((data.duplicate ? '工作台里已有这个岗位：' : '已发送到工作台：') + title);
-    else if (res.status === 403) toast('令牌无效或已重置，请回到安装页重新拖一次书签。', true);
-    else toast('工作台没有收下：' + (data.error || res.status), true);
-  } catch (e) {
-    toast('连不上本地工作台。请确认它在运行；若本站禁止向外发请求，或浏览器拦截了对本机的访问，这个书签在此页无法使用。', true);
-  }
+  const res = await fetch(INBOX_URL, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', 'X-Inbox-Token': INBOX_TOKEN },
+    body,
+    credentials: 'omit',
+    referrerPolicy: 'no-referrer',
+  });
+  let data = {};
+  try { data = await res.json(); } catch {}
+  return { res, data };
+};
+
+const deliver = async (payload) => {
+  let reply;
+  try { reply = await post(payload); } catch (e) { toast(UNREACHABLE, true); return; }
+  const { res, data } = reply;
+  const title = payload.extracted.job_title || payload.page_title || '';
+  if (res.ok && data.ok) toast((data.duplicate ? '工作台里已有这个岗位：' : '已发送到工作台：') + title);
+  else if (res.status === 403) toast(TOKEN_BAD, true);
+  else toast('工作台没有收下：' + (data.error || res.status), true);
 };

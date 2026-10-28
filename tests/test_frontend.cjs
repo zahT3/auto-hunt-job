@@ -232,7 +232,7 @@ test('saving local material review returns keyboard focus to the current job tit
  assert.equal(h.node('#review-dialog').open,false);assert.equal(h.node('#detail-title').focused,true);
 });
 
-const BOOKMARKLETS=['boss-zhipin','liepin','lagou','mokahr','universal'];
+const BOOKMARKLETS=['boss-zhipin','liepin','liepin-list','lagou','mokahr','universal'];
 const BM_DIR=path.join(__dirname,'../static/bookmarklets');
 // Mirrors hunt/bookmarklets.py assemble(): the shared delivery prelude replaces each script's "// @deliver" line.
 const bookmarkletSource=name=>fs.readFileSync(path.join(BM_DIR,name+'.js'),'utf8').replace(/^ *\/\/ @deliver$/m,()=>fs.readFileSync(path.join(BM_DIR,'_deliver.js'),'utf8'));
@@ -252,7 +252,7 @@ function runBookmarklet(name,{text='',title='页面',dom={},fetchImpl}={}){
  const el=()=>({style:{},remove(){this.removed=true;},appendChild(){}});
  const document={title,body:{innerText:text,appendChild(node){toasts.push(node);}},documentElement:{},
   querySelectorAll:s=>dom[s]||[],querySelector:s=>(dom[s]||[])[0]||null,getElementById:()=>null,createElement:el,addEventListener(){}};
- const context=vm.createContext({document,location:{href:'https://careers.example.com/jobs/1?utm_source=x',pathname:'/jobs/1'},TextEncoder,JSON,Object,String,Math,Date,Array,
+ const context=vm.createContext({document,location:{href:'https://careers.example.com/jobs/1?utm_source=x',pathname:'/jobs/1'},TextEncoder,JSON,Object,String,Math,Date,Array,URL,Set,
   setTimeout:(fn,ms)=>{timers.push({fn,ms});return 1;},
   fetch:async(url,init)=>{calls.push({url,init});return fetchImpl?fetchImpl(url,init):{ok:true,status:200,json:async()=>({ok:true,duplicate:false})};}});
  const code=bookmarkletSource(name).replaceAll('__INBOX_URL__','http://127.0.0.1:8771/api/inbox').replaceAll('__INBOX_TOKEN__','tok-123');
@@ -287,6 +287,50 @@ for(const name of ['universal','liepin','lagou']){
   assert.match(down.toasts[0].textContent,/连不上本地工作台/);assert.equal(down.timers.at(-1).ms,3000);
  });
 }
+
+// A 猎聘 search card as the page renders it: hashed class names next to stable ones (jobCardPcContainer, jobTitleBox, companyName).
+function liepinCard(id,title,{href='https://www.liepin.com/job/'+id+'.shtml?pgRef=x&skId=ab&index=0',place='上海-闵行区',head}={}){
+ const link={href,innerText:head||title+'\n【上海-闵行区】\n急聘 50-80k·14薪\n8年以上 本科'};
+ const nodes={'.jobTitleBox':{innerText:title+'【 '+place+' 】',querySelector:s=>s==='.ellipsis-1'?{innerText:title}:null},
+  '.companyName':{innerText:'示例银行'},'[data-nick="job-detail-company-info"]':{innerText:'示例银行\n银行 1000-9999人'},
+  '.recruiterName':{innerText:'华先生·CEO'}};
+ return {querySelectorAll:s=>s==='a[href]'?[link]:[],querySelector:s=>nodes[s]||null};
+}
+
+test('liepin-list sends one canonical item per search card and one summary toast',async()=>{
+ const cards=[liepinCard(1986324371,'衍生品定价与风控负责人'),liepinCard(1986324371,'重复卡片'),liepinCard(1990000001,'信贷风控经理',{href:'https://www.liepin.com/a/1990000001.shtml?d_sfrom=x'}),
+  liepinCard(1,'外链卡片',{href:'https://evil.example/job/1.shtml'})];
+ const h=runBookmarklet('liepin-list',{title:'风控招聘',dom:{'.jobCardPcContainer':cards},
+  fetchImpl:async(url,init)=>({ok:true,status:200,json:async()=>({ok:true,duplicate:JSON.parse(init.body).url.includes('/a/')})})});
+ await h.run();
+ const sent=h.calls.map(c=>JSON.parse(c.init.body));
+ assert.deepEqual(sent.map(p=>p.url),['https://www.liepin.com/job/1986324371.shtml','https://www.liepin.com/a/1990000001.shtml']);
+ for(const c of h.calls){assert.equal(c.init.headers['X-Inbox-Token'],'tok-123');assert.equal(c.init.credentials,'omit');}
+ const first=sent[0];
+ assert.equal(first.platform,'liepin');
+ assert.deepEqual([first.extracted.job_title,first.extracted.company,first.extracted.location,first.extracted.salary],['衍生品定价与风控负责人','示例银行','上海-闵行区','50-80k·14薪']);
+ assert.match(first.extracted.raw_text,/^猎聘搜索结果卡片，不含完整职位描述。/);assert.match(first.extracted.raw_text,/银行 1000-9999人/);
+ assert.doesNotMatch(first.extracted.raw_text,/华先生/);
+ assert.equal(h.toasts.length,2);assert.match(h.toasts[0].textContent,/正在发送本页 2 个岗位/);
+ assert.equal(h.toasts[1].textContent,'本页 2 个岗位：新增 1，工作台已有 1。');assert.equal(h.toasts[1].style.background,'#38634d');
+});
+
+test('liepin-list stops on a rejected token or a dead inbox, and says when the page has no cards',async()=>{
+ const cards=[liepinCard(1,'甲'),liepinCard(2,'乙')];
+ const rejected=runBookmarklet('liepin-list',{dom:{'.jobCardPcContainer':cards},fetchImpl:async()=>({ok:false,status:403,json:async()=>({error:'收件令牌无效'})})});
+ await rejected.run();
+ assert.equal(rejected.calls.length,1);assert.match(rejected.toasts.at(-1).textContent,/令牌无效或已重置/);
+ let n=0;
+ const down=runBookmarklet('liepin-list',{dom:{'.jobCardPcContainer':cards},fetchImpl:async()=>{if(n++)throw new TypeError('Failed to fetch');return {ok:true,status:200,json:async()=>({ok:true,duplicate:false})};}});
+ await down.run();
+ assert.match(down.toasts.at(-1).textContent,/^已发送 1 个后中断。连不上本地工作台/);assert.equal(down.toasts.at(-1).style.background,'#a04841');
+ const bad=runBookmarklet('liepin-list',{dom:{'.jobCardPcContainer':cards},fetchImpl:async()=>({ok:false,status:400,json:async()=>({error:'缺少页面正文'})})});
+ await bad.run();
+ assert.equal(bad.toasts.at(-1).textContent,'本页 2 个岗位：新增 0，工作台已有 0，没收下 2。');assert.equal(bad.toasts.at(-1).style.background,'#a04841');
+ const empty=runBookmarklet('liepin-list',{});
+ await empty.run();
+ assert.equal(empty.calls.length,0);assert.match(empty.toasts[0].textContent,/没有找到猎聘岗位卡片/);
+});
 
 test('universal title skips a decoy h1 and prefers the h1 that appears in the page title',async()=>{
  const h=runBookmarklet('universal',{text:'正文'.repeat(30),title:'云mall-java后端开发工程师 | 腾讯招聘',

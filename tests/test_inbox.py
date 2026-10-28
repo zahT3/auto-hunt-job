@@ -225,6 +225,23 @@ class InboxTests(InboxCase):
         self.assertNotEqual(a['platform_id'], b['platform_id'])
         self.assertEqual(len(a['platform_id']), 16)
 
+    def test_liepin_search_card_and_detail_page_share_one_record(self):
+        liepin = 'https://www.liepin.com'
+        card = payload(platform='liepin', url=liepin + '/job/1986324371.shtml', page_title='风控招聘',
+                       extracted=dict(job_title='风控经理', company='示例银行', raw_text='猎聘搜索结果卡片，不含完整职位描述。'))
+        detail = payload(platform='liepin', url=liepin + '/job/1986324371.shtml?pgRef=c_pc_search_page&skId=ab&ckId=cd&curPage=0&index=3',
+                         extracted=dict(job_title='风控经理', company='示例银行', raw_text='岗位职责：负责信贷风险模型。任职要求：3年以上风控经验。'))
+        first = self.post(card, origin=liepin)[1]
+        second = self.post(detail, origin=liepin)[1]
+        self.assertEqual((first['duplicate'], second['duplicate']), (False, True))
+        self.assertEqual(self.count(), 1)
+        job = self.store.state()['jobs'][0]
+        self.assertEqual(job['url'], liepin + '/job/1986324371.shtml')
+        self.assertIn('信贷风险模型', job['jd'])
+        other = normalize_payload(payload(platform='liepin', url=liepin + '/a/1986324371.shtml?index=1'))
+        self.assertNotEqual(other['platform_id'], job['platform_id'])
+        self.assertEqual(normalize_payload(payload(platform='liepin', url=liepin + '/zhaopin/?key=x'))['url'], liepin + '/zhaopin/?key=x')
+
     def test_existing_routes_still_same_origin_only(self):
         state = json.loads(self.raw_get('/api/state'))
         headers = {'X-Local-Token': state['csrf_token'], 'Content-Type': 'application/json', 'Origin': BOSS}

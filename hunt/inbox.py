@@ -12,6 +12,9 @@ ALLOWED_DOMAINS = ('zhipin.com', 'liepin.com', 'lagou.com', 'zhaopin.com', '51jo
 # Per-visit tracking only; parameters that may carry the job id (jobid, id, positionId...) stay.
 TRACKING = {'spm', 'from', 'ka', 'lid', 'securityid', 'sessionid', 'scene', 'gclid', 'fbclid', 'ref', '_from', 'trk'}
 TRACKING_PREFIXES = ('utm_', 'd_')
+# 猎聘 job links carry per-visit search state in the query (skId, ckId, index...); the path alone names the job, so a
+# search-results card and the same job's detail page land on one record.
+LIEPIN_JOB = re.compile(r'/(?:job|a)/\d+\.shtml')
 
 
 def _origin_host(origin):
@@ -49,10 +52,10 @@ def clean_url(url):
     url = public_url(url)
     if not url: return ''
     p = urlsplit(url)
-    query = [(k, v) for k, v in parse_qsl(p.query, keep_blank_values=True)
-             if k.lower() not in TRACKING and not k.lower().startswith(TRACKING_PREFIXES)]
     # Host case, a trailing dot and an explicit :443 must not split one job into two identities.
     host = p.hostname.rstrip('.')
+    query = [] if (host == 'liepin.com' or host.endswith('.liepin.com')) and LIEPIN_JOB.fullmatch(p.path) else \
+        [(k, v) for k, v in parse_qsl(p.query, keep_blank_values=True) if k.lower() not in TRACKING and not k.lower().startswith(TRACKING_PREFIXES)]
     return urlunsplit((p.scheme, '[%s]' % host if ':' in host else host, p.path, urlencode(query), p.fragment))
 
 
