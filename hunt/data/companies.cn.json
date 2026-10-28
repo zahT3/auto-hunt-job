@@ -343,15 +343,14 @@
     {
       "id": "join-jd-com-home",
       "name": "京东",
-      "careers_url": "https://join.jd.com/home",
-      "provider": null,
+      "careers_url": "https://zhaopin.jd.com/web/job/job_info_list/3",
+      "provider": "jd",
       "tags": [
         "大厂",
         "互联网",
         "云"
       ],
-      "source": "career-ops-china",
-      "status": "needs_adapter"
+      "source": "career-ops-china"
     },
     {
       "id": "careers-pinduoduo-com-social",
@@ -384,7 +383,7 @@
       "id": "job-xiaohongshu-com",
       "name": "小红书",
       "careers_url": "https://job.xiaohongshu.com/?type=social",
-      "provider": null,
+      "provider": "xiaohongshu",
       "tags": [
         "大厂",
         "互联网",
@@ -412,7 +411,7 @@
       "id": "hr-163-com-job-list-html",
       "name": "网易",
       "careers_url": "https://hr.163.com/job-list.html",
-      "provider": null,
+      "provider": "netease",
       "tags": [
         "大厂",
         "互联网",
@@ -420,14 +419,13 @@
         "云",
         "游戏"
       ],
-      "source": "career-ops-china",
-      "status": "needs_adapter"
+      "source": "career-ops-china"
     },
     {
       "id": "talent-didiglobal-com-social",
       "name": "滴滴",
       "careers_url": "https://talent.didiglobal.com/social",
-      "provider": null,
+      "provider": "didi",
       "tags": [
         "大厂",
         "互联网",
