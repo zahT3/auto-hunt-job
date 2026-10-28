@@ -79,11 +79,12 @@ _HEADING_END = ('简历', '经历', '经验', '背景', '技能', '评价', '信
 _JOB_END = ('经理', '工程师', '设计师', '专员', '主管', '总监', '运营', '开发', '分析师', '顾问', '助理', '程序员', '架构师',
             '研究员', '讲师', '会计', '律师', '医生', '护士', '老师', '编辑', '销售', '实习生')
 _FIELD_WORDS = {'电话', '手机', '邮箱', '邮件', '微信', '地址', '住址', '性别', '年龄', '籍贯', '学历', '专业', '姓名', '生日', '主页', '博客'}
-_LEAD_NAME = re.compile(r'([\u4e00-\u9fff]{2,4})(?=[ \t|/·,、]|$)')
+# 2-4 Han characters, possibly with one space between each ('林 示 例' is how many designed résumés print a name).
+_LEAD_NAME = re.compile(r'([\u4e00-\u9fff](?:[ \u3000]?[\u4e00-\u9fff]){1,3})(?=[ \t|/·,、]|$)')
 
 
 def _is_title(line):
-    return line.strip().strip('-=_*# ').lower() in _TITLES
+    return ''.join(line.split()).strip('-=_*#').lower() in _TITLES
 
 
 def _spans(text, top, names):
@@ -113,7 +114,9 @@ def _spans(text, top, names):
     for name in names:
         name = _fold(name).strip()
         if len(name) >= 2:
-            body = r'\s+'.join(map(re.escape, name.split()))
+            # Han names also match with spaces between characters; other names keep their own word breaks.
+            body = (r'\s*'.join(map(re.escape, ''.join(name.split()))) if re.fullmatch(r'[\u4e00-\u9fff\s]+', name)
+                    else r'\s+'.join(map(re.escape, name.split())))
             add((r'(?<![A-Za-z])' if name[0].isascii() else '') + body + (r'(?![A-Za-z])' if name[-1].isascii() else ''),
                 '[姓名]', flags=re.I)
     for m in re.finditer(_SOCIAL, folded, re.I):
@@ -139,8 +142,8 @@ def _spans(text, top, names):
         for line in folded.split('\n'):
             stripped = line.strip()
             if stripped and not _is_title(stripped):
-                lead = _LEAD_NAME.match(stripped)
-                if lead and lead[1] not in _FIELD_WORDS and not lead[1].endswith(_HEADING_END + _JOB_END):
+                lead = _lead_match(stripped)
+                if lead:
                     start = pos + line.index(stripped)
                     found.append((start, start + len(lead[1]), '[姓名]'))
                 break
@@ -184,4 +187,24 @@ def redact_facts(facts: list[dict], names=()) -> list[dict]:
         out.append(dict(id=fact['id'], text=_apply(text, top, names)))
         if top and text.strip() and not all(_is_title(line) or not line.strip() for line in text.split('\n')):
             top = False
+            # A name found only by the leading-line rule is redacted in every later fact too.
+            found = lead_name(text)
+            if found: names += (found,)
     return out
+
+
+def _lead_match(line):
+    """The leading-name match on a stripped first line, or None for a field word, heading or job title."""
+    lead = _LEAD_NAME.match(line)
+    tight = ''.join(lead[1].split()) if lead else ''
+    return lead if lead and tight not in _FIELD_WORDS and not tight.endswith(_HEADING_END + _JOB_END) else None
+
+
+def lead_name(text):
+    """The name the leading-line rule would redact in the first real line of `text`, without spaces, or None."""
+    for line in _fold(text).split('\n'):
+        stripped = line.strip()
+        if stripped and not _is_title(stripped):
+            lead = _lead_match(stripped)
+            return ''.join(lead[1].split()) if lead else None
+    return None
