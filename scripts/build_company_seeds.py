@@ -82,6 +82,17 @@ NONTECH = [
     {'id': 'mediastorm', 'name': '影视飓风', 'careers_url': 'https://mediastorm.jobs.feishu.cn/', 'provider': 'feishu', 'tags': ['内容与传媒', '市场与品牌'], 'source': 'curated'},
     {'id': 'bluefocus', 'name': '蓝色光标', 'careers_url': 'https://bluefocus.jobs.feishu.cn/', 'provider': 'feishu', 'tags': ['市场与品牌', '内容与传媒'], 'source': 'curated'},
     {'id': 'molbreeding', 'name': '博瑞迪', 'careers_url': 'https://molbreeding.jobs.feishu.cn/', 'provider': 'feishu', 'tags': ['公共事业·农业·能源', '农业'], 'source': 'curated'},
+# 北森 tenants (2026-10-28): banks, brokerages, insurers and others the beisen reader read live.
+    {'id': 'beisen-njzq', 'name': '南京证券', 'careers_url': 'https://njzq.zhiye.com/social', 'provider': 'beisen', 'tags': ['金融专业', '销售与商务', '证券'], 'source': 'curated'},
+    {'id': 'beisen-chinalife', 'name': '中国人寿', 'careers_url': 'https://chinalife.zhiye.com/social', 'provider': 'beisen', 'tags': ['金融专业', '销售与商务', '客户服务', '保险'], 'source': 'curated'},
+    {'id': 'beisen-bosc', 'name': '上海银行', 'careers_url': 'https://bosc.zhiye.com/social', 'provider': 'beisen', 'tags': ['金融专业', '销售与商务', '人力行政财务法务', '银行'], 'source': 'curated'},
+    {'id': 'beisen-bankofbeijing', 'name': '北京银行', 'careers_url': 'https://bankofbeijing.zhiye.com/social', 'provider': 'beisen', 'tags': ['金融专业', '销售与商务', '银行'], 'source': 'curated'},
+    {'id': 'beisen-chinastock', 'name': '中国银河证券', 'careers_url': 'https://chinastock.zhiye.com/social', 'provider': 'beisen', 'tags': ['金融专业', '证券'], 'source': 'curated'},
+    {'id': 'beisen-sinotrans', 'name': '中国外运', 'careers_url': 'https://sinotrans.zhiye.com/social', 'provider': 'beisen', 'tags': ['交通运输与生活服务', '供应链与生产制造', '销售与商务', '物流'], 'source': 'curated'},
+    {'id': 'beisen-bdochina', 'name': '立信会计师事务所', 'careers_url': 'https://bdochina.zhiye.com/social', 'provider': 'beisen', 'tags': ['人力行政财务法务', '咨询', '会计'], 'source': 'curated'},
+    {'id': 'beisen-csc108', 'name': '中信建投证券', 'careers_url': 'https://csc108.zhiye.com/social', 'provider': 'beisen', 'tags': ['金融专业', '证券'], 'source': 'curated'},
+    {'id': 'beisen-guominpension', 'name': '国民养老保险', 'careers_url': 'https://guominpension.zhiye.com/social', 'provider': 'beisen', 'tags': ['金融专业', '销售与商务', '保险'], 'source': 'curated'},
+    {'id': 'beisen-cxmt', 'name': '长鑫存储', 'careers_url': 'https://cxmt.zhiye.com/social', 'provider': 'beisen', 'tags': ['供应链与生产制造', '技术研发', '半导体'], 'source': 'curated'},
 ]
 # Result of the first real sweep (2026-10-26, keyword 'AI 产品经理'): `dead` answered HTTP 404, `needs_adapter`
 # gave the generic website reader a parse_error. Sweeps skip both unless asked; the rows stay for a later recheck.
