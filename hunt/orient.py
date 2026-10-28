@@ -227,19 +227,24 @@ def terms_for(direction_ids):
 def _rule_directions(profile, answers, notes):
     rows = directions.load()
     chosen = [f for f in _as_list(answers.get('family')) if f in families()]
-    suggested = directions.suggest_from_profile(profile)
-    by_family = {f: [r['id'] for r in rows if r['family'] == f] for f in chosen}
     family_of = {r['id']: r['family'] for r in rows}
-    suggested.sort(key=lambda i: family_of[i] not in by_family)  # stable: chosen families first
+    # The profile's own list already bridges bare skills (Python, 销售) to table ids and ranks them by evidence; the
+    # table phrases alone only see job titles written in the résumé, so they are the fallback, not the source.
+    listed = [d for d in profile.get('directions') or [] if isinstance(d, dict) and d.get('id') in family_of]
+    listed_facts = {d['id']: [i for i in d.get('fact_ids') or [] if isinstance(i, str)] for d in listed}
+    suggested = list(dict.fromkeys([d['id'] for d in listed] + directions.suggest_from_profile(profile)))
+    by_family = {f: [r['id'] for r in rows if r['family'] == f] for f in chosen}
     pools = [[i for i in suggested if i in ids] + [i for i in ids if i not in suggested] for ids in by_family.values()]
     from_family = [i for n in range(max((len(p) for p in pools), default=0)) for p in pools if n < len(p) for i in [p[n]]]
     switch = answers.get('switch') == SWITCH[1]
-    order = from_family + suggested if switch else suggested[:2] + from_family + suggested[2:]
+    # A family the user answered is their choice: résumé evidence orders directions inside it, never outside it.
+    lead = [i for i in suggested if not by_family or family_of[i] in by_family]
+    order = from_family + lead if switch else lead[:2] + from_family + lead[2:]
     ids = list(dict.fromkeys(order))[:MAX_DIRECTIONS]
     out = []
     for ident in ids:
         row = directions.get(ident)
-        facts = directions.evidence(profile, ident)
+        facts = list(dict.fromkeys(listed_facts.get(ident, []) + directions.evidence(profile, ident)))
         picked = row['family'] in by_family
         why = ('已确认的简历事实里有与「%s」相关的内容' % row['name']) if facts else ''
         if picked:

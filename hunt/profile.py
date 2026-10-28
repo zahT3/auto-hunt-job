@@ -29,7 +29,7 @@ _NEGATIVE = re.compile(r'没有|不会|不具备|未掌握|不熟悉|无.{0,10}(
 # Skill mentions -> direction table ids. The table matches job-title phrases, and a bare skill word ('Python', 'RAG')
 # hits none of them, so this short bridge says which directions a skill points to. Every id must exist in the table.
 _SKILL_DIRECTIONS = {
-    'Python': ['backend', 'data-analyst'], 'SQL': ['data-analyst', 'data-engineer'], 'Java': ['backend'],
+    'Python': ['data-analyst', 'backend'], 'SQL': ['data-analyst', 'data-engineer'], 'Java': ['backend'],
     'JavaScript': ['frontend'], 'React': ['frontend'], 'Vue': ['frontend'], 'Docker': ['backend'],
     'RAG': ['ai-application-dev'], 'Agent': ['ai-application-dev'], 'LLM': ['ai-application-dev'], 'LangChain': ['ai-application-dev'],
     'PyTorch': ['data-scientist'], 'Solidity': ['blockchain-dev'], 'Web3': ['blockchain-dev'], 'Ethereum': ['blockchain-dev'],
@@ -114,14 +114,26 @@ def build_profile(candidate, confirmed_only=False):
         if re.search(r'工作经验|工作经历|实习|work experience|employment', text, re.I):
             experience.append({'text': text, 'fact_ids': [f['id']], 'status': 'confirmed' if f['id'] in confirmed_ids else 'needs_confirmation'})
     directions_found, queries, query_evidence = [], [], []
-    # Items here already passed the confirmed_only filter, so the table sees them as usable evidence.
-    view = {key: [dict(item, status='confirmed') for item in rows] for key, rows in (('skills', skills), ('experience', experience), ('education', education))}
-    support = {}
+    # Every fact that passed the confirmed_only filter is evidence: project lines ('负责交互设计…') name the work as
+    # often as lines tagged 工作经历. Degree and course lines weigh half, as in the table (studied, not done).
+    study = re.compile(r'本科|硕士|博士|大专|学士|bachelor|master|ph\.?d|课程|course', re.I)
+    lines = [dict(text=f['text'], fact_ids=[f['id']], status='confirmed') for f in facts]
+    # Skill names are derived from these same lines, so only the lines feed the table phrases.
+    view = dict(experience=[x for x in lines if not study.search(x['text'])], education=[x for x in lines if study.search(x['text'])])
+    table, rank = directions.profile_scores(view), {r['id']: n for n, r in enumerate(directions.load())}
+    written = {i: set(directions.evidence(view, i)) for i in table}
+    support, pointing = {}, {}
     for skill in skills:
         for ident in _SKILL_DIRECTIONS.get(skill['label'], []):
             support.setdefault(ident, []).extend(skill['fact_ids'])
-    ranked = sorted(support, key=lambda i: -len(set(support[i])))  # stable: ties keep skill order
-    for ident in list(dict.fromkeys(ranked + directions.suggest_from_profile(view)))[:directions.MAX_SUGGEST]:
+            # A skill adds nothing where its own lines already hit the direction's phrases ('眼动数据分析').
+            if not set(skill['fact_ids']) & written.get(ident, set()):
+                pointing.setdefault(ident, set()).add(skill['label'])
+    # Job titles written in the résumé are evidence; a skill only hints, so each pointing skill adds half a hit
+    # ('用过 Python' must not outrank '负责交互设计'). Ties: more written evidence, more facts, then table order.
+    score = {i: table.get(i, 0) + 0.5 * len(pointing.get(i, ())) for i in set(table) | set(support)}
+    ranked = sorted(score, key=lambda i: (-score[i], -table.get(i, 0), -len(set(support.get(i, []))), rank[i]))
+    for ident in ranked[:directions.MAX_SUGGEST]:
         ids = list(dict.fromkeys(support.get(ident, []) + directions.evidence(view, ident)))
         if not ids:
             continue

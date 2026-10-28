@@ -151,6 +151,16 @@ class ProfileTests(unittest.TestCase):
         self.assertTrue(set(_SKILL_DIRECTIONS) <= set(_SKILLS))
         self.assertTrue({i for ids in _SKILL_DIRECTIONS.values() for i in ids} <= known)
 
+    def test_written_job_titles_outrank_a_bare_skill_mention(self):
+        # An interaction designer who once used Python for an eye-tracking study is not a backend developer.
+        candidate = self.profile('工业设计本科，主修交互设计与用户研究。\n负责交互设计与用户研究，设计用户实验和问卷。\n'
+                                 '负责服务设计方案。\n用 Python 做过眼动数据分析。')['candidate']
+        confirmed = confirm_candidate(candidate, [f['id'] for f in candidate['facts']])
+        ids = [d['id'] for d in build_profile(confirmed, confirmed_only=True)['directions']]
+        self.assertEqual(ids[0], 'ui-ux-designer', ids)
+        self.assertLess(ids.index('user-researcher'), ids.index('backend') if 'backend' in ids else 99)
+        self.assertNotEqual(ids[1:2], ['backend'])
+
     def test_other_trades_are_recognised(self):
         result = self.profile('三年门店销售经验，负责大客户开发。\n做过两年护士，熟悉临床护理。\n负责采购与供应链对接。')
         names = {s['name'] for s in result['profile']['skills']}

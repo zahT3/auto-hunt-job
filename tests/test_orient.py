@@ -390,5 +390,27 @@ class TermsTests(unittest.TestCase):
         self.assertTrue(discovery.matches('总账会计', orient.terms_for(['accountant'])))
 
 
+
+class RuleProposalUsesProfileTests(unittest.TestCase):
+    """The rule proposal must start from the profile's own direction list (skills bridged to the table)."""
+    def propose_for(self, *lines):
+        from hunt.intake import analyze_resume
+        from hunt.profile import build_profile, confirm_candidate
+        candidate = analyze_resume('cv.txt', '\n'.join(lines).encode(), synthetic=True)['candidate']
+        candidate = confirm_candidate(candidate, [f['id'] for f in candidate['facts']])
+        return orient.propose(build_profile(candidate, confirmed_only=True), {})
+
+    def test_skills_without_title_phrases_still_give_directions(self):
+        found = self.propose_for('负责华东区域销售，年销售额 2000 万。', '维护重点客户关系。')
+        ids = [d['id'] for d in found['directions']]
+        self.assertTrue(ids, found['notes'])
+        self.assertEqual(directions.get(ids[0])['family'], '销售与商务')
+        self.assertTrue(all(d['fact_ids'] and d['why'] for d in found['directions']))
+
+    def test_profile_order_wins_over_a_stray_title_phrase(self):
+        found = self.propose_for('用 Python 和 LangChain 做 RAG 与 Agent 原型。', '使用 PyTorch 训练模型。', '参与过一次校园招聘活动。')
+        self.assertEqual(found['directions'][0]['id'], 'ai-application-dev')
+
+
 if __name__ == '__main__':
     unittest.main()

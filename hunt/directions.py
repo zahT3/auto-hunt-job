@@ -140,15 +140,14 @@ def evidence(profile, ident):
     return list(dict.fromkeys(ids))
 
 
-def suggest_from_profile(profile):
-    """Up to six direction ids from confirmed skills, experience and education text.
+def profile_scores(profile):
+    """{direction id: score > 0} from confirmed skills, experience and education text.
 
     Counts distinct phrase hits; skills and experience weigh 1, education 0.5 (a degree says
-    what was studied, not what to apply for). Unconfirmed items and anything unreadable are
-    skipped. Ties keep table order.
+    what was studied, not what to apply for). Unconfirmed items and anything unreadable are skipped.
     """
     if not isinstance(profile, dict):
-        return []
+        return {}
 
     def texts(key, field):
         rows = profile.get(key)
@@ -157,9 +156,16 @@ def suggest_from_profile(profile):
                            for f in field if isinstance(r.get(f), str))
     work = _Text(texts('skills', ('name', 'label')) + ' \n ' + texts('experience', ('text',)))
     study = _Text(texts('education', ('text',)))
-    scored = []
-    for order, row in enumerate(_rows()):
+    scores = {}
+    for row in _rows():
         score = len(_hits(row, work)) + 0.5 * len(_hits(row, study))
         if score > 0:
-            scored.append((-score, order, row['id']))
-    return [ident for _, _, ident in sorted(scored)[:MAX_SUGGEST]]
+            scores[row['id']] = score
+    return scores
+
+
+def suggest_from_profile(profile):
+    """Up to six direction ids by profile_scores; ties keep table order."""
+    rank = {r['id']: n for n, r in enumerate(_rows())}
+    scores = profile_scores(profile)
+    return sorted(scores, key=lambda i: (-scores[i], rank[i]))[:MAX_SUGGEST]
