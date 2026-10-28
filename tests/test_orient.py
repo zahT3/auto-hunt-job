@@ -391,8 +391,14 @@ class TermsTests(unittest.TestCase):
 
     def test_core_keyword_joins_the_terms_unless_it_repeats_one(self):
         # Banks title risk roles 授信审批岗 or 风险管理岗; searching only '风控经理' misses them, '风控' does not.
-        self.assertEqual(orient.terms_for(['risk-control'])[:2], ['风控', '风控经理'])
+        risk = orient.terms_for(['risk-control'])
+        self.assertEqual(risk[0], '风控')
+        self.assertNotIn('风控经理', risk)  # '风控' finds every 风控经理, so the title gives its slot to another term
+        llm = [d for d in directions.load() if d['name'] == '大模型算法工程师']
+        if llm: self.assertEqual(orient.terms_for([llm[0]['id']])[0], directions.get(llm[0]['id'])['keywords'][0])  # core word replaces a covered name in front
         self.assertEqual(orient.terms_for(['ai-product-manager']), ['AI 产品经理', '大模型产品经理', 'AIGC 产品经理', 'Agent 产品经理'])
+        bi = [d for d in directions.load() if d['name'].startswith('BI')][0]['id']
+        self.assertIn('商业分析师', orient.terms_for(['accountant', bi, 'treasury-cashier', 'software-engineer']))
         four = orient.terms_for(['risk-control', 'accountant', 'auditor', 'treasury-cashier'])
         self.assertLessEqual(len(four), 8)
         for ident in ('risk-control', 'accountant', 'auditor', 'treasury-cashier'):
