@@ -18,6 +18,9 @@ DEFAULTS = dict(base_url='https://api.deepseek.com', model='deepseek-v4-flash',
 KINDS = ('resume_redacted', 'resume_full', 'job_text')
 SETTINGS_FILE, SECRETS_FILE = 'ai_settings.json', 'secrets.json'
 MODEL = re.compile(r'[A-Za-z0-9._:/\-]{1,100}')
+# Reasoning models (deepseek-v4-flash among them) count their hidden thinking as completion tokens: a call that leaves
+# room only for its answer gets cut off mid-JSON. Every call gets this much extra room, included in the worst case.
+REASONING_ALLOWANCE = 4000
 
 
 class LLMError(Exception):
@@ -163,6 +166,7 @@ def chat_json(settings, key, messages, schema_keys, meter, transport=network.fet
     if meter.exhausted:
         raise LLMError('budget', '已达本轮模型花费上限，不再调用模型')
     prompt_chars = sum(len(str(m.get('content', ''))) for m in messages)
+    max_tokens = max_tokens + REASONING_ALLOWANCE
     if meter.projected(prompt_chars, max_tokens) > meter.budget_cny:
         raise LLMError('budget', '这次调用的最坏花费会超过本轮上限，不再调用模型')
     body = json.dumps(dict(model=settings['model'], messages=messages, max_tokens=max_tokens,
@@ -187,6 +191,8 @@ def chat_json(settings, key, messages, schema_keys, meter, transport=network.fet
         meter.charge(pt, ct)
     else:
         meter.estimate(prompt_chars, len(content))
+    if outer['choices'][0].get('finish_reason') == 'length':
+        raise LLMError('bad_output', '模型输出被截断（输出上限不够；推理型模型的思考也计入上限）')
     try:
         result = json.loads(content)
     except ValueError:

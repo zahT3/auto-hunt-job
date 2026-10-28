@@ -238,6 +238,24 @@ class ChatTests(unittest.TestCase):
         self.assertAlmostEqual(meter.spent, (1000 * 1 + 500 * 2) / 1e6)
         self.assertFalse(meter.estimated)
 
+    def test_reasoning_allowance_is_added_and_counted_in_the_worst_case(self):
+        result, calls, meter = self.call(reply('{"a": 1}'))
+        self.assertEqual(json.loads(calls[0][1]['data'])['max_tokens'], 2000 + llm.REASONING_ALLOWANCE)
+        # Worst case of one call must include the allowance, so a tight budget refuses before sending.
+        tight = llm.Meter(((2000 + llm.REASONING_ALLOWANCE) * 2 - 1) / 1e6, 1, 2)
+        with self.assertRaises(llm.LLMError) as caught:
+            self.call(reply('{"a": 1}'), meter=tight)
+        self.assertEqual((caught.exception.code, caught.exception.calls), ('budget', []))
+
+    def test_cut_off_answer_says_so(self):
+        raw = json.dumps(dict(choices=[dict(message=dict(content='{"a": [1, 2'), finish_reason='length')],
+                              usage=dict(prompt_tokens=10, completion_tokens=6000))).encode()
+        with self.assertRaises(llm.LLMError) as caught:
+            self.call(raw)
+        self.assertEqual(caught.exception.code, 'bad_output')
+        self.assertIn('截断', caught.exception.message)
+        self.assertGreater(caught.exception.meter.spent, 0)  # the tokens were still billed
+
     def test_chat_json_validates_output(self):
         for content in ('not json', '[1]', '{"b": 1}', '"text"'):
             with self.subTest(content=content), self.assertRaises(llm.LLMError) as cm:
@@ -255,16 +273,16 @@ class ChatTests(unittest.TestCase):
 
     def test_max_tokens_sent_and_projected_cost_blocks_request(self):
         _, calls, _ = self.call(reply('{"a": 1}', dict(prompt_tokens=1, completion_tokens=1)))
-        self.assertEqual(json.loads(calls[0][1]['data'])['max_tokens'], 2000)
-        # 2000 completion tokens at 2 CNY/M = 0.004 > 0.003 left: refuse before any request.
+        self.assertEqual(json.loads(calls[0][1]['data'])['max_tokens'], 2000 + llm.REASONING_ALLOWANCE)
+        # (2000 + allowance) completion tokens at 2 CNY/M = 0.012 > 0.011 left: refuse before any request.
         with self.assertRaises(llm.LLMError) as cm:
-            self.call(reply('{"a": 1}'), meter=llm.Meter(0.003, 1, 2))
+            self.call(reply('{"a": 1}'), meter=llm.Meter(0.011, 1, 2))
         self.assertEqual((cm.exception.code, cm.exception.calls), ('budget', []))
         # Same budget, smaller max_tokens fits.
         calls = []
-        llm.chat_json(dict(llm.DEFAULTS), KEY, self.messages, ['a'], llm.Meter(0.003, 1, 2),
+        llm.chat_json(dict(llm.DEFAULTS), KEY, self.messages, ['a'], llm.Meter(0.011, 1, 2),
                       transport=lambda url, **kw: calls.append(kw) or reply('{"a": 1}'), max_tokens=500)
-        self.assertEqual(json.loads(calls[0]['data'])['max_tokens'], 500)
+        self.assertEqual(json.loads(calls[0]['data'])['max_tokens'], 500 + llm.REASONING_ALLOWANCE)
         # Raised prices: one call alone would exceed the whole budget.
         with self.assertRaises(llm.LLMError) as cm:
             self.call(reply('{"a": 1}'), meter=llm.Meter(1, 1000, 1000))

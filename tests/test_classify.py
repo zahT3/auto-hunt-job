@@ -140,8 +140,9 @@ class BudgetTests(unittest.TestCase):
     def test_budget_reached_after_first_batch_keeps_it_and_leaves_the_rest_to_rules(self):
         jobs = [job(n, '综合岗') for n in range(1, 7)]
         first = {j['id']: 'backend' for j in jobs[:2]}
-        model = FakeModel(first, usage=(2000, 500))  # costs 0.003 CNY, the whole budget
-        out = run_classify(jobs, model, budget=0.003, batch=2)
+        # The worst case of one call (with the reasoning allowance) fits 0.01 CNY; this call then costs all of it.
+        model = FakeModel(first, usage=(2000, 4000))
+        out = run_classify(jobs, model, budget=0.01, batch=2)
         self.assertEqual(len(model.bodies), 1)
         self.assertEqual([j['direction']['by'] for j in jobs], ['ai', 'ai', 'rules', 'rules', 'rules', 'rules'])
         self.assertEqual((out['by_ai'], out['by_rules']), (2, 4))
