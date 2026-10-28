@@ -98,10 +98,21 @@ NONTECH = [
     {'id': 'dayee-crcbank', 'name': '华润银行', 'careers_url': 'https://crc.wintalent.cn/wt/crcbank/web/index?brandCode=1', 'provider': 'dayee', 'tags': ['金融专业', '销售与商务', '银行'], 'source': 'curated'},
     {'id': 'dayee-xyzq', 'name': '兴业证券', 'careers_url': 'https://email.wintalent.cn/wt/xyzq/web/index?brandCode=1', 'provider': 'dayee', 'tags': ['金融专业', '证券'], 'source': 'curated'},
     {'id': 'dayee-wanda', 'name': '万达', 'careers_url': 'https://wanda.hotjob.cn/wt/wanda/web/index', 'provider': 'dayee', 'tags': ['建筑工程与房地产', '运营', '商业地产'], 'source': 'curated'},
-    {'id': 'dayee-ct', 'name': '中泰证券', 'careers_url': 'https://www.hotjob.cn/wt/CT/web/index', 'provider': 'dayee', 'tags': ['金融专业', '销售与商务', '证券'], 'source': 'curated'},
+    {'id': 'dayee-ct', 'name': '财通证券', 'careers_url': 'https://www.hotjob.cn/wt/CT/web/index', 'provider': 'dayee', 'tags': ['金融专业', '销售与商务', '证券'], 'source': 'curated'},
     {'id': 'dayee-timesgroup', 'name': '时代中国', 'careers_url': 'https://www.hotjob.cn/wt/timesgroup/web/index', 'provider': 'dayee', 'tags': ['建筑工程与房地产', '地产'], 'source': 'curated'},
     {'id': 'dayee-rrd', 'name': '当纳利中国', 'careers_url': 'https://www.hotjob.cn/wt/rrd/web/index?brandCode=1', 'provider': 'dayee', 'tags': ['供应链与生产制造', '销售与商务', '印刷'], 'source': 'curated'},
     {'id': 'dayee-263group', 'name': '263', 'careers_url': 'https://www.hotjob.cn/wt/263group/web/index/social', 'provider': 'dayee', 'tags': ['销售与商务', '客户服务', '通信'], 'source': 'curated'},
+# Second batch (2026-10-28): 北森 and 大易 tenants found by search and read live.
+    {'id': 'beisen-gtfund', 'name': '国泰基金', 'careers_url': 'https://gtfund.zhiye.com/social', 'provider': 'beisen', 'tags': ['金融专业', '销售与商务', '基金'], 'source': 'curated'},
+    {'id': 'beisen-cicc', 'name': '中金公司', 'careers_url': 'https://cicc.zhiye.com/social', 'provider': 'beisen', 'tags': ['金融专业', '咨询', '证券'], 'source': 'curated'},
+    {'id': 'beisen-guosen', 'name': '国信证券', 'careers_url': 'https://guosen.zhiye.com/social', 'provider': 'beisen', 'tags': ['金融专业', '销售与商务', '证券'], 'source': 'curated'},
+    {'id': 'beisen-chery', 'name': '奇瑞汽车', 'careers_url': 'https://chery.zhiye.com/social', 'provider': 'beisen', 'tags': ['供应链与生产制造', '销售与商务', '汽车'], 'source': 'curated'},
+    {'id': 'beisen-changan', 'name': '长安汽车', 'careers_url': 'https://changan.zhiye.com/social', 'provider': 'beisen', 'tags': ['供应链与生产制造', '销售与商务', '汽车'], 'source': 'curated'},
+    {'id': 'beisen-siic', 'name': '上海实业', 'careers_url': 'https://siic.zhiye.com/social', 'provider': 'beisen', 'tags': ['供应链与生产制造', '医疗健康', '销售与商务', '综合管理'], 'source': 'curated'},
+    {'id': 'beisen-grainrain', 'name': '谷雨', 'careers_url': 'https://grainrain.zhiye.com/social', 'provider': 'beisen', 'tags': ['市场与品牌', '销售与商务', '运营', '消费品'], 'source': 'curated'},
+    {'id': 'beisen-yealink', 'name': '亿联网络', 'careers_url': 'https://yealink.zhiye.com/social', 'provider': 'beisen', 'tags': ['销售与商务', '技术研发', '通信'], 'source': 'curated'},
+    {'id': 'dayee-lczq', 'name': '联储证券', 'careers_url': 'https://www.hotjob.cn/wt/lczq/web/index', 'provider': 'dayee', 'tags': ['金融专业', '证券'], 'source': 'curated'},
+    {'id': 'dayee-essence', 'name': '安信证券', 'careers_url': 'https://sc.hotjob.cn/wt/Essence/web/index', 'provider': 'dayee', 'tags': ['金融专业', '销售与商务', '证券'], 'source': 'curated'},
 ]
 # Result of the first real sweep (2026-10-26, keyword 'AI 产品经理'): `dead` answered HTTP 404, `needs_adapter`
 # gave the generic website reader a parse_error. Sweeps skip both unless asked; the rows stay for a later recheck.
