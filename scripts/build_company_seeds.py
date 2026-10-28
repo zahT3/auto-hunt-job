@@ -93,6 +93,15 @@ NONTECH = [
     {'id': 'beisen-csc108', 'name': '中信建投证券', 'careers_url': 'https://csc108.zhiye.com/social', 'provider': 'beisen', 'tags': ['金融专业', '证券'], 'source': 'curated'},
     {'id': 'beisen-guominpension', 'name': '国民养老保险', 'careers_url': 'https://guominpension.zhiye.com/social', 'provider': 'beisen', 'tags': ['金融专业', '销售与商务', '保险'], 'source': 'curated'},
     {'id': 'beisen-cxmt', 'name': '长鑫存储', 'careers_url': 'https://cxmt.zhiye.com/social', 'provider': 'beisen', 'tags': ['供应链与生产制造', '技术研发', '半导体'], 'source': 'curated'},
+# 大易 tenants (2026-10-28): property, finance and other groups the dayee reader read live.
+    {'id': 'dayee-cifi', 'name': '旭辉', 'careers_url': 'https://hotjob.cn/wt/cifi/web/index/social?brandCode=1', 'provider': 'dayee', 'tags': ['建筑工程与房地产', '销售与商务', '地产'], 'source': 'curated'},
+    {'id': 'dayee-crcbank', 'name': '华润银行', 'careers_url': 'https://crc.wintalent.cn/wt/crcbank/web/index?brandCode=1', 'provider': 'dayee', 'tags': ['金融专业', '销售与商务', '银行'], 'source': 'curated'},
+    {'id': 'dayee-xyzq', 'name': '兴业证券', 'careers_url': 'https://email.wintalent.cn/wt/xyzq/web/index?brandCode=1', 'provider': 'dayee', 'tags': ['金融专业', '证券'], 'source': 'curated'},
+    {'id': 'dayee-wanda', 'name': '万达', 'careers_url': 'https://wanda.hotjob.cn/wt/wanda/web/index', 'provider': 'dayee', 'tags': ['建筑工程与房地产', '运营', '商业地产'], 'source': 'curated'},
+    {'id': 'dayee-ct', 'name': '中泰证券', 'careers_url': 'https://www.hotjob.cn/wt/CT/web/index', 'provider': 'dayee', 'tags': ['金融专业', '销售与商务', '证券'], 'source': 'curated'},
+    {'id': 'dayee-timesgroup', 'name': '时代中国', 'careers_url': 'https://www.hotjob.cn/wt/timesgroup/web/index', 'provider': 'dayee', 'tags': ['建筑工程与房地产', '地产'], 'source': 'curated'},
+    {'id': 'dayee-rrd', 'name': '当纳利中国', 'careers_url': 'https://www.hotjob.cn/wt/rrd/web/index?brandCode=1', 'provider': 'dayee', 'tags': ['供应链与生产制造', '销售与商务', '印刷'], 'source': 'curated'},
+    {'id': 'dayee-263group', 'name': '263', 'careers_url': 'https://www.hotjob.cn/wt/263group/web/index/social', 'provider': 'dayee', 'tags': ['销售与商务', '客户服务', '通信'], 'source': 'curated'},
 ]
 # Result of the first real sweep (2026-10-26, keyword 'AI 产品经理'): `dead` answered HTTP 404, `needs_adapter`
 # gave the generic website reader a parse_error. Sweeps skip both unless asked; the rows stay for a later recheck.
