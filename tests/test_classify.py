@@ -209,6 +209,14 @@ class SummarizeTests(unittest.TestCase):
         self.assertEqual(dict(s['top_requirements']), {'3年以上': 1, 'SQL': 1})
         self.assertEqual((s['matched_facts'], sorted(s['missing'])), ([], ['3年以上', 'SQL']))
 
+    def test_reader_metadata_lines_are_not_requirements(self):
+        # The 腾讯 reader starts its text with 'BG: WXG' and '类别: 产品'; those are org codes, not requirements.
+        jd = 'BG: WXG\n类别: 产品\n经验: 3年以上工作经验\n岗位职责:\n负责 SQL 报表与 Tableau 看板。'
+        rows = [dict(job(1, '数据产品经理'), jd=jd, direction=dict(id='backend', by='rules', score=1, reason=''))]
+        top = dict(classify.summarize('backend', rows, [])['top_requirements'])
+        self.assertNotIn('BG', top); self.assertNotIn('WXG', top)
+        self.assertEqual(top.get('SQL'), 1); self.assertEqual(top.get('3年以上'), 1)
+
     def test_empty_direction_and_junk_facts(self):
         s = classify.summarize('backend', [], [dict(id='f1', text=None), 'x'])
         self.assertEqual((s['count'], s['by_source'], s['top_requirements'], s['matched_facts'], s['missing']), (0, {}, [], [], []))

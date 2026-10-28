@@ -169,8 +169,13 @@ TOKEN = re.compile(r'(?<![A-Za-z0-9])[A-Za-z][A-Za-z0-9+#]*(?:\.[A-Za-z0-9]+)?')
 NOT_TERMS = {'cet', 'cet4', 'cet6', 'phd'}  # already counted as 英语四级/六级 and 博士
 
 
+# Readers prepend org metadata ('BG: WXG', '类别: 产品', '部门: 抖音电商'); its codes are not requirements.
+# '经验:' lines stay: a years requirement is real.
+META_LINE = re.compile(r'^\s*(?:BG|类别|部门|职位类别|所属部门)\s*[:：].*$', re.M)
+
+
 def _section(text):
-    text = unicodedata.normalize('NFKC', str(text or ''))
+    text = META_LINE.sub('', unicodedata.normalize('NFKC', str(text or '')))
     start = SECTION_START.search(text)
     if not start:
         return text
