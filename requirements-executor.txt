@@ -1,2 +1,3 @@
 -r requirements.txt
 playwright==1.64.0
+patchright==1.64.3

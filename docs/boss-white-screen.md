@@ -26,7 +26,27 @@
 
 一次已安装 Chrome 的独立只读检查得到 9466 字节页面，地址包含 `_security_check`。这只证明收到页面，未证明得到岗位列表、登录有效或稳定采集。真实 BOSS 登录后端到端仍未验收通过。延迟 about:blank 的本地浏览器夹具已验证只请求一次、明确停止。
 
-## 已跑通的官网路径
+## 2026-10-29：猎聘白屏的原因与处理
+
+猎聘的白屏原因已经确认：页面脚本检测到 Chrome 调试接口开了 Runtime 功能（`Runtime.enable`），就把标签页清成 about:blank。Playwright 会在每个标签页上开这个功能，所以用户在自动化窗口里新建的标签页也会白屏。liepin-cli 的 Issue #23 / PR #24 记录过同一现象。
+
+本机对照，每次都打开猎聘首页，再观察 20 秒：
+
+| 方式 | 结果 |
+| --- | --- |
+| Playwright，有界面 | 约 5 秒后变成 about:blank |
+| 直接连调试接口，不发 `Runtime.enable` | 页面不变，有 62 个岗位链接 |
+| 同一个连接，多发一次 `Runtime.enable` | 变成 about:blank |
+| Patchright，有界面 | 页面不变，有 62 个岗位链接 |
+| 项目读取器改用 Patchright 后 | 首页拿到 61 个岗位链接，再等 8 秒也没有白屏 |
+
+处理办法：`hunt/sources_browser.py` 装了 Patchright 就用它，没装就退回 Playwright。Patchright 还让 `navigator.webdriver` 显示为 false。
+
+还没解决的问题：
+
+- 半小时里自动访问了十来次之后，猎聘搜索页开始跳到 `safe.liepin.com` 的 IP 验证页，两种驱动都一样。读取器把它报告为 `captcha` 并停下。验证要用户本人在 `--login liepin` 打开的窗口里完成，工具不去解。
+- BOSS 还没有在 Patchright 下复测，不知道是不是同一个原因。
+
 
 公司招聘页 → 明确引用的 ATS 看板 → 公开岗位正文与稳定 ID → 本地匹配 → 显示申请入口与关联来源。
 

@@ -7,6 +7,18 @@ from hunt.sources_browser import BrowserReader
 
 
 class SearchBrowserTests(unittest.TestCase):
+    def test_driver_is_patchright_when_installed_else_playwright(self):
+        from unittest.mock import patch
+        from hunt.sources_browser import _sync_playwright
+        try:
+            import patchright.sync_api as patched
+        except ImportError:
+            self.skipTest('Optional Patchright is not installed')
+        import playwright.sync_api as plain
+        self.assertIs(_sync_playwright(), patched.sync_playwright)
+        with patch.dict('sys.modules', {'patchright.sync_api': None}):
+            self.assertIs(_sync_playwright(), plain.sync_playwright)
+
     def test_delayed_blank_redirect_stops_once_instead_of_emitting_empty_html(self):
         try:
             from playwright.sync_api import sync_playwright

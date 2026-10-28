@@ -1,4 +1,4 @@
-"""Optional application-owned Playwright browser. Never attaches to personal Chrome.
+"""Optional application-owned browser, driven by Patchright when installed, else Playwright. Never attaches to personal Chrome.
 
 Run `python -m hunt.sources_browser --login boss` to sign in yourself. Collection
 only navigates public pages, reads rendered DOM, and blocks mutation requests.
@@ -19,6 +19,16 @@ HOME = {'boss': 'https://www.zhipin.com/', 'liepin': 'https://www.liepin.com/'}
 HOSTS = {'boss': ('zhipin.com', 'bosszhipin.com'), 'liepin': ('liepin.com', 'lietou-static.com')}
 
 
+def _sync_playwright():
+    """Patchright when installed: it never turns on CDP's Runtime domain, which 猎聘 detects and answers by blanking every
+    tab, and it drops the navigator.webdriver flag. Same API as Playwright, which stays the fallback."""
+    try:
+        from patchright.sync_api import sync_playwright
+    except ImportError:
+        from playwright.sync_api import sync_playwright
+    return sync_playwright
+
+
 def navigation_state(kind, url):
     if url == 'about:blank' or not url:
         raise SourceError('blank_page', '页面退回 about:blank；可能是站点自动化/调试检测或浏览器兼容问题。已停止此渠道，不重复登录或导航；可先使用公司官网搜索。')
@@ -26,6 +36,8 @@ def navigation_state(kind, url):
     main = 'zhipin.com' if kind == 'boss' else 'liepin.com'
     if p.scheme != 'https' or not (p.hostname == main or (p.hostname or '').endswith('.' + main)):
         raise SourceError('blocked', '平台跳转到外部站点，采集已停止')
+    if kind == 'liepin' and p.hostname == 'safe.liepin.com':
+        raise SourceError('captcha', '猎聘要求本人安全验证；采集已停止。请运行 python -m hunt.sources_browser --login liepin，在打开的窗口里自己完成验证后再扫描')
     if kind == 'boss' and '/web/user/' in p.path:
         raise SourceError('login_required', 'BOSS 已跳转登录页，请本人在独立浏览器登录后重新扫描')
     if kind == 'boss' and '/verify' in p.path:
@@ -47,8 +59,7 @@ class BrowserReader:
             raise SourceError('blocked', '此渠道的独立浏览器正在使用，请完成登录或等待当前扫描结束')
         self.locked = True
         try:
-            from playwright.sync_api import sync_playwright
-            self.playwright = sync_playwright().start()
+            self.playwright = _sync_playwright()().start()
             profile = self.profile_root / (self.kind + ('-chrome' if self.channel else ''))
             profile.mkdir(parents=True, exist_ok=True, mode=0o700)
             profile.chmod(0o700)

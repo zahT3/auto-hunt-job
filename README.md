@@ -143,6 +143,8 @@ BOSS 白屏调查、参考项目及官网替代路径见 [调查记录](docs/bos
 .venv/bin/python -m playwright install chromium
 ```
 
+装了 Patchright（已写在 `requirements-executor.txt` 里）时，BOSS、猎聘的浏览器模式用它驱动。它和 Playwright 用同一个 Chromium。猎聘会检测 Chrome 调试接口的 Runtime 功能，一旦检测到就把页面清成 about:blank。Patchright 不开这个功能，同时让 `navigator.webdriver` 显示为 false。这可能违反平台条款，账号有被限制的风险，见 [SECURITY.md](SECURITY.md)。
+
 在独立窗口由本人完成登录，再在高级设置里将相应来源切到浏览器模式。登录命令及数据目录见 [使用与集成](docs/usage.md)。不会复用日常 Chrome Cookie，不自动解决验证码，不打招呼、不上传简历。动态页面可能仍受阻；如实保留失败原因。
 
 ## 终端与网页

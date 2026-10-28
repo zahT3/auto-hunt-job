@@ -80,6 +80,9 @@ class CareerTests(unittest.TestCase):
             self.assertEqual(error.exception.status, status)
         navigation_state('boss', 'https://www.zhipin.com/web/geek/jobs')
         with self.assertRaises(SourceError): navigation_state('boss', 'https://www.zhipin.com.evil.example/')
+        with self.assertRaises(SourceError) as error: navigation_state('liepin', 'https://safe.liepin.com/page/liepin/captchaPage_ip_PC?euuid=')
+        self.assertEqual(error.exception.status, 'captcha')
+        navigation_state('liepin', 'https://www.liepin.com/zhaopin/?key=x')
 
 
 if __name__ == '__main__': unittest.main()
