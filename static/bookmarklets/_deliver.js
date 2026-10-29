@@ -8,7 +8,7 @@ const INBOX_URL = '__INBOX_URL__';
 const INBOX_TOKEN = '__INBOX_TOKEN__';
 const BODY_LIMIT = 180000;
 
-const toast = (message, bad) => {
+const toast = (message, bad, ms = 3000) => {
   const old = document.getElementById('__hunt_toast');
   if (old) old.remove();
   const el = document.createElement('div');
@@ -20,7 +20,7 @@ const toast = (message, bad) => {
     font: '14px/1.5 sans-serif', whiteSpace: 'pre-wrap', boxShadow: '0 2px 8px rgba(0,0,0,.3)',
   });
   (document.body || document.documentElement).appendChild(el);
-  setTimeout(() => el.remove(), 3000);
+  setTimeout(() => el.remove(), ms);
 };
 
 const bytes = (text) => new TextEncoder().encode(text).length;

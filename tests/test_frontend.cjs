@@ -247,13 +247,14 @@ test('bookmarklet sources and the built scripts are valid JavaScript',()=>{
 });
 
 // A minimal page: dom maps a selector to its elements; querySelector answers with the first one.
-function runBookmarklet(name,{text='',title='页面',dom={},fetchImpl}={}){
+// runTimers: timer callbacks fire on the next microtask, so a script that sleeps between steps can be driven to the end.
+function runBookmarklet(name,{text='',title='页面',dom={},fetchImpl,runTimers=false}={}){
  const toasts=[],timers=[],calls=[];
  const el=()=>({style:{},remove(){this.removed=true;},appendChild(){}});
  const document={title,body:{innerText:text,appendChild(node){toasts.push(node);}},documentElement:{},
   querySelectorAll:s=>dom[s]||[],querySelector:s=>(dom[s]||[])[0]||null,getElementById:()=>null,createElement:el,addEventListener(){}};
  const context=vm.createContext({document,location:{href:'https://careers.example.com/jobs/1?utm_source=x',pathname:'/jobs/1'},TextEncoder,JSON,Object,String,Math,Date,Array,URL,Set,
-  setTimeout:(fn,ms)=>{timers.push({fn,ms});return 1;},
+  setTimeout:(fn,ms)=>{timers.push({fn,ms});if(runTimers)Promise.resolve().then(fn);return 1;},
   fetch:async(url,init)=>{calls.push({url,init});return fetchImpl?fetchImpl(url,init):{ok:true,status:200,json:async()=>({ok:true,duplicate:false})};}});
  const code=bookmarkletSource(name).replaceAll('__INBOX_URL__','http://127.0.0.1:8771/api/inbox').replaceAll('__INBOX_TOKEN__','tok-123');
  return {toasts,timers,calls,payload:()=>JSON.parse(calls[0].init.body),run:()=>vm.runInContext(code,context)};
@@ -311,8 +312,9 @@ test('liepin-list sends one canonical item per search card and one summary toast
  assert.deepEqual([first.extracted.job_title,first.extracted.company,first.extracted.location,first.extracted.salary],['衍生品定价与风控负责人','示例银行','上海-闵行区','50-80k·14薪']);
  assert.match(first.extracted.raw_text,/^猎聘搜索结果卡片，不含完整职位描述。/);assert.match(first.extracted.raw_text,/银行 1000-9999人/);
  assert.doesNotMatch(first.extracted.raw_text,/华先生/);
- assert.equal(h.toasts.length,2);assert.match(h.toasts[0].textContent,/正在发送本页 2 个岗位/);
- assert.equal(h.toasts[1].textContent,'本页 2 个岗位：新增 1，工作台已有 1。');assert.equal(h.toasts[1].style.background,'#38634d');
+ assert.equal(h.toasts.length,2);assert.match(h.toasts[0].textContent,/第 1 页：正在发送 2 个岗位/);
+ assert.equal(h.toasts[1].textContent,'本次共 1 页 2 个岗位：新增 1，工作台已有 1。已是最后一页。');assert.equal(h.toasts[1].style.background,'#38634d');
+ assert.equal(h.timers.at(-1).ms,8000);
 });
 
 test('liepin-list stops on a rejected token or a dead inbox, and says when the page has no cards',async()=>{
@@ -326,10 +328,54 @@ test('liepin-list stops on a rejected token or a dead inbox, and says when the p
  assert.match(down.toasts.at(-1).textContent,/^已发送 1 个后中断。连不上本地工作台/);assert.equal(down.toasts.at(-1).style.background,'#a04841');
  const bad=runBookmarklet('liepin-list',{dom:{'.jobCardPcContainer':cards},fetchImpl:async()=>({ok:false,status:400,json:async()=>({error:'缺少页面正文'})})});
  await bad.run();
- assert.equal(bad.toasts.at(-1).textContent,'本页 2 个岗位：新增 0，工作台已有 0，没收下 2。');assert.equal(bad.toasts.at(-1).style.background,'#a04841');
+ assert.equal(bad.toasts.at(-1).textContent,'本次共 1 页 2 个岗位：新增 0，工作台已有 0，没收下 2。已是最后一页。');assert.equal(bad.toasts.at(-1).style.background,'#a04841');
  const empty=runBookmarklet('liepin-list',{});
  await empty.run();
  assert.equal(empty.calls.length,0);assert.match(empty.toasts[0].textContent,/没有找到猎聘岗位卡片/);
+});
+
+// A results listing with an Ant Design pager: clicking 下一页 swaps in the next page's cards, as 猎聘 does without navigating.
+function liepinPager(pages,{stuck=false}={}){
+ let at=0;
+ const dom={'.jobCardPcContainer':pages[0],'.ant-pagination-item-active':[{innerText:'1'}]};
+ const li={className:'ant-pagination-next',getAttribute:n=>n==='aria-disabled'?String(at>=pages.length-1):null,
+  querySelector:s=>s==='button'?button:null};
+ const button={clicks:0,click(){this.clicks++;if(stuck||at>=pages.length-1)return;at++;
+  dom['.jobCardPcContainer']=pages[at];dom['.ant-pagination-item-active']=[{innerText:String(at+1)}];}};
+ dom['li.ant-pagination-next']=[li];
+ return {dom,button};
+}
+const liepinPage=(n,size=2)=>Array.from({length:size},(_,i)=>liepinCard(1990000000+n*100+i,'第'+n+'页岗位'+i));
+
+test('liepin-list pages with 下一页 at a reader pace until the last page, sending each job once',async()=>{
+ const pages=[liepinPage(1),[...liepinPage(2),liepinPage(1)[0]],liepinPage(3)];
+ const {dom,button}=liepinPager(pages);
+ const h=runBookmarklet('liepin-list',{dom,runTimers:true});
+ await h.run();
+ assert.equal(button.clicks,2);
+ assert.equal(h.calls.length,6);
+ assert.equal(new Set(h.calls.map(c=>JSON.parse(c.init.body).url)).size,6);
+ assert.equal(h.toasts.at(-1).textContent,'本次共 3 页 6 个岗位：新增 6，工作台已有 0。已是最后一页。');
+ const pauses=h.timers.map(t=>t.ms).filter(ms=>ms>=3000&&ms<=6000&&ms!==3000);
+ assert.equal(pauses.length,2,'one pause before each click');
+});
+
+test('liepin-list stops when 下一页 changes nothing, at the page cap, and when the bookmark is clicked again',async()=>{
+ const stuck=liepinPager([liepinPage(1),liepinPage(2)],{stuck:true});
+ const s=runBookmarklet('liepin-list',{dom:stuck.dom,runTimers:true});
+ await s.run();
+ assert.equal(s.calls.length,2);assert.match(s.toasts.at(-1).textContent,/列表没有变化，已停下/);assert.equal(s.toasts.at(-1).style.background,'#a04841');
+ const many=liepinPager(Array.from({length:14},(_,i)=>liepinPage(i+1,1)));
+ const m=runBookmarklet('liepin-list',{dom:many.dom,runTimers:true});
+ await m.run();
+ assert.equal(m.calls.length,10);assert.equal(many.button.clicks,9);assert.match(m.toasts.at(-1).textContent,/^本次共 10 页 10 个岗位.*已到上限 10 页。$/);
+ const two=liepinPager([liepinPage(1),liepinPage(2),liepinPage(3)]);
+ const t=runBookmarklet('liepin-list',{dom:two.dom,runTimers:true});
+ const first=t.run();
+ await t.run();
+ assert.match(t.toasts.at(-1).textContent,/翻完当前这一页就停/);
+ await first;
+ assert.equal(two.button.clicks,0);assert.equal(t.calls.length,2);assert.match(t.toasts.at(-1).textContent,/按你的要求停在第 1 页。$/);
 });
 
 test('universal title skips a decoy h1 and prefers the h1 that appears in the page title',async()=>{
