@@ -73,6 +73,12 @@ class BrowserReader:
             self.__exit__(None, None, None)
             raise SourceError('not_configured', '独立浏览器未就绪：请安装 requirements-executor.txt 与 Chromium，或关闭占用的采集窗口。' + type(e).__name__) from e
 
+    def _deny(self, route, why):
+        # Kept for the source report: a page whose own requests are cut shows its own errors ("network error").
+        if len(self.denied_requests) < 100:
+            self.denied_requests.append(dict(method=route.request.method, url=route.request.url.split('?')[0], why=why))
+        return route.abort()
+
     def _read_route(self, route):
         request = route.request
         try:
@@ -80,16 +86,16 @@ class BrowserReader:
             read_search = self.kind == 'liepin' and host == 'api-c.liepin.com' and p.path in (
                 '/api/com.liepin.searchfront4c.pc-search-job',
                 '/api/com.liepin.searchfront4c.pc-search-job-cond-init') and request.method == 'POST'
-            if (request.method not in ('GET', 'HEAD') and not read_search) or not any(host == h or host.endswith('.' + h) for h in HOSTS[self.kind]):
-                if len(self.denied_requests) < 100:
-                    self.denied_requests.append(dict(method=request.method, url=request.url.split('?')[0]))
-                return route.abort()
+            if not any(host == h or host.endswith('.' + h) for h in HOSTS[self.kind]):
+                return self._deny(route, 'host')
+            if request.method not in ('GET', 'HEAD') and not read_search:
+                return self._deny(route, 'method')
             if host not in self.validated_hosts:
                 resolve_public(host, timeout=8)
                 self.validated_hosts.add(host)
             return route.continue_()
         except Exception:
-            return route.abort()
+            return self._deny(route, 'address')
 
     def read(self, url):
         p, host = validate_url(url)

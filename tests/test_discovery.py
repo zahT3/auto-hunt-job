@@ -165,6 +165,37 @@ class DiscoveryTests(unittest.TestCase):
         self.assertEqual(submit.action,'aborted')
         self.assertEqual(other.action,'aborted')
 
+    def test_browser_mode_reports_the_requests_its_guard_cut(self):
+        class Reader:
+            def __init__(self, kind, **kw): self.denied_requests = []
+            def __enter__(self): return self
+            def __exit__(self, *a): pass
+            def read(self, url):
+                self.denied_requests += [dict(method='POST', url='https://api-c.liepin.com/api/com.liepin.im.init', why='method')] * 3
+                self.denied_requests.append(dict(method='GET', url='https://hm.baidu.com/hm.js', why='host'))
+                return b'<html><body>no cards</body></html>'
+        with patch('hunt.sources_browser.BrowserReader', Reader):
+            result = discover(dict(sources=['liepin'], source_modes={'liepin': 'browser'}, keywords=['AI']), transport=lambda *a, **k: self.fail('no plain fetch'))
+        report = result['sources'][0]
+        self.assertEqual(report['mode'], 'browser')
+        self.assertEqual(report['blocked_requests'], [
+            dict(method='POST', url='https://api-c.liepin.com/api/com.liepin.im.init', why='method', count=3),
+            dict(method='GET', url='https://hm.baidu.com/hm.js', why='host', count=1)])
+        plain = discover(dict(sources=['liepin'], keywords=['AI']), transport=lambda *a, **k: b'<html><body>x</body></html>')
+        self.assertNotIn('blocked_requests', plain['sources'][0])
+
+    def test_browser_guard_names_why_it_cut_each_request(self):
+        from hunt.sources_browser import BrowserReader
+        def route(url, method):
+            return SimpleNamespace(request=SimpleNamespace(url=url, method=method), abort=lambda: 'aborted', continue_=lambda: 'allowed')
+        browser = BrowserReader('liepin')
+        with patch('hunt.sources_browser.resolve_public', side_effect=lambda host, **kw: ['1.1.1.1'] if host != 'bad.liepin.com' else (_ for _ in ()).throw(ValueError('private'))):
+            for url, method in (('https://api-c.liepin.com/api/x', 'POST'), ('https://hm.baidu.com/hm.js', 'GET'),
+                                ('https://bad.liepin.com/a.js', 'GET'), ('https://www.liepin.com/', 'GET')):
+                browser._read_route(route(url, method))
+        self.assertEqual([(d['url'], d['why']) for d in browser.denied_requests],
+                         [('https://api-c.liepin.com/api/x', 'method'), ('https://hm.baidu.com/hm.js', 'host'), ('https://bad.liepin.com/a.js', 'address')])
+
     def test_browser_rejects_private_dns(self):
         from hunt.sources_browser import BrowserReader
         route=SimpleNamespace(request=SimpleNamespace(url='https://www.liepin.com/',method='GET'),abort=lambda: 'aborted',continue_=lambda:self.fail('private DNS allowed'))

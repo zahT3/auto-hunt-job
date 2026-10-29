@@ -7,6 +7,7 @@ import json
 import math
 import re
 import time
+from collections import Counter
 from contextlib import nullcontext
 from urllib.parse import urlencode, urljoin, urlsplit, urlunsplit
 from .network import fetch, FetchError
@@ -439,7 +440,7 @@ def discover(config, profile=None, transport=None, *, browser_profile_root=None,
     def run_source(source, report, quota, request_quota, pages):
         kind = source.get('kind'); sid = report['source_id']
         began, start, entry_start = clock(), budget.used, entry_budget.used
-        renderer = None
+        renderer = None; context = None
         def read(url, **kwargs):
             if budget.used - start >= request_quota:
                 raise SourceError('budget_exhausted', '此渠道已用完公平分配的请求预算；其他渠道继续扫描')
@@ -516,6 +517,10 @@ def discover(config, profile=None, transport=None, *, browser_profile_root=None,
         report['requests'] = budget.used - start
         report['entry_requests'] = entry_budget.used - entry_start
         report['rendered_pages'] = getattr(renderer, 'used', 0)
+        denied = getattr(context, 'denied_requests', None)
+        if denied:
+            tally = Counter((d['method'], d['url'], d.get('why')) for d in denied)
+            report['blocked_requests'] = [dict(method=m, url=u, why=w, count=n) for (m, u, w), n in tally.most_common(20)]
         report['elapsed_seconds'] = round(clock() - began, 2)
 
     def scan(group):
