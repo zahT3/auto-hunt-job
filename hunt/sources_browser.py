@@ -14,6 +14,8 @@ from .sources import SourceError
 from .network import validate_url, resolve_public
 
 ROOT = Path(__file__).resolve().parent.parent / 'private' / 'browser-discovery'
+# The workbench's default data directory (python -m hunt web); its scans read profiles from <data>/browser-search.
+DEFAULT_DATA = ROOT.parent / 'app'
 _LOCKS = {kind: threading.Lock() for kind in ('boss', 'liepin')}
 HOME = {'boss': 'https://www.zhipin.com/', 'liepin': 'https://www.liepin.com/'}
 HOSTS = {'boss': ('zhipin.com', 'bosszhipin.com'), 'liepin': ('liepin.com', 'lietou-static.com')}
@@ -158,10 +160,10 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--login', choices=tuple(HOME), required=True)
     parser.add_argument('--profile-root', type=Path)
-    parser.add_argument('--data', type=Path, help='与 run.py --data 相同目录；浏览器资料保存在其 browser-search 子目录')
+    parser.add_argument('--data', type=Path, default=DEFAULT_DATA, help='与工作台相同的数据目录（默认 private/app）；浏览器资料保存在其 browser-search 子目录')
     parser.add_argument('--browser', choices=('chromium', 'chrome'), default='chromium', help='使用默认 Chromium 或已安装的 Google Chrome；两者资料目录隔离')
     args = parser.parse_args()
-    profile_root = args.profile_root or (args.data / 'browser-search' if args.data else ROOT)
+    profile_root = args.profile_root or args.data / 'browser-search'
     with BrowserReader(args.login, profile_root=profile_root, channel='chrome' if args.browser == 'chrome' else None) as browser: browser.login()
 
 
