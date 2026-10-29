@@ -14,7 +14,7 @@ from .network import fetch, FetchError
 from .providers import REGISTRY, Context, route
 from .sources import (SourceError, Document, now, json_data, at_board, plain, normalize,
                       greenhouse_row, lever_row, ashby_row, jsonld_jobs, platform_links,
-                      platform_detail, gate, public_url)
+                      platform_detail, liepin_cards, gate, public_url)
 
 DEFAULT_BOARDS = [
     dict(type='greenhouse', slug='anthropic', company='Anthropic'),
@@ -168,6 +168,7 @@ def source_configs(config, cap=20):
                     result.append(dict(id='website:' + str(b.get('url')), kind=kind, url=b.get('url'), company=b.get('company')))
         else:
             result.append(dict(id=kind, kind=kind, mode=modes.get(kind, 'public')))
+            if kind == 'liepin' and config.get('liepin_cards') is True: result[-1]['cards'] = True
     if config.get('search_provider'):
         if not isinstance(config['search_provider'], dict): raise ValueError('search_provider 必须是配置对象')
         result.append(dict(id='websearch', kind='websearch', provider=config['search_provider'].get('provider'), url=config['search_provider'].get('url')))
@@ -244,6 +245,9 @@ def _api(source, read, terms, limit, pages, report):
 
 def _platform(source, read, terms, limit, pages, report):
     kind = source['kind']; seen = set(); count = 0; failures = []
+    # 猎聘 card mode: jobs come from the search page's cards and are kept by title; no detail page is opened.
+    cards = kind == 'liepin' and source.get('cards') is True
+    if cards: report['cards'] = True
     for term in terms:
         for page in range(pages):
             url = ('https://www.zhipin.com/web/geek/job?' + urlencode(dict(query=term, city='100010000', page=page + 1)) if kind == 'boss'
@@ -251,7 +255,8 @@ def _platform(source, read, terms, limit, pages, report):
             if not report['search_url']: report['search_url'] = url
             html = _html(read(url)); text = gate(html)
             report['pages'] += 1
-            links = platform_links(html, url, kind)
+            found = {job['url']: job for job in liepin_cards(html, url)} if cards else None
+            links = list(found) if cards else platform_links(html, url, kind)
             if not links:
                 if re.search(r'暂无.{0,8}(职位|岗位)|没有找到.{0,8}(职位|岗位)|未找到.{0,8}(职位|岗位)', text): break
                 raise SourceError('blocked', '公开页面未提供岗位列表，需要浏览器渲染或登录；不是零岗位。可启用独立浏览器只读模式')
@@ -261,6 +266,11 @@ def _platform(source, read, terms, limit, pages, report):
             for link in fresh:
                 seen.add(link)
                 if count >= limit: report['truncated'] = True; return
+                if cards:
+                    job = found[link]
+                    if matches(job['title'], terms): yield job; count += 1
+                    else: report['filtered'] += 1
+                    continue
                 try:
                     item = platform_detail(_html(read(link)), link, kind)
                 except SourceError as e:
@@ -490,7 +500,9 @@ def discover(config, profile=None, transport=None, *, browser_profile_root=None,
                         break
                     seen.add(key)
                     item.setdefault('raw', {})['discovery'] = dict(source_id=sid, queries=terms, mode=report['mode'], checked_at=report['checked_at'])
-                    if inline_checks:
+                    # A login-gated platform's job page only answers a logged-in browser; a plain read of it proves nothing
+                    # (猎聘 gave identity_mismatch every time) and adds requests from this IP.
+                    if inline_checks and kind not in LOGIN_GATED:
                         from .entries import check_job
                         checking = clock()
                         try: check_job(item, entry_budget.get, renderer=renderer)

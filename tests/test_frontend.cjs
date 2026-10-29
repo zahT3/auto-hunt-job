@@ -189,6 +189,13 @@ test('save and search validates and persists the current form before running',as
  await h.run('startSearch()');const calls=JSON.parse(h.run('JSON.stringify(calls)'));
  assert.deepEqual(calls.map(c=>c.name),['config','run']);assert.deepEqual(calls[0].payload.config.keywords,['Agent']);assert.equal(h.run('configDirty'),false);
 });
+test('the 猎聘 card switch is shown from the saved config and saved from the form',async()=>{
+ const h=harness();configureSearch(h);const f=h.node('#config-form');
+ h.state({dataset:'app',candidate:{facts:[]},config:{keywords:['AI'],sources:['liepin'],company_boards:[],liepin_cards:true}});h.run('renderSettings()');
+ assert.equal(f.elements.liepin_cards.checked,true);
+ f.elements.liepin_cards.checked=false;
+ assert.equal(JSON.parse(h.run("JSON.stringify(configFromForm($('#config-form')))")).liepin_cards,false);
+});
 test('invalid or failed configuration never starts search',async()=>{
  const h=harness();const f=configureSearch(h);h.run(`globalThis.calls=[];action=async(name)=>{calls.push(name);return null;}`);
  f.elements.keywords.value='';await h.run('startSearch()');assert.equal(h.run('calls.length'),0);
@@ -308,7 +315,7 @@ test('liepin-list sends one canonical item per search card and one summary toast
  assert.deepEqual(sent.map(p=>p.url),['https://www.liepin.com/job/1986324371.shtml','https://www.liepin.com/a/1990000001.shtml']);
  for(const c of h.calls){assert.equal(c.init.headers['X-Inbox-Token'],'tok-123');assert.equal(c.init.credentials,'omit');}
  const first=sent[0];
- assert.equal(first.platform,'liepin');
+ assert.equal(first.platform,'liepin');assert.equal(first.summary_only,true);
  assert.deepEqual([first.extracted.job_title,first.extracted.company,first.extracted.location,first.extracted.salary],['衍生品定价与风控负责人','示例银行','上海-闵行区','50-80k·14薪']);
  assert.match(first.extracted.raw_text,/^猎聘搜索结果卡片，不含完整职位描述。/);assert.match(first.extracted.raw_text,/银行 1000-9999人/);
  assert.doesNotMatch(first.extracted.raw_text,/华先生/);

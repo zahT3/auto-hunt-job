@@ -246,6 +246,42 @@ def platform_links(html, base, kind):
     return result
 
 
+CARD_NOTE = '猎聘搜索结果卡片，不含完整职位描述。'
+
+
+def liepin_cards(html, base):
+    """Jobs from a rendered 猎聘 search page's result cards: title, company, place and salary, no description.
+    The recruiter part of a card (name, online status) is not read."""
+    gate(html)
+    result, seen = [], set()
+    for card in Document(html).root.nodes():
+        if 'jobCardPcContainer' not in card.attrs.get('class', '').split(): continue
+        url = pid = None
+        for n in card.nodes():
+            if n.tag != 'a': continue
+            candidate = public_url(urljoin(base, n.attrs.get('href', '')))
+            if urlsplit(candidate).hostname == 'www.liepin.com' and platform_id('liepin', candidate):
+                p = urlsplit(candidate)
+                link, url, pid = n, urlunsplit((p.scheme, p.netloc, p.path, '', '')), platform_id('liepin', candidate)
+                break
+        box = card.first(classes=('jobTitleBox',))
+        title_node = box.first(classes=('ellipsis-1',)) if box else None
+        title = title_node.text() if title_node else ''
+        if not url or not title or url in seen: continue
+        seen.add(url)
+        head = link.text()
+        place = re.search(r'【\s*([^】]+?)\s*】', box.text())
+        salary = re.search(r'\d+(?:\.\d+)?-\d+(?:\.\d+)?[kK万](?:·\d+薪)?|薪资面议|面议', head)
+        company = card.first(classes=('companyName',))
+        about = next((n for n in card.nodes() if n.attrs.get('data-nick') == 'job-detail-company-info'), None)
+        result.append(normalize('liepin', pid, title, '\n'.join(t for t in (CARD_NOTE, head, about.text() if about else '') if t), url,
+                                company.text()[:200] if company else None, place.group(1)[:200] if place else None,
+                                salary=salary.group(0) if salary else None,
+                                raw=dict(source_kind='liepin', source_url=url, extraction='search_card', summary_only=True,
+                                         status_note='只读了搜索结果卡片，没有打开详情页；职位描述与在招状态都未核实')))
+    return result
+
+
 def gate(html):
     text = Document(html).root.text()
     # Do not detect SDK strings in script source or footer login links as gates.

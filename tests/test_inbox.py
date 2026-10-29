@@ -238,6 +238,9 @@ class InboxTests(InboxCase):
         job = self.store.state()['jobs'][0]
         self.assertEqual(job['url'], liepin + '/job/1986324371.shtml')
         self.assertIn('信贷风险模型', job['jd'])
+        self.assertNotIn('summary_only', job['raw'])
+        self.assertIs(normalize_payload(dict(card, summary_only=True))['raw']['summary_only'], True)
+        self.assertNotIn('summary_only', normalize_payload(dict(card, summary_only='yes'))['raw'])
         other = normalize_payload(payload(platform='liepin', url=liepin + '/a/1986324371.shtml?index=1'))
         self.assertNotEqual(other['platform_id'], job['platform_id'])
         self.assertEqual(normalize_payload(payload(platform='liepin', url=liepin + '/zhaopin/?key=x'))['url'], liepin + '/zhaopin/?key=x')

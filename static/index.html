@@ -44,6 +44,7 @@
       <p class="small-note">入口核验只读取页面；看到申请表单仍需集中审核。招聘邮箱单独展示，不自动发送。</p>
       <label>公司招聘页，每行一个 HTTPS 链接<textarea name="company_board_urls" rows="3" placeholder="https://jobs.lever.co/公司标识"></textarea></label><p class="small-note">识别 Greenhouse、Lever、Ashby；其他官网读取结构化岗位、同域链接，或明确关联的招聘看板。只有添加的公司会被扫描，未解析成功会单独说明。</p>
       <div class="form-pair spaced-top"><label>BOSS 读取方式<select name="boss_mode"><option value="public">公开网页</option><option value="browser">独立浏览器</option></select></label><label>猎聘读取方式<select name="liepin_mode"><option value="public">公开网页</option><option value="browser">独立浏览器</option></select></label></div>
+      <label class="check-label"><input name="liepin_cards" type="checkbox">猎聘只读搜索结果卡片（试用）：只打开搜索页，按标题筛选，不打开详情页；岗位只有标题、公司、地点和薪资</label>
       <p class="small-note">独立浏览器在本机打开只读窗口，使用单独的登录资料，不自动发消息。需先安装浏览器依赖；登录由本人完成。</p><details class="login-help"><summary>如何登录独立浏览器</summary><p class="small-note">在项目目录的终端中，按渠道运行：</p><code>python -m hunt.sources_browser --login boss --data private/app</code><code>python -m hunt.sources_browser --login liepin --data private/app</code><p class="small-note">使用自定义数据目录时，将 private/app 换为启动工作台时的同一 --data 路径。选择 Google Chrome 时附加 --browser chrome；两种浏览器不共享登录。完成本人登录后回到终端按回车，再运行搜索。遇到验证会停止该渠道。</p></details>
       <label class="spaced-top">扩展网页搜索（可选）<input name="search_provider_url" type="url" placeholder="https://你的搜索服务/search"></label><p class="small-note">使用可提供 JSON 结果的 SearXNG HTTPS 搜索端点。扩展搜索需要可用的搜索服务；未配置时仍搜索所选渠道。只发送已保存的搜索关键词。</p>
     </details>

@@ -39,8 +39,12 @@ DEFAULT_CONFIG = dict(keyword='', keywords=[], cities=[], salary_min=None, max_j
                                       dict(type='lever', slug='binance', company='Binance'),
                                       dict(type='ashby', slug='cursor', company='Cursor')], max_pages=2,
                       source_modes={'boss': 'public', 'liepin': 'public'}, search_provider=None,
-                      official_only=False, browser_channel=None, check_entries=True, official_browser=False)
+                      official_only=False, browser_channel=None, check_entries=True, official_browser=False, liepin_cards=False)
 LOCKED = {'sending', 'unknown', 'submitted'}
+
+
+def summary_only(raw):
+    return isinstance(raw, dict) and raw.get('summary_only') is True
 
 
 def synthetic_profile(candidate):
@@ -198,6 +202,11 @@ class Store:
             previous = c.execute('SELECT id FROM jobs WHERE identity=?', (identity,)).fetchone()
             if previous:
                 j = self.job(c, previous[0])
+                # A search-card summary (猎聘 card mode, the search-page bookmarklet) never replaces a job already read in full.
+                if summary_only(data.get('raw')) and not summary_only(j.get('raw')):
+                    self.event(j, 'deduplicated', '搜索结果卡片再次出现；保留已读到的完整岗位内容')
+                    self.save(c, j)
+                    return j, True
                 if 'raw' in data:
                     from .careers import preserve_entry_check
                     j['raw'] = preserve_entry_check(j.get('raw'), data['raw'], data.get('application_url', j.get('application_url')))
@@ -917,6 +926,7 @@ class Store:
             if type(cfg['targets_confirmed']) is not bool: raise Error('需要明确确认目标')
             if type(cfg.get('official_only', False)) is not bool: raise Error('官网模式必须为明确的开关')
             if any(type(cfg.get(k, False)) is not bool for k in ('check_entries', 'official_browser')): raise Error('入口核验与公开渲染必须为开关')
+            if type(cfg.get('liepin_cards', False)) is not bool: raise Error('猎聘只读卡片必须为开关')
             if type(cfg.get('sweep', False)) is not bool: raise Error('大范围搜索必须为开关')
             for key, low, high in (('sweep_max_companies', 1, 1000), ('sweep_max_jobs', 1, 5000), ('sweep_requests', 1, 10000),
                                    ('sweep_deadline_seconds', 30, 3600), ('sweep_prepare', 0, 200), ('sweep_max_pages', 1, 50)):

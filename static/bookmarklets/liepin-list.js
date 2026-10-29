@@ -53,6 +53,7 @@
         page_title: document.title,
         captured_at: new Date().toISOString(),
         platform: 'liepin',
+        summary_only: true,
         extracted: {
           job_title: title,
           company: text(card.querySelector('.companyName')),

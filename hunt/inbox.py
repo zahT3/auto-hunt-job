@@ -85,4 +85,5 @@ def normalize_payload(payload):
     return normalize('inbox:' + platform, hashlib.sha1(url.encode()).hexdigest()[:16], title, text, url,
                      _text(extracted.get('company'), 200, '公司') or None, _text(extracted.get('location'), 200, '地点') or None,
                      salary=salary or None, status='unverified',
-                     raw=dict(source_kind='inbox', source_url=url, platform=platform, received_at=now()))
+                     raw=dict(source_kind='inbox', source_url=url, platform=platform, received_at=now(),
+                              **({'summary_only': True} if payload.get('summary_only') is True else {})))
