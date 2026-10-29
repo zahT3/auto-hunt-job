@@ -348,27 +348,28 @@ function liepinPager(pages,{stuck=false}={}){
 const liepinPage=(n,size=2)=>Array.from({length:size},(_,i)=>liepinCard(1990000000+n*100+i,'第'+n+'页岗位'+i));
 
 test('liepin-list pages with 下一页 at a reader pace until the last page, sending each job once',async()=>{
- const pages=[liepinPage(1),[...liepinPage(2),liepinPage(1)[0]],liepinPage(3)];
+ // 20 pages, like the 运营 search that the old 10-page cap cut in half; page 2 repeats a card from page 1.
+ const pages=[liepinPage(1),[...liepinPage(2),liepinPage(1)[0]],...Array.from({length:18},(_,i)=>liepinPage(i+3))];
  const {dom,button}=liepinPager(pages);
  const h=runBookmarklet('liepin-list',{dom,runTimers:true});
  await h.run();
- assert.equal(button.clicks,2);
- assert.equal(h.calls.length,6);
- assert.equal(new Set(h.calls.map(c=>JSON.parse(c.init.body).url)).size,6);
- assert.equal(h.toasts.at(-1).textContent,'本次共 3 页 6 个岗位：新增 6，工作台已有 0。已是最后一页。');
+ assert.equal(button.clicks,19);
+ assert.equal(h.calls.length,40);
+ assert.equal(new Set(h.calls.map(c=>JSON.parse(c.init.body).url)).size,40);
+ assert.equal(h.toasts.at(-1).textContent,'本次共 20 页 40 个岗位：新增 40，工作台已有 0。已是最后一页。');
  const pauses=h.timers.map(t=>t.ms).filter(ms=>ms>=3000&&ms<=6000&&ms!==3000);
- assert.equal(pauses.length,2,'one pause before each click');
+ assert.equal(pauses.length,19,'one pause before each click');
 });
 
-test('liepin-list stops when 下一页 changes nothing, at the page cap, and when the bookmark is clicked again',async()=>{
+test('liepin-list stops when 下一页 changes nothing, at the safety cap, and when the bookmark is clicked again',async()=>{
  const stuck=liepinPager([liepinPage(1),liepinPage(2)],{stuck:true});
  const s=runBookmarklet('liepin-list',{dom:stuck.dom,runTimers:true});
  await s.run();
  assert.equal(s.calls.length,2);assert.match(s.toasts.at(-1).textContent,/列表没有变化，已停下/);assert.equal(s.toasts.at(-1).style.background,'#a04841');
- const many=liepinPager(Array.from({length:14},(_,i)=>liepinPage(i+1,1)));
+ const many=liepinPager(Array.from({length:53},(_,i)=>liepinPage(i+1,1)));
  const m=runBookmarklet('liepin-list',{dom:many.dom,runTimers:true});
  await m.run();
- assert.equal(m.calls.length,10);assert.equal(many.button.clicks,9);assert.match(m.toasts.at(-1).textContent,/^本次共 10 页 10 个岗位.*已到上限 10 页。$/);
+ assert.equal(m.calls.length,50);assert.equal(many.button.clicks,49);assert.match(m.toasts.at(-1).textContent,/^本次共 50 页 50 个岗位.*已到安全上限 50 页。$/);
  const two=liepinPager([liepinPage(1),liepinPage(2),liepinPage(3)]);
  const t=runBookmarklet('liepin-list',{dom:two.dom,runTimers:true});
  const first=t.run();

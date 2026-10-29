@@ -1,13 +1,14 @@
 // Written for auto-hunt-job; only the spliced-in delivery code (_deliver.js) derives from career-ops-china.
 // __INBOX_URL__ and __INBOX_TOKEN__ are filled in when the install page is rendered; they are never committed.
-// 猎聘（liepin.com）搜索结果页：把本页每张岗位卡片作为一条摘要发进收件箱，然后点「下一页」继续，最多 MAX_PAGES 页。
+// 猎聘（liepin.com）搜索结果页：把本页每张岗位卡片作为一条摘要发进收件箱，然后点「下一页」继续，一直到最后一页。
 // 卡片里没有职位描述；之后在岗位详情页点「猎聘」书签，会落到同一个岗位链接上，用完整 JD 替换这段摘要。
 // 翻页中再点一次书签就停下。
 
 (async function () {
   // @deliver
 
-  const MAX_PAGES = 10;
+  // Only a safety net against a pager that never ends; a normal run stops at the last page well before this.
+  const MAX_PAGES = 50;
   // Seconds of pause between pages, so the run moves at a reader's pace rather than as fast as the site answers.
   const PAUSE_MIN = 3, PAUSE_MAX = 6;
   const WAIT_TRIES = 50, WAIT_STEP = 300;
@@ -94,7 +95,7 @@
         else total.failed++;
       }
       if (run.stop) { ending = '按你的要求停在第 ' + total.pages + ' 页。'; break; }
-      if (total.pages >= MAX_PAGES) { ending = '已到上限 ' + MAX_PAGES + ' 页。'; break; }
+      if (total.pages >= MAX_PAGES) { ending = '已到安全上限 ' + MAX_PAGES + ' 页。'; break; }
       const next = nextButton();
       if (!next) { ending = '已是最后一页。'; break; }
       toast(summary() + '。\n稍等几秒翻到第 ' + (total.pages + 1) + ' 页；再点一次书签可停下。');
