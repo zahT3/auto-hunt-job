@@ -5,6 +5,7 @@ from urllib.parse import quote, urlsplit
 
 from ..sources import SourceError, json_data, normalize
 from . import Provider, record_detail_error, register
+from ..search.query import matches
 
 HOST = 'job.xiaohongshu.com'
 ORIGIN = 'https://' + HOST
@@ -65,7 +66,6 @@ def detect(entry):
 
 def fetch(entry, ctx):
     # This endpoint lists the whole board; keywords are matched locally in one paging pass.
-    from ..discovery import matches
 
     company = entry.get('company') or '小红书'
     seen, count = set(), 0

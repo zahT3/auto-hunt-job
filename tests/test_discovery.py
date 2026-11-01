@@ -3,7 +3,8 @@ import unittest
 from unittest.mock import patch
 from types import SimpleNamespace
 from hunt.core import DEFAULT_CONFIG
-from hunt.discovery import discover, search_terms, matches, expanded_terms, default_sources, source_configs, DEFAULT_KINDS
+from hunt.discovery import discover, default_sources, source_configs, DEFAULT_KINDS
+from hunt.search.query import search_terms, matches, expanded_terms
 from hunt.sources import SourceError, Document, jd_text, gate, jsonld_jobs, platform_detail, platform_links
 
 

@@ -8,7 +8,8 @@ dropped and noted, and the model can never add a fact.
 import json
 import re
 
-from . import directions, discovery, llm, network, redact
+from . import directions, llm, network, redact
+from .search.query import search_terms
 from .profile import source_facts
 
 PLACEHOLDER_NAME = '待确认候选人'
@@ -195,10 +196,10 @@ def clean_conditions(raw):
 
 
 def clean_terms(terms):
-    """Strict: list of at most 8 strings that all pass discovery.search_terms (no contact details, <=100 chars)."""
+    """Strict: list of at most 8 strings that all pass search_terms (no contact details, <=100 chars)."""
     if not (isinstance(terms, list) and 0 < len(terms) <= MAX_TERMS and all(isinstance(t, str) for t in terms)):
         raise ValueError('搜索词须是 1 到 %d 个文字' % MAX_TERMS)
-    kept = discovery.search_terms(dict(keywords=terms))
+    kept = search_terms(dict(keywords=terms))
     if kept != list(dict.fromkeys(t.strip() for t in terms)):
         raise ValueError('搜索词不能为空、超过 100 字或包含链接、邮箱、长数字')
     return kept
@@ -207,7 +208,7 @@ def clean_terms(terms):
 def _lenient_terms(terms):
     # Never hand search_terms an empty list: it would answer with its built-in default terms.
     strings = [t for t in terms if isinstance(t, str)][:MAX_TERMS * 2] if isinstance(terms, list) else []
-    return discovery.search_terms(dict(keywords=strings)) if strings else []
+    return search_terms(dict(keywords=strings)) if strings else []
 
 
 def terms_for(direction_ids):
@@ -230,7 +231,7 @@ def terms_for(direction_ids):
     out = []
     for i in range(max((len(p) for p in pools), default=0)):
         out += [p[i] for p in pools if i < len(p) and p[i] not in out]
-    return discovery.search_terms(dict(keywords=out[:MAX_TERMS * 2])) if out else []
+    return search_terms(dict(keywords=out[:MAX_TERMS * 2])) if out else []
 
 
 def _rule_directions(profile, answers, notes):

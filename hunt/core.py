@@ -573,7 +573,7 @@ class Store:
                             connection.execute('UPDATE runs SET data=? WHERE id=?', (dumps(run), run['id']))
                     if cfg.get('sweep') is True and 'discovery_sources' not in cfg:
                         from . import companies
-                        from .discovery import search_terms
+                        from .search.query import search_terms
                         try:
                             with self.tx() as c: extra = companies.encountered(c)
                         except (ValueError, TypeError): extra = []

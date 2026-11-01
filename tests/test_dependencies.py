@@ -28,12 +28,11 @@ FLAT = {
 # Existing violations (importer, imported). Each step of the refactor deletes entries; the goal is an empty set.
 ALLOWED_VIOLATIONS = {
     ('benchmark', 'core'), ('discovery', 'core'), ('moka_session', 'core'),
-    ('orient', 'discovery'), ('official_browser', 'moka_session'), ('entries', 'moka_session'),
+    ('official_browser', 'moka_session'), ('entries', 'moka_session'),
 }
 # Modules that still sit on an import cycle; the goal is an empty set.
 ALLOWED_CYCLES = {
-    'discovery', 'domestic', 'minimax', 'imtoken', 'providers', 'core', 'moka_session', 'official_browser', 'entries',
-    'companies', 'orient',
+    'discovery', 'domestic', 'providers', 'core', 'moka_session', 'official_browser', 'entries', 'companies',
 }
 
 

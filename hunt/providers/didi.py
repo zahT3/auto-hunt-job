@@ -4,6 +4,7 @@ from urllib.parse import urlencode, urlsplit
 
 from ..sources import SourceError, json_data, normalize, plain
 from . import Provider, record_detail_error, register
+from ..search.query import matches
 
 HOST = 'talent.didiglobal.com'
 API = 'https://' + HOST + '/recruit-portal-service/api/job/front/list'
@@ -71,7 +72,6 @@ def detect(entry):
 
 def fetch(entry, ctx):
     # discovery imports providers during startup, so this dependency must remain lazy.
-    from ..discovery import matches
 
     company = entry.get('company') or '滴滴'
     seen, count = set(), 0

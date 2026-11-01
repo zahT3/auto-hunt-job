@@ -10,6 +10,7 @@ from xml.etree import ElementTree
 
 from .careers import attach_route
 from .network import FetchError
+from .search.query import matches
 from .sources import Document, Node, SourceError, normalize, public_url
 
 
@@ -95,7 +96,6 @@ def parse_job(html, url, company='imToken'):
 
 def read_jobs(source, read, terms, limit, pages, report, html=None, renderer=None):
     """Use with the existing budgeted read callback; pages bounds detail reads."""
-    from .discovery import matches
     career = source.get('url') or BASE + '/'
     if html is None:
         try:

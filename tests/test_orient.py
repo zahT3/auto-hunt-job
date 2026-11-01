@@ -381,13 +381,14 @@ class RunTests(OrientCase):
 
 class TermsTests(unittest.TestCase):
     def test_slash_names_are_not_search_terms_and_every_term_can_match(self):
-        from hunt import directions, discovery
+        from hunt import directions
+        from hunt.search.query import matches
         ids = [r['id'] for r in directions.load()]
         for n in range(0, len(ids), 4):
             terms = orient.terms_for(ids[n:n + 4])
             self.assertTrue(terms)
             self.assertFalse([t for t in terms if '/' in t], ids[n:n + 4])
-        self.assertTrue(discovery.matches('总账会计', orient.terms_for(['accountant'])))
+        self.assertTrue(matches('总账会计', orient.terms_for(['accountant'])))
 
     def test_core_keyword_joins_the_terms_unless_it_repeats_one(self):
         # Banks title risk roles 授信审批岗 or 风险管理岗; searching only '风控经理' misses them, '风控' does not.

@@ -7,6 +7,7 @@ import re
 from urllib.parse import urlencode, urljoin, urlsplit
 
 from .careers import attach_route
+from .search.query import matches
 from .sources import Document, Node, SourceError, normalize, public_url
 
 HOST = 'vrfi1sk8a0.jobs.feishu.cn'
@@ -122,7 +123,6 @@ def detail(html, url, expected_title=None):
 
 def read_jobs(source, read, terms, limit, pages, report, renderer=None, html=None):
     """Bounded list + detail reads. Caller owns the renderer's request guard."""
-    from .discovery import matches
     career = source['url']
     if html is None:
         html = read(career).decode('utf-8')

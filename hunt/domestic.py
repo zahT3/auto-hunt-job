@@ -4,6 +4,7 @@ import re
 from urllib.parse import urljoin, urlsplit, urldefrag
 from .sources import Document, SourceError, normalize, public_url, jd_text, now, json_data
 from .careers import attach_route
+from .search.query import matches
 
 
 def embedded_json(script):
@@ -37,7 +38,7 @@ def links(html, url):
 
 def read_jobs(source, read, terms, limit, pages, report, renderer=None):
     from .catalog import lookup
-    from .discovery import matches, _api
+    from .discovery import _api
     entry = lookup(source['url'])
     if not entry: return
     name, url = entry['id'], source['url']; report['company'] = entry['company']; report['adapter'] = entry['adapter']
