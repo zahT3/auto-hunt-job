@@ -6,7 +6,7 @@ import json
 from pathlib import Path
 import tempfile
 import unittest
-from unittest.mock import patch
+from unittest.mock import Mock, patch
 
 from hunt import benchmark
 from hunt.__main__ import DEFAULT_DATA, main, parser
@@ -174,10 +174,9 @@ class BenchmarkFileTests(unittest.TestCase):
         self.truth_path.write_text(json.dumps(truth, ensure_ascii=False), encoding='utf-8')
 
     def run_jobs(self, jobs, **kwargs):
-        with patch('hunt.benchmark.Store') as store:
-            store.return_value.state.return_value = dict(jobs=jobs)
-            result = benchmark.run(self.truth_path, self.data, **kwargs)
-        store.assert_called_once_with(self.data.resolve())
+        read_jobs = Mock(return_value=jobs)
+        result = benchmark.run(self.truth_path, self.data, read_jobs, **kwargs)
+        read_jobs.assert_called_once_with(self.data.resolve())
         return result
 
     def test_load_truth_allows_absent_or_null_job_urls_and_empty_lists(self):
@@ -285,10 +284,11 @@ class BenchmarkFileTests(unittest.TestCase):
 
     def test_bad_since_is_rejected_before_store_access(self):
         for since in ['', '昨天', '2026-10-28', '2026-10-28T10:00:00', 42]:
-            with self.subTest(since=since), patch('hunt.benchmark.Store') as store:
+            with self.subTest(since=since):
+                read_jobs = Mock()
                 with self.assertRaisesRegex(ValueError, '--since.*带时区'):
-                    benchmark.run(self.truth_path, self.data, since=since)
-                store.assert_not_called()
+                    benchmark.run(self.truth_path, self.data, read_jobs, since=since)
+                read_jobs.assert_not_called()
 
     def test_bad_job_times_fail_only_when_needed_for_the_filter(self):
         for value in [None, '', '昨天', 42, '2026-10-28T10:00:00']:
@@ -318,10 +318,10 @@ class BenchmarkFileTests(unittest.TestCase):
         result = self.run_jobs([], output=output)
         self.assertEqual(json.loads(output.read_text()), result)
         before = self.truth_path.read_bytes()
-        with patch('hunt.benchmark.Store') as store:
-            with self.assertRaisesRegex(ValueError, '不能覆盖标准答案'):
-                benchmark.run(self.truth_path, self.data, output=self.truth_path)
-            store.assert_not_called()
+        read_jobs = Mock()
+        with self.assertRaisesRegex(ValueError, '不能覆盖标准答案'):
+            benchmark.run(self.truth_path, self.data, read_jobs, output=self.truth_path)
+        read_jobs.assert_not_called()
         self.assertEqual(self.truth_path.read_bytes(), before)
 
     def test_write_failures_are_chinese_value_errors(self):

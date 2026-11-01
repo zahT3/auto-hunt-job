@@ -246,19 +246,19 @@ class NoDefaultTermsTests(unittest.TestCase):
     def test_scan_cli_needs_a_keyword_or_chosen_directions(self):
         import contextlib, io, sys, tempfile
         from pathlib import Path
-        from hunt import discovery
+        from hunt.app import scan
         from hunt.core import Store
         with patch.object(sys, 'argv', ['scan']), contextlib.redirect_stderr(io.StringIO()), self.assertRaises(SystemExit):
-            discovery.main()
+            scan.main()
         with tempfile.TemporaryDirectory() as tmp:
             Store(Path(tmp)).action(dict(action='directions_set', directions=['accountant']))
             seen = {}
             def fake(config, **kwargs):
                 seen.update(config)
                 return dict(jobs=[], queries=[], sources=[])
-            with patch.object(sys, 'argv', ['scan', '--data', tmp]), patch.object(discovery, 'discover', fake), \
+            with patch.object(sys, 'argv', ['scan', '--data', tmp]), patch.object(scan, 'discover', fake), \
                     contextlib.redirect_stdout(io.StringIO()):
-                discovery.main()
+                scan.main()
         self.assertTrue(seen['keywords'])
         self.assertFalse({'AI', 'Agent', 'Web3'} & set(seen['keywords']))
 

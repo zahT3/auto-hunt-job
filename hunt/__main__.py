@@ -16,8 +16,8 @@ from .core import Error, Store, synthetic_profile
 DEFAULT_DATA = Path(__file__).resolve().parent.parent / 'private' / 'app'
 FORWARD = {
     'web': ('run', '启动本地网页工作台；其余参数同 run.py'),
-    'scan': ('hunt.discovery', '只读搜索岗位；其余参数同 hunt.discovery'),
-    'verify': ('hunt.moka_session', '本人登录后的 Moka 入口核验；不填写、不投递'),
+    'scan': ('hunt.app.scan', '只读搜索岗位；其余参数同 hunt.app.scan'),
+    'verify': ('hunt.app.verify', '本人登录后的 Moka 入口核验；不填写、不投递'),
     'prepare': ('run', '发现岗位并准备一轮本地材料；其余参数同 run.py --once'),
 }
 
@@ -278,7 +278,7 @@ def main(argv=None):
             return 0
         if args.command == 'benchmark':
             from . import benchmark
-            result = benchmark.run(args.truth, args.data, direction=args.direction, since=args.since, output=args.output)
+            result = benchmark.run(args.truth, args.data, lambda data: Store(data).state()['jobs'], direction=args.direction, since=args.since, output=args.output)
             if args.json:
                 print(json.dumps(result, ensure_ascii=False, indent=2))
             else:

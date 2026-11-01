@@ -6,7 +6,6 @@ import re
 import unicodedata
 from urllib.parse import urlsplit, urlunsplit
 
-from .core import Store
 
 SHANGHAI = timezone(timedelta(hours=8))
 BRACKETS = re.compile(r'\([^()]*\)|\[[^\[\]]*\]|【[^【】]*】')
@@ -164,7 +163,8 @@ def match_truth(truth, jobs):
     return dict(direction_id=truth['direction_id'], collected_at=truth['collected_at'], overall=overall, companies=companies)
 
 
-def run(truth_path, data_dir, direction=None, since=None, output=None):
+def run(truth_path, data_dir, read_jobs, direction=None, since=None, output=None):
+    """read_jobs(data_dir) returns the stored jobs; it is called only after the arguments pass their checks."""
     truth_path, data_dir = Path(truth_path).resolve(), Path(data_dir).resolve()
     truth = load_truth(truth_path)
     cutoff = _time(since, '--since') if since is not None else None
@@ -173,7 +173,7 @@ def run(truth_path, data_dir, direction=None, since=None, output=None):
     if output == truth_path:
         raise ValueError('报告路径不能覆盖标准答案文件')
     jobs = []
-    for i, job in enumerate(Store(data_dir).state()['jobs'], 1):
+    for i, job in enumerate(read_jobs(data_dir), 1):
         assigned = job.get('direction')
         if direction is not None and (not isinstance(assigned, dict) or assigned.get('id') != direction):
             continue

@@ -135,7 +135,7 @@ class CLITests(unittest.TestCase):
 
     def test_existing_entrypoints_receive_arguments_and_runner_keeps_its_lock(self):
         original = sys.argv
-        for command, module in [('web', 'run'), ('scan', 'hunt.discovery'), ('verify', 'hunt.moka_session'), ('prepare', 'run')]:
+        for command, module in [('web', 'run'), ('scan', 'hunt.app.scan'), ('verify', 'hunt.app.verify'), ('prepare', 'run')]:
             observed = []
             fake = types.SimpleNamespace(main=lambda: observed.append(list(sys.argv)))
             with patch('hunt.__main__.importlib.import_module', return_value=fake) as load:
