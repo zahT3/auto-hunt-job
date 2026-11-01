@@ -55,14 +55,26 @@ function directionItem(d) {
         .join("") +
       `</ul></details>`
     : '<p class="small-note">没有引用已确认的事实。</p>';
-  const terms = items(d.terms);
   return (
     `<li><strong>${esc(d.name || d.id)}</strong>` +
     `<p>${esc(d.why || "未写理由")}</p>` +
-    (terms.length
-      ? `<p class="orient-direction-terms">搜索词：${terms.map(esc).join(" · ")}</p>`
-      : "") +
+    directionTermsLine(items(d.terms)) +
     `${evidence}</li>`
+  );
+}
+
+// The search uses only the merged list (at most 8 terms), so a direction's other terms are named as unsearched.
+function directionTermsLine(terms) {
+  if (!terms.length) return "";
+  const merged = new Set(searchTerms());
+  const used = terms.filter((t) => merged.has(t));
+  const left = terms.filter((t) => !merged.has(t));
+  return (
+    `<p class="orient-direction-terms">搜索词：${used.length ? used.map(esc).join(" · ") : "无"}` +
+    (left.length
+      ? `<span class="small-note">；未进合并词表，本轮不搜：${left.map(esc).join(" · ")}</span>`
+      : "") +
+    `</p>`
   );
 }
 
@@ -190,7 +202,7 @@ export function orientBody() {
   const notes = items(o.notes);
   return (
     `<p class="muted">按已确认的简历事实给出 1–${MAX_DIRECTIONS} 个求职方向和搜索词，保存在本机。开始找岗位时用这些搜索词。</p>` +
-    (orientForSearch
+    (orientForSearch && !chosenDirections().length
       ? '<div class="warning-box" role="alert">还没有搜索方向。先定方向再开始找岗位；也可以在「设置与待办」里直接填写关键词。</div>'
       : "") +
     (notes.length && orientMode !== "pick"

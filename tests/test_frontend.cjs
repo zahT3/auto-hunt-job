@@ -284,12 +284,12 @@ test('orient view escapes every server and model string, including table ids in 
  assert.match(steps,/&lt;script&gt;alert\(1\)&lt;\/script&gt;/);assert.match(steps,/事实 gone&lt;i&gt;（已不在资料中）/);
  assert.match(pick,/value="x&quot;&gt;&lt;script&gt;"/);assert.match(pick,/&lt;b&gt;家族&lt;\/b&gt;/);
 });
-test('each direction shows its own search terms above the merged list',()=>{
- const h=harness();orientState(h,{by:'ai',directions:[{id:'backend',name:'后端开发',terms:['后端','<b>Go</b>']},{id:'da',name:'数据分析师',terms:[]}],terms:['后端','Go','数据分析']});
+test('each direction shows its own search terms and names the ones the merged list leaves out',()=>{
+ const h=harness();orientState(h,{by:'ai',directions:[{id:'backend',name:'后端开发',terms:['后端','<b>Go</b>']},{id:'da',name:'数据分析师',terms:[]}],terms:['后端','数据分析']});
  const html=h.run('directionsSection()');
- assert.match(html,/后端开发<\/strong><p>未写理由<\/p><p class="orient-direction-terms">搜索词：后端 · &lt;b&gt;Go&lt;\/b&gt;<\/p>/);
+ assert.match(html,/后端开发<\/strong><p>未写理由<\/p><p class="orient-direction-terms">搜索词：后端<span class="small-note">；未进合并词表，本轮不搜：&lt;b&gt;Go&lt;\/b&gt;<\/span><\/p>/);
  assert.equal((html.match(/orient-direction-terms/g)||[]).length,1);
- assert.match(html,/<strong>合并后的搜索词<\/strong><span>后端 · Go · 数据分析<\/span>/);
+ assert.match(html,/<strong>合并后的搜索词<\/strong><span>后端 · 数据分析<\/span>/);
  orientState(h,{by:'ai',directions:[{id:'backend',name:'后端开发'}],terms:['后端']});
  assert.match(h.run('directionsSection()'),/<strong>搜索词<\/strong>/);
 });
@@ -306,7 +306,9 @@ test('without directions or keywords, 开始找岗位 opens 定方向 instead of
  const h=harness();orientState(h,null);h.run(`globalThis.calls=[];action=async(name)=>{calls.push(name);return {};}`);
  await h.run('startSearch()');
  assert.equal(h.run('calls.length'),0);assert.equal(h.node('#orient-dialog').open,true);
- assert.match(h.node('#orient-body').innerHTML,/还没有搜索方向。先定方向/);assert.match(h.node('#orient-body').innerHTML,/跳过问题，直接选方向/);
+ assert.match(h.node('#orient-body').innerHTML,/还没有搜索方向。先定方向/);
+ orientState(h,{directions:[{id:'backend',name:'后端开发'}],terms:['后端'],by:'rules'});h.run('renderOrient()');
+ assert.doesNotMatch(h.node('#orient-body').innerHTML,/还没有搜索方向/);assert.match(h.node('#orient-body').innerHTML,/跳过问题，直接选方向/);
  orientState(h,{directions:[{id:'backend',name:'后端开发'}],terms:['后端'],by:'user'});h.node('#orient-dialog').open=false;
  await h.run('startSearch()');assert.deepEqual(Array.from(h.run('calls')),['run']);assert.equal(h.node('#orient-dialog').open,false);
 });
