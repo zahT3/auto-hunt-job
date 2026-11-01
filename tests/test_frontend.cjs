@@ -5,10 +5,28 @@ const assert=require('node:assert/strict');
 const fs=require('node:fs');
 const vm=require('node:vm');
 const path=require('node:path');
-const app=fs.readFileSync(path.join(__dirname,'../static/app.js'),'utf8')
-  .replace(/^loadState\(\);$/m,'')
-  .replace(/^setInterval\(.*$/m,'');
-function harness(){
+const JS_DIR=path.join(__dirname,'../static/js');
+const IMPORT=/^import\s+(?:[\s\S]*?\s+from\s+)?"([^"]+)";$/gm;
+// The page loads static/js/main.js as an ES module. For this DOM-free harness the module graph is inlined into one
+// script, dependencies first, with import lines and export keywords removed, so each test gets a fresh copy and can
+// reach module-level functions and variables by name. A separate test imports the real modules.
+function moduleSources(entry){
+  const order=[],seen=new Set();
+  const visit=file=>{
+    if(seen.has(file))return;
+    seen.add(file);
+    const src=fs.readFileSync(file,'utf8');
+    for(const m of src.matchAll(IMPORT))visit(path.resolve(path.dirname(file),m[1]));
+    order.push(src);
+  };
+  visit(entry);
+  return order;
+}
+const app='"use strict";\n'+moduleSources(path.join(JS_DIR,'main.js'))
+  .map(src=>src.replace(IMPORT,'').replace(/^export (?=(?:async )?function|const |let )/gm,''))
+  .join('\n')
+  .replace(/^start\(\);$/m,'');
+function fakeDocument(){
   const nodes=new Map(),selections=new Map();
   function node(selector){
     if(!nodes.has(selector))nodes.set(selector,{
@@ -20,7 +38,11 @@ function harness(){
     });
     return nodes.get(selector);
   }
-  const document={listeners:{},querySelector:s=>s==='dialog[open]'?null:node(s),querySelectorAll:s=>selections.get(s)||[],addEventListener(name,fn){this.listeners[name]=fn;},hidden:false,activeElement:null};
+  const document={listeners:{},querySelector:s=>s==='dialog[open]'?null:node(s),querySelectorAll:s=>selections.get(s)||[],addEventListener(name,fn){(this.listeners[name]??=[]).push(fn);},hidden:false,activeElement:null};
+  return {node,selections,document};
+}
+function harness(){
+  const {node,selections,document}=fakeDocument();
   const context=vm.createContext({document,console,URL,crypto:require('node:crypto').webcrypto,structuredClone,setTimeout:()=>1,clearTimeout(){},matchMedia:()=>({matches:false}),fetch(){throw new Error('Unexpected network request');}});
   vm.runInContext(app,context);
   return {node,selections,document,run:code=>vm.runInContext(code,context),state:value=>vm.runInContext('state='+JSON.stringify(value),context)};
