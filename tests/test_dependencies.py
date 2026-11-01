@@ -15,10 +15,6 @@ ALLOWED = dict(base=set(), net={'base'}, search={'net', 'base'}, profile={'net',
 OPEN_TO_AI = 'search.query'
 # The package's own entry modules; every other module sits in its layer's package.
 FLAT = {'': 'app', '__main__': 'app'}
-# Existing violations (importer, imported). Each step of the refactor deletes entries; the goal is an empty set.
-ALLOWED_VIOLATIONS = set()
-# Modules that still sit on an import cycle; the goal is an empty set.
-ALLOWED_CYCLES = set()
 
 
 def module_name(path):
@@ -102,13 +98,17 @@ class DependencyDirectionTests(unittest.TestCase):
 
     def test_imports_point_down_the_layers(self):
         found = {(a, b) for a, targets in graph().items() for b in targets if not allowed(a, b)}
-        self.assertEqual(sorted(found - ALLOWED_VIOLATIONS), [], 'new import against the layer direction')
-        self.assertEqual(sorted(ALLOWED_VIOLATIONS - found), [], 'fixed violation: delete it from ALLOWED_VIOLATIONS')
+        self.assertEqual(sorted(found), [], 'import against the layer direction')
 
-    def test_no_new_import_cycles(self):
-        found = cyclic(graph())
-        self.assertEqual(sorted(found - ALLOWED_CYCLES), [], 'new import cycle')
-        self.assertEqual(sorted(ALLOWED_CYCLES - found), [], 'module left every cycle: delete it from ALLOWED_CYCLES')
+    def test_no_import_cycles(self):
+        self.assertEqual(sorted(cyclic(graph())), [], 'modules on an import cycle')
+
+    def test_direction_rules(self):
+        for source, target, ok in (('search.engine', 'ai.llm', False), ('search.parse', 'workbench.export', False),
+                                   ('ai.orient', 'search.query', True), ('ai.orient', 'search.engine', False),
+                                   ('workbench.actions', 'search.sources.anker', True), ('net.network', 'base', True),
+                                   ('profile.profile', 'search.query', False), ('app.store', 'workbench.actions', True)):
+            self.assertIs(allowed(source, target), ok, (source, target))
 
     def test_reader_resolves_relative_lazy_and_absolute_imports(self):
         import tempfile
