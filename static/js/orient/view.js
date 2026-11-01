@@ -55,9 +55,14 @@ function directionItem(d) {
         .join("") +
       `</ul></details>`
     : '<p class="small-note">没有引用已确认的事实。</p>';
+  const terms = items(d.terms);
   return (
     `<li><strong>${esc(d.name || d.id)}</strong>` +
-    `<p>${esc(d.why || "未写理由")}</p>${evidence}</li>`
+    `<p>${esc(d.why || "未写理由")}</p>` +
+    (terms.length
+      ? `<p class="orient-direction-terms">搜索词：${terms.map(esc).join(" · ")}</p>`
+      : "") +
+    `${evidence}</li>`
   );
 }
 
@@ -72,7 +77,7 @@ export function directionsSection() {
     `<section class="orient-section" aria-labelledby="orient-directions-title">` +
     `<div class="orient-section-head"><h3 id="orient-directions-title" tabindex="-1">${proposed ? "建议方向" : "已选方向"}</h3>${provenanceBadge(o.by)}</div>` +
     `<ol class="orient-directions">${rows.map(directionItem).join("")}</ol>` +
-    `<p class="orient-line"><strong>搜索词</strong><span>${terms.length ? terms.map(esc).join(" · ") : "尚无搜索词"}</span></p>` +
+    `<p class="orient-line"><strong>${rows.some((d) => items(d.terms).length) ? "合并后的搜索词" : "搜索词"}</strong><span>${terms.length ? terms.map(esc).join(" · ") : "尚无搜索词"}</span></p>` +
     conditionsLine(o.conditions) +
     (keywords.length
       ? `<div class="warning-box">「设置与待办」里已填写关键词（${keywords.map(esc).join("、")}），搜索会优先使用这些关键词，不使用上面的搜索词。</div>`

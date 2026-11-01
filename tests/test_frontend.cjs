@@ -284,6 +284,15 @@ test('orient view escapes every server and model string, including table ids in 
  assert.match(steps,/&lt;script&gt;alert\(1\)&lt;\/script&gt;/);assert.match(steps,/事实 gone&lt;i&gt;（已不在资料中）/);
  assert.match(pick,/value="x&quot;&gt;&lt;script&gt;"/);assert.match(pick,/&lt;b&gt;家族&lt;\/b&gt;/);
 });
+test('each direction shows its own search terms above the merged list',()=>{
+ const h=harness();orientState(h,{by:'ai',directions:[{id:'backend',name:'后端开发',terms:['后端','<b>Go</b>']},{id:'da',name:'数据分析师',terms:[]}],terms:['后端','Go','数据分析']});
+ const html=h.run('directionsSection()');
+ assert.match(html,/后端开发<\/strong><p>未写理由<\/p><p class="orient-direction-terms">搜索词：后端 · &lt;b&gt;Go&lt;\/b&gt;<\/p>/);
+ assert.equal((html.match(/orient-direction-terms/g)||[]).length,1);
+ assert.match(html,/<strong>合并后的搜索词<\/strong><span>后端 · Go · 数据分析<\/span>/);
+ orientState(h,{by:'ai',directions:[{id:'backend',name:'后端开发'}],terms:['后端']});
+ assert.match(h.run('directionsSection()'),/<strong>搜索词<\/strong>/);
+});
 test('orient view says whether AI was used, from the by and questions_by fields',()=>{
  const h=harness();orientState(h,ORIENT_PROPOSAL);
  assert.match(h.run('directionsSection()'),/建议方向.*使用了 AI/);

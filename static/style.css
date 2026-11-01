@@ -101,6 +101,10 @@ input::placeholder,textarea::placeholder{color:#687267}.notice{flex-shrink:0}.to
   color: var(--muted);
   font-size: 13px;
 }
+.orient-directions .orient-direction-terms {
+  color: var(--ink);
+  font-size: 12px;
+}
 .orient-directions details ul {
   margin: 6px 0;
   padding-left: 18px;
