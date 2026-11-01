@@ -172,7 +172,15 @@ class Store:
             runs = [json.loads(r[0]) for r in c.execute('SELECT data FROM runs ORDER BY rowid DESC LIMIT 30')]
             from .profile import build_profile
             from .catalog import CATALOG
-            return dict(dataset='demo' if self.is_demo else 'app', candidate=candidate,
+            orientation = self.meta(c, 'orientation')
+            table = directions.load()
+            if orientation:
+                # Per-direction terms are computed for display only; the search still uses orientation['terms'].
+                known = {r['id'] for r in table}
+                orientation = dict(orientation, directions=[dict(d, terms=orient.terms_for([d['id']]) if d.get('id') in known else [])
+                                                            for d in orientation.get('directions') or []])
+            return dict(dataset='demo' if self.is_demo else 'app', candidate=candidate, orientation=orientation,
+                        direction_table=[dict(id=r['id'], name=r['name'], family=r['family']) for r in table],
                         candidate_draft=self.meta(c, 'candidate_draft'), candidate_profile=build_profile(candidate, confirmed_only=True),
                         search_running=self.run_lock.locked() or bool(self.search_thread and self.search_thread.is_alive()),
                         entry_verifications=entry_verifications,

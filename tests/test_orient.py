@@ -273,6 +273,38 @@ class ProposeTests(OrientCase):
         self.assertEqual(self.store.orientation()['by'], 'rules')
 
 
+class StateOrientationTests(OrientCase):
+    def test_orientation_is_null_until_directions_are_chosen(self):
+        state = self.store.state()
+        self.assertIsNone(state['orientation'])
+        self.assertTrue(state['direction_table'])
+
+    def test_rule_answer_gives_every_direction_its_own_terms_without_writing_them_back(self):
+        self.store.action(dict(action='orient_questions'))
+        state = self.store.action(dict(action='orient_answer', answers={}))
+        o = state['orientation']
+        self.assertEqual(o['by'], 'rules')
+        self.assertTrue(o['directions'])
+        for d in o['directions']:
+            self.assertEqual(d['terms'], orient.terms_for([d['id']]))
+            self.assertTrue(d['terms'])
+        self.assertEqual(o['terms'], self.store.orientation()['terms'])
+        self.assertTrue(all('terms' not in d for d in self.store.orientation()['directions']))
+
+    def test_direction_table_rows_carry_only_id_name_family(self):
+        table = self.store.state()['direction_table']
+        self.assertEqual(len(table), len(directions.load()))
+        self.assertTrue(all(set(row) == {'id', 'name', 'family'} for row in table))
+        self.assertEqual(table[0], {k: directions.load()[0][k] for k in ('id', 'name', 'family')})
+
+    def test_new_fields_hold_no_contact_details(self):
+        self.store.action(dict(action='orient_questions'))
+        state = self.store.action(dict(action='orient_answer', answers={}))
+        shown = json.dumps(dict(orientation=state['orientation'], direction_table=state['direction_table']), ensure_ascii=False)
+        for secret in (PHONE, EMAIL):
+            self.assertNotIn(secret, shown)
+
+
 class DirectionsSetTests(OrientCase):
     def set(self, **payload):
         return self.store.action(dict(action='directions_set', **payload))
