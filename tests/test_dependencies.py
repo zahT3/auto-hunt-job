@@ -22,16 +22,12 @@ FLAT = {
     'benchmark': 'search',
     'llm': 'ai', 'orient': 'ai', 'classify': 'ai',
     'profile': 'profile', 'intake': 'profile', 'redact': 'profile', 'directions': 'profile',
-    'materials': 'workbench', 'export': 'workbench', 'execution': 'workbench', 'moka_session': 'workbench',
+    'materials': 'workbench', 'export': 'workbench', 'execution': 'workbench', 'moka_session': 'workbench', 'moka_read': 'search',
 }
 # Existing violations (importer, imported). Each step of the refactor deletes entries; the goal is an empty set.
-ALLOWED_VIOLATIONS = {
-    ('official_browser', 'moka_session'), ('entries', 'moka_session'),
-}
+ALLOWED_VIOLATIONS = set()
 # Modules that still sit on an import cycle; the goal is an empty set.
-ALLOWED_CYCLES = {
-    'moka_session', 'official_browser', 'entries',
-}
+ALLOWED_CYCLES = set()
 
 
 def module_name(path):

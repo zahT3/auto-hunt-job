@@ -255,7 +255,8 @@ class WorkbenchActions:
             self.save(c, job)
 
     def start_entry_verification(self, job_id):
-        from ..moka_session import MokaVerifier, entry_identity
+        from ..moka_read import entry_identity
+        from ..moka_session import MokaVerifier
         with self.tx() as c: job = self.job(c, job_id)
         entry_identity(job.get('application_url') or job['url'])
         with self.entry_lock:

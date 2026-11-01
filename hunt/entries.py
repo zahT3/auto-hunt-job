@@ -1,12 +1,9 @@
 """Bounded read-only entry checks and evidence-bound alternate receiver repair."""
 import re
 from urllib.parse import urlsplit, urljoin
-from .sources import Document, public_url, now
+from .sources import Document, public_url, now, title_key
 from .network import FetchError
-
-
-def title_key(value):
-    return re.sub(r'[^\w\u4e00-\u9fff]+', '', str(value).casefold())
+from .moka_read import classify
 
 
 def official_job_link(html, career_url, title):
@@ -23,7 +20,6 @@ def official_job_link(html, career_url, title):
 def inspect(job, url, response):
     if isinstance(response, bytes): response = dict(body=response, url=url, status=200)
     if response.get('observation') is not None and 200 <= response.get('status',200) < 300:
-        from .moka_session import classify
         return classify(job, response.get('url',url), response['observation'], blocked_reads=response.get('incomplete_reads',False))
     final_url, status = response.get('url', url), response.get('status', 200)
     result = dict(url=url, final_url=final_url, http_status=status, checked_at=now(), method='public_render' if response.get('rendered') else 'public_http')

@@ -73,6 +73,10 @@ class Document(HTMLParser):
         self.current.children.append(data)
 
 
+def title_key(value):
+    return re.sub(r'[^\w\u4e00-\u9fff]+', '', str(value).casefold())
+
+
 def html_text(raw):
     try: return raw.decode('utf-8') if isinstance(raw, bytes) else str(raw)
     except UnicodeError as e: raise SourceError('parse_error', '网页编码无法解析') from e

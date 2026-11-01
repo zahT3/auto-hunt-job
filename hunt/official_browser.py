@@ -2,19 +2,12 @@
 from urllib.parse import urlsplit
 from .sources import SourceError
 from .network import validate_url, resolve_public
-
-MOKA_READ_PATHS = {'/api/outer/ats-apply/website/jobs/v2', '/api/outer/ats-apply/website/job',
-                   '/api/outer/ats-apply/website/jobs/recent',
-                   '/api/outer/ats-apply/website/jobs/v2/filterFieldsAggregations',
-                   '/api/outer/ats-apply/website/jobs/departments/flat',
-                   '/api/outer/ats-apply/website/jobs/departments/structure',
-                   '/api/outer/ats-apply/website/jobs/module'}
-
+from .moka_read import HOSTS, MOKA_READ_PATHS, OBSERVE, ReadTracker
 
 def read_request(method, url):
     p, _ = validate_url(url)
     from .providers.minimax import read_request as minimax_read
-    return method in ('GET', 'HEAD') or (method == 'POST' and p.hostname in ('app.mokahr.com', 'hire-r1.mokahr.com') and p.path in MOKA_READ_PATHS) or minimax_read(method, url)
+    return method in ('GET', 'HEAD') or (method == 'POST' and p.hostname in HOSTS and p.path in MOKA_READ_PATHS) or minimax_read(method, url)
 
 
 class PublicRenderer:
@@ -31,7 +24,6 @@ class PublicRenderer:
             self.runtime = sync_playwright().start()
             self.browser = self.runtime.chromium.launch(headless=True)
             self.context = self.browser.new_context(service_workers='block')
-            from .moka_session import ReadTracker
             self.reads = ReadTracker()
             self.reads.attach(self.context)
             self.hosts = set()
@@ -75,7 +67,6 @@ class PublicRenderer:
             result = dict(body=html.encode(), url=self.page.url, status=response.status if response else 200, rendered=True)
             p = urlsplit(self.page.url)
             if p.hostname in ('app.mokahr.com', 'hire-r1.mokahr.com') and p.fragment.endswith('/apply'):
-                from .moka_session import OBSERVE
                 result['observation'] = self.page.evaluate(OBSERVE)
                 result['incomplete_reads'] = self.reads.incomplete
             return result
