@@ -156,7 +156,7 @@ class WorkbenchActions:
                 raise Error('合成候选人禁止外传')
         channel = self.channel
         if channel is None:
-            from ..anker import Anker
+            from ..providers.anker import Anker
             channel=Anker()
         fresh=channel.detail(j['platform_id'])
         if fresh.get('status') != 'open' or str(fresh.get('platform_id')) != str(j['platform_id']):

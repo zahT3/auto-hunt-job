@@ -1,21 +1,18 @@
-"""Bounded multi-source job discovery, independent of any coding-agent tools.
+"""Bounded multi-source job discovery: orchestration, budgets and dedup; each source lives in hunt.providers.
 
 Public pages and employer job APIs are read-only. Browser mode is an explicit
 opt-in and uses a dedicated local profile. Failure is never an empty-success.
 """
-import json
 import math
 import re
 import time
 from collections import Counter
 from contextlib import nullcontext
-from urllib.parse import urlencode, urljoin, urlsplit, urlunsplit
+from urllib.parse import urlsplit
 from .network import fetch, FetchError
 from .providers import Context, route
 from .search.query import search_terms, expanded_terms, matches
-from .sources import (SourceError, Document, now, json_data, at_board,
-                      greenhouse_row, lever_row, ashby_row, jsonld_jobs, platform_links,
-                      platform_detail, liepin_cards, gate, public_url)
+from .sources import SourceError, now
 
 DEFAULT_BOARDS = [
     dict(type='greenhouse', slug='anthropic', company='Anthropic'),
@@ -88,219 +85,6 @@ class Budget:
         return self.transport(url, **kwargs)
 
 
-def _html(raw):
-    try: return raw.decode('utf-8') if isinstance(raw, bytes) else str(raw)
-    except UnicodeError as e: raise SourceError('parse_error', '网页编码无法解析') from e
-
-
-def _api(source, read, terms, limit, pages, report):
-    kind, board = source['kind'], at_board(source['kind'], source.get('board'))
-    company = source.get('company') or board
-    if kind == 'greenhouse':
-        # The full content feed can exceed 5 MiB. Discover IDs first, then read
-        # bounded matching details. Greenhouse's public list is not paginated.
-        url = 'https://boards-api.greenhouse.io/v1/boards/' + board + '/jobs'
-        report['search_url'] = url
-        data = json_data(read(url)); rows = data.get('jobs') if isinstance(data, dict) else None
-        if not isinstance(rows, list): raise SourceError('parse_error', 'Greenhouse 列表结构变化')
-        report['pages'] = 1; report['fetched'] = len(rows)
-        matching = [r for r in rows if isinstance(r, dict) and r.get('id') and matches(r.get('title', ''), terms)]
-        report['filter_scope'] = 'title'
-        for row in matching[:limit]:
-            detail_url = url + '/' + str(row['id'])
-            detail = json_data(read(detail_url))
-            if str(detail.get('id')) != str(row['id']): raise SourceError('parse_error', 'Greenhouse 详情身份不一致')
-            yield greenhouse_row(detail, board, company)
-        report['truncated'] = len(matching) > limit
-    elif kind == 'ashby':
-        url = 'https://api.ashbyhq.com/posting-api/job-board/' + board + '?includeCompensation=true'
-        report['search_url'] = url
-        data = json_data(read(url)); rows = data.get('jobs') if isinstance(data, dict) else None
-        if not isinstance(rows, list): raise SourceError('parse_error', 'Ashby 列表结构变化')
-        report['pages'] = 1; report['fetched'] = len(rows); count = 0
-        for row in rows:
-            if not isinstance(row, dict): raise SourceError('parse_error', 'Ashby 岗位结构变化')
-            if row.get('isListed') is False: continue
-            if not matches(row.get('title', '') + ' ' + str(row.get('descriptionPlain', '')), terms): continue
-            if count >= limit: report['truncated'] = True; break
-            yield ashby_row(row, board, company); count += 1
-    else:
-        count, seen = 0, set()
-        for page in range(pages):
-            url = 'https://api.lever.co/v0/postings/' + board + '?' + urlencode(dict(mode='json', skip=page * 50, limit=50))
-            if not report['search_url']: report['search_url'] = url
-            rows = json_data(read(url))
-            if not isinstance(rows, list): raise SourceError('parse_error', 'Lever 列表结构变化')
-            report['pages'] += 1; report['fetched'] += len(rows)
-            new = 0
-            for row in rows:
-                if not isinstance(row, dict) or not row.get('id'): raise SourceError('parse_error', 'Lever 岗位缺少身份')
-                if row['id'] in seen: continue
-                seen.add(row['id']); new += 1
-                if not matches(row.get('text', '') + ' ' + str(row.get('descriptionPlain', '')), terms): continue
-                if count >= limit: report['truncated'] = True; return
-                yield lever_row(row, board, company); count += 1
-            if len(rows) < 50: break
-            if not new: raise SourceError('parse_error', 'Lever 分页重复，已停止而不是继续请求')
-            if page == pages - 1: report['truncated'] = True
-
-
-def _platform(source, read, terms, limit, pages, report):
-    kind = source['kind']; seen = set(); count = 0; failures = []
-    # 猎聘 card mode: jobs come from the search page's cards and are kept by title; no detail page is opened.
-    cards = kind == 'liepin' and source.get('cards') is True
-    if cards: report['cards'] = True
-    for term in terms:
-        for page in range(pages):
-            url = ('https://www.zhipin.com/web/geek/job?' + urlencode(dict(query=term, city='100010000', page=page + 1)) if kind == 'boss'
-                   else 'https://www.liepin.com/zhaopin/?' + urlencode(dict(key=term, currentPage=page, pageSize=40, scene='input', inputFrom='www_index')))
-            if not report['search_url']: report['search_url'] = url
-            html = _html(read(url)); text = gate(html)
-            report['pages'] += 1
-            found = {job['url']: job for job in liepin_cards(html, url)} if cards else None
-            links = list(found) if cards else platform_links(html, url, kind)
-            if not links:
-                if re.search(r'暂无.{0,8}(职位|岗位)|没有找到.{0,8}(职位|岗位)|未找到.{0,8}(职位|岗位)', text): break
-                raise SourceError('blocked', '公开页面未提供岗位列表，需要浏览器渲染或登录；不是零岗位。可启用独立浏览器只读模式')
-            fresh = [link for link in links if link not in seen]
-            report['fetched'] += len(fresh)
-            if not fresh: break
-            for link in fresh:
-                seen.add(link)
-                if count >= limit: report['truncated'] = True; return
-                if cards:
-                    job = found[link]
-                    if matches(job['title'], terms): yield job; count += 1
-                    else: report['filtered'] += 1
-                    continue
-                try:
-                    item = platform_detail(_html(read(link)), link, kind)
-                except SourceError as e:
-                    if e.status != 'parse_error': raise
-                    failures.append(dict(url=link, status=e.status, error=str(e)))
-                    report['detail_errors'] = failures
-                    continue
-                if item['status'] == 'closed': continue
-                if matches(item['title'] + ' ' + item['jd'], terms):
-                    yield item; count += 1
-            if page == pages - 1: report['truncated'] = True
-    if failures: raise SourceError('parse_error', str(len(failures)) + ' 个岗位详情无法解析；已保留其余真实结果')
-
-
-def _anker(source, read, terms, limit, pages, report):
-    from .anker import Anker, BASE, WEBSITE, ChannelError, _json, platform_id
-    seen = set(); count = 0; adapter = Anker(transport=read)
-    for term in terms:
-        for page in range(1, pages + 1):
-            url = BASE + '/lark/openapi/getJobPosts/' + WEBSITE + '?' + urlencode(dict(page=page, size=20))
-            if not report['search_url']: report['search_url'] = url
-            data = _json(read(url, method='POST', data=json.dumps(dict(job_function_id=[], city_code=[], subject_id=[], language_key=[], keywords=term)).encode(), headers={'Content-Type': 'application/json'}))
-            rows = data.get('data')
-            if not isinstance(rows, list): raise SourceError('parse_error', '安克岗位列表结构变化')
-            report['pages'] += 1; report['fetched'] += len(rows)
-            fresh = 0
-            for row in rows:
-                pid = platform_id(row.get('id', ''))
-                if pid in seen: continue
-                seen.add(pid); fresh += 1
-                if not matches(row.get('title', ''), terms): continue
-                if count >= limit: report['truncated'] = True; return
-                try:
-                    item = adapter.detail(pid)
-                except ChannelError as error:
-                    report.setdefault('detail_errors', []).append(dict(platform_id=pid, status='parse_error', error=str(error)))
-                    continue
-                if item['status'] == 'open': yield item; count += 1
-            if len(rows) < 20: break
-            if not fresh: break
-            if page == pages: report['truncated'] = True
-
-
-def _website(source, read, terms, limit, pages, report, renderer=None):
-    from .careers import linked_boards, attach_route
-    url = public_url(source.get('url') or '')
-    if not url: raise SourceError('not_configured', '请配置公司官网公开 HTTPS 招聘页')
-    from .catalog import lookup
-    if lookup(url):
-        from .domestic import read_jobs
-        yield from read_jobs(source, read, terms, limit, pages, report, renderer)
-        return
-    report['search_url'] = url; queue = [url]; seen = set(); emitted = set(); count = 0; boards_seen = set()
-    while queue and report['pages'] < pages:
-        current = queue.pop(0)
-        if current in seen: continue
-        seen.add(current)
-        html = _html(read(current)); gate(html); report['pages'] += 1
-        rows = jsonld_jobs(html, current)
-        report['fetched'] += len(rows)
-        for item in rows:
-            if item['url'] in emitted or item['status'] == 'closed': continue
-            emitted.add(item['url'])
-            if not matches(item['title'] + ' ' + item['jd'], terms): continue
-            if count >= limit: report['truncated'] = True; return
-            yield item; count += 1
-        for board in linked_boards(html, current):
-            key = (board['kind'], board['board'])
-            if key in boards_seen: continue
-            boards_seen.add(key)
-            report.setdefault('linked_boards', []).append(board)
-            if count >= limit or report['pages'] >= pages:
-                report['truncated'] = True
-                return
-            child = dict(pages=0, fetched=0, truncated=False, search_url=None)
-            try:
-                for item in _api(dict(board, company=source.get('company') or urlsplit(url).hostname),
-                                 read, terms, limit-count, pages-report['pages'], child):
-                    identity = (item['channel'], item['platform_id'])
-                    if identity in emitted: continue
-                    emitted.add(identity)
-                    attach_route(item, board)
-                    from .entries import official_job_link
-                    alternate = official_job_link(html, current, item['title'])
-                    if alternate: item['raw']['application_route']['official_job_url'] = alternate
-                    yield item; count += 1
-            finally:
-                report['pages'] += child['pages']
-                report['fetched'] += child['fetched']
-                report['truncated'] = report['truncated'] or child['truncated']
-        for n in Document(html).root.nodes():
-            if n.tag != 'a': continue
-            link = public_url(urljoin(current, n.attrs.get('href', '')))
-            if urlsplit(link).hostname == urlsplit(url).hostname and re.search(r'job|career|position|recruit', urlsplit(link).path, re.I) and link not in seen and link not in queue:
-                queue.append(link)
-    report['truncated'] = report['truncated'] or bool(queue)
-    if not emitted and not boards_seen: raise SourceError('parse_error', '官网未提取到 JobPosting 正文或受支持的招聘看板；当前页需专用适配，不能视作无岗位')
-
-
-def _websearch(source, read, terms, limit, pages, report):
-    if source.get('provider') != 'searxng':
-        raise SourceError('not_configured', '全网索引扩展需配置自有 SearXNG HTTPS JSON 搜索端点；不依赖 Codex 搜索工具')
-    endpoint = public_url(source.get('url') or '')
-    if not endpoint: raise SourceError('not_configured', 'SearXNG 端点无效，仅支持公开 HTTPS')
-    seen = set(); count = 0
-    for term in terms:
-        for page in range(1, pages + 1):
-            p = urlsplit(endpoint)
-            url = urlunsplit((p.scheme, p.netloc, p.path or '/search', urlencode(dict(q=term + ' jobs careers', format='json', pageno=page)), ''))
-            if not report['search_url']: report['search_url'] = url
-            data = json_data(read(url)); rows = data.get('results') if isinstance(data, dict) else None
-            if not isinstance(rows, list): raise SourceError('parse_error', '搜索端点未返回 results 数组或未启用 JSON')
-            report['pages'] += 1; report['fetched'] += len(rows)
-            for row in rows[:10]:
-                target = public_url(row.get('url') or '')
-                if not target or target in seen: continue
-                seen.add(target)
-                # Only the employer/platform page can supply the actual JD;
-                # snippets are never fabricated into job descriptions.
-                html = _html(read(target)); gate(html)
-                for item in jsonld_jobs(html, target):
-                    if item['status'] != 'closed' and matches(item['title'] + ' ' + item['jd'], terms):
-                        if count >= limit: report['truncated'] = True; return
-                        yield item; count += 1
-            if not rows: break
-            if page == pages: report['truncated'] = True
-
-
 SUMMED = ('pages', 'fetched', 'filtered', 'requests', 'entry_requests', 'rendered_pages', 'elapsed_seconds')
 
 
@@ -366,7 +150,7 @@ def discover(config, profile=None, transport=None, *, browser_profile_root=None,
                                         channel=config.get('browser_channel'))
             elif kind == 'website' and config.get('official_browser'):
                 from .official_browser import PublicRenderer
-                from .catalog import lookup
+                from .providers.catalog import lookup
                 entry_row = lookup(source.get('url', ''))
                 render_budget = min(3,pages) + 2*min(quota,pages) if entry_row and entry_row['id'] == 'minimax' else pages+3
                 context = PublicRenderer(maximum=render_budget, should_continue=should_continue)

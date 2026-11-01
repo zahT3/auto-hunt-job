@@ -10,7 +10,7 @@ import sqlite3
 import sys
 
 from . import llm
-from .catalog import CATALOG, boards
+from .providers.catalog import CATALOG, boards
 from .core import Error, Store
 from .profile import synthetic_profile
 
@@ -263,7 +263,7 @@ def main(argv=None):
                     print('{id:10} {company} · {category} · {adapter}'.format(**row))
             return 0
         if args.command == 'companies':
-            from . import companies
+            from .providers import companies
             if not 1 <= args.limit <= 1000:
                 raise Error('--limit 必须是 1 至 1000')
             extra = []

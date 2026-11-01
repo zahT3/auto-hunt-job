@@ -6,9 +6,9 @@ returns 404. No signatures, cookies or application payloads are constructed.
 import re
 from urllib.parse import urlencode, urljoin, urlsplit
 
-from .careers import attach_route
-from .search.query import matches
-from .sources import Document, Node, SourceError, normalize, public_url
+from ..careers import attach_route
+from ..search.query import matches
+from ..sources import Document, Node, SourceError, normalize, public_url
 
 HOST = 'vrfi1sk8a0.jobs.feishu.cn'
 SEARCH_PATH = '/api/v1/search/job/posts'

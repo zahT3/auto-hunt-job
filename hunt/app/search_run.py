@@ -62,7 +62,7 @@ class SearchRun:
                         with self.tx() as connection:
                             connection.execute('UPDATE runs SET data=? WHERE id=?', (dumps(run), run['id']))
                     if cfg.get('sweep') is True and 'discovery_sources' not in cfg:
-                        from .. import companies
+                        from ..providers import companies
                         from ..search.query import search_terms
                         try:
                             with self.tx() as c: extra = companies.encountered(c)

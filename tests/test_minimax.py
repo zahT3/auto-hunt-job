@@ -1,7 +1,7 @@
 import unittest
 from urllib.parse import parse_qs, urlsplit
 
-from hunt.minimax import HOST, detail, listing, official_board, read_jobs, read_request, search_url
+from hunt.providers.minimax import HOST, detail, listing, official_board, read_jobs, read_request, search_url
 from hunt.sources import SourceError
 
 

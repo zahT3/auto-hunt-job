@@ -1,9 +1,8 @@
 """Source-module registry: discovery routes each configured source to a Provider.
 
 A new source is a module `hunt/providers/<id>.py` that calls `register(Provider(...))`;
-every submodule is imported when this package loads. Provider modules import hunt.sources /
-hunt.network at module level and hunt.discovery only lazily (it is still importing when
-load_all() runs).
+every submodule is imported when this package loads. Provider modules import hunt.sources,
+hunt.network, hunt.search.query and each other, never discovery: it only orchestrates.
 """
 import importlib
 import pkgutil
@@ -92,26 +91,6 @@ def route(entry):
     for provider in list(REGISTRY.values()):
         if provider.detect(entry) is not None: return provider
     return None
-
-
-def _discovery():
-    # Imported at call time: discovery imports this package.
-    from .. import discovery
-    return discovery
-
-
-def _fetcher(name, *, renderer=False):
-    def fetch(entry, ctx):
-        function = getattr(_discovery(), name)
-        args = (entry, ctx.read, ctx.terms, ctx.limit, ctx.pages, ctx.report)
-        return function(*args, ctx.renderer) if renderer else function(*args)
-    return fetch
-
-
-for _id, _function in (('greenhouse', '_api'), ('lever', '_api'), ('ashby', '_api'), ('boss', '_platform'),
-                       ('liepin', '_platform'), ('anker', '_anker'), ('websearch', '_websearch')):
-    register(Provider(_id, _fetcher(_function)))
-register(Provider('website', _fetcher('_website', renderer=True)))
 
 
 def load_all():

@@ -2,7 +2,12 @@
 import json
 import re
 from datetime import datetime, timezone
-from .network import fetch, FetchError
+from urllib.parse import urlencode
+
+from ..network import fetch, FetchError
+from ..search.query import matches
+from ..sources import SourceError
+from . import Provider, register
 
 WEBSITE = '6962795203808168199'  # 社会招聘; official site's page-data configuration.
 BASE = 'https://open.anker-in.com/service'
@@ -139,3 +144,34 @@ class Anker:
                     capabilities=dict(discovery='implemented_live_read_verified', detail='implemented_live_read_verified',
                                       input='implemented_fixture_verified_live_pending', upload='implemented_fixture_verified_live_pending',
                                       submit='implemented_fixture_verified_live_pending', receipt='live_write_unverified'))
+
+
+def read_anker(source, read, terms, limit, pages, report):
+    seen = set(); count = 0; adapter = Anker(transport=read)
+    for term in terms:
+        for page in range(1, pages + 1):
+            url = BASE + '/lark/openapi/getJobPosts/' + WEBSITE + '?' + urlencode(dict(page=page, size=20))
+            if not report['search_url']: report['search_url'] = url
+            data = _json(read(url, method='POST', data=json.dumps(dict(job_function_id=[], city_code=[], subject_id=[], language_key=[], keywords=term)).encode(), headers={'Content-Type': 'application/json'}))
+            rows = data.get('data')
+            if not isinstance(rows, list): raise SourceError('parse_error', '安克岗位列表结构变化')
+            report['pages'] += 1; report['fetched'] += len(rows)
+            fresh = 0
+            for row in rows:
+                pid = platform_id(row.get('id', ''))
+                if pid in seen: continue
+                seen.add(pid); fresh += 1
+                if not matches(row.get('title', ''), terms): continue
+                if count >= limit: report['truncated'] = True; return
+                try:
+                    item = adapter.detail(pid)
+                except ChannelError as error:
+                    report.setdefault('detail_errors', []).append(dict(platform_id=pid, status='parse_error', error=str(error)))
+                    continue
+                if item['status'] == 'open': yield item; count += 1
+            if len(rows) < 20: break
+            if not fresh: break
+            if page == pages: report['truncated'] = True
+
+
+register(Provider('anker', lambda entry, ctx: read_anker(entry, ctx.read, ctx.terms, ctx.limit, ctx.pages, ctx.report)))

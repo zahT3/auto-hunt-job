@@ -3,7 +3,7 @@ import argparse
 import json
 from pathlib import Path
 
-from ..catalog import boards
+from ..providers.catalog import boards
 from ..core import Store
 from ..discovery import DEFAULT_KINDS, discover
 from ..providers import REGISTRY

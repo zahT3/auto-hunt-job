@@ -8,10 +8,10 @@ import re
 from urllib.parse import urljoin, urlsplit
 from xml.etree import ElementTree
 
-from .careers import attach_route
-from .network import FetchError
-from .search.query import matches
-from .sources import Document, Node, SourceError, normalize, public_url
+from ..careers import attach_route
+from ..network import FetchError
+from ..search.query import matches
+from ..sources import Document, Node, SourceError, normalize, public_url
 
 
 HOST = 'careers.token.im'

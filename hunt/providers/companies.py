@@ -5,7 +5,7 @@ import re
 from pathlib import Path
 from urllib.parse import urlsplit, urlunsplit
 
-DATA = Path(__file__).resolve().parent / 'data' / 'companies.cn.json'
+DATA = Path(__file__).resolve().parent.parent / 'data' / 'companies.cn.json'
 # 按关键词（远端或本地）搜索整个多业务雇主的读取器优先，避免被标签排序挤出扫描范围。
 KEYWORD_PROVIDERS = ('tencent', 'alibaba', 'meituan', 'feishu', 'xiaohongshu', 'didi', 'jd', 'netease')
 MAX_ENCOUNTERED = 2000
@@ -86,7 +86,7 @@ def encountered(conn):
 
 def remember(conn, job):
     """Record the employer of an imported job when it is not yet a seed; True if newly added."""
-    from .providers import route
+    from . import route
     company = str(job.get('company') or '').strip()
     parts = _split(job.get('url'))
     channel = str(job.get('channel') or '')

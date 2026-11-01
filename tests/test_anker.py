@@ -8,7 +8,7 @@ from pathlib import Path
 from unittest.mock import patch
 
 from hunt import network
-from hunt.anker import Anker, ChannelError, WEBSITE, platform_id
+from hunt.providers.anker import Anker, ChannelError, WEBSITE, platform_id
 from hunt.execution import BrowserExecutor, PlanError
 
 PID = '7695699480502651178'

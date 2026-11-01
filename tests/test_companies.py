@@ -9,8 +9,8 @@ import unittest
 import unittest.mock
 from urllib.parse import urlsplit
 
-from hunt import companies
-from hunt.catalog import CATALOG
+from hunt.providers import companies
+from hunt.providers.catalog import CATALOG
 from hunt.__main__ import main
 from hunt.core import Store
 from hunt.sources import public_url
@@ -329,7 +329,7 @@ class RunWiringTests(unittest.TestCase):
 
     def test_sweep_passes_distinct_orientation_families_in_direction_order(self):
         self.store.directions_set(dict(directions=['b2b-enterprise-sales', 'channel-sales', 'quality-engineer']))
-        with unittest.mock.patch('hunt.companies.select', wraps=companies.select) as select:
+        with unittest.mock.patch('hunt.providers.companies.select', wraps=companies.select) as select:
             self.run_store(sweep=True)
         self.assertEqual(select.call_args.kwargs['families'], ['销售与商务', '供应链与生产制造'])
 

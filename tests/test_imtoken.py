@@ -1,6 +1,6 @@
 import unittest
 
-from hunt.imtoken import BASE, listed_links, parse_job, read_jobs, sitemap_jobs
+from hunt.providers.imtoken import BASE, listed_links, parse_job, read_jobs, sitemap_jobs
 from hunt.network import FetchError
 from hunt.sources import SourceError
 

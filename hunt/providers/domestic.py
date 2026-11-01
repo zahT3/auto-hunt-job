@@ -2,9 +2,11 @@
 import json
 import re
 from urllib.parse import urljoin, urlsplit, urldefrag
-from .sources import Document, SourceError, normalize, public_url, jd_text, now, json_data
-from .careers import attach_route
-from .search.query import matches
+from ..sources import Document, SourceError, normalize, public_url, jd_text, now, json_data
+from ..careers import attach_route
+from ..search.query import matches
+from .ats import read_board
+from .catalog import lookup
 
 
 def embedded_json(script):
@@ -37,8 +39,6 @@ def links(html, url):
 
 
 def read_jobs(source, read, terms, limit, pages, report, renderer=None):
-    from .catalog import lookup
-    from .discovery import _api
     entry = lookup(source['url'])
     if not entry: return
     name, url = entry['id'], source['url']; report['company'] = entry['company']; report['adapter'] = entry['adapter']
@@ -93,7 +93,7 @@ def read_jobs(source, read, terms, limit, pages, report, renderer=None):
         if not match: raise SourceError('parse_error', 'OKX 官网未找到明确的招聘看板引用')
         child = dict(pages=0, fetched=0, truncated=False, search_url=None)
         try:
-            for job in _api(dict(kind='greenhouse', board=match[1], company=entry['company']), read, terms, limit, pages, child):
+            for job in read_board(dict(kind='greenhouse', board=match[1], company=entry['company']), read, terms, limit, pages, child):
                 yield attach_route(job, reference(url, resources[0], 'embedded_url'))
         finally:
             report['pages'] += child['pages']; report['fetched'] += child['fetched']; report['truncated'] = child['truncated']

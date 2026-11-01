@@ -142,7 +142,7 @@ class Store(WorkbenchActions, OrientActions, AiSettings, SearchRun, CandidateAct
                     tasks.append(dict(title=j['title'], reason=reason, job_id=j['id']))
             runs = [json.loads(r[0]) for r in c.execute('SELECT data FROM runs ORDER BY rowid DESC LIMIT 30')]
             from .profile import build_profile
-            from .catalog import CATALOG
+            from .providers.catalog import CATALOG
             orientation = self.meta(c, 'orientation')
             table = directions.load()
             if orientation:
@@ -215,7 +215,7 @@ class Store(WorkbenchActions, OrientActions, AiSettings, SearchRun, CandidateAct
             c.execute('INSERT INTO jobs VALUES(?,?,?)', (j['id'], identity, dumps(j)))
             # Best effort: a bad seed file or meta value must not roll back the job import.
             try:
-                from .companies import remember
+                from .providers.companies import remember
                 remember(c, j)
             except (OSError, ValueError, KeyError, TypeError):
                 pass

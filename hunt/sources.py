@@ -73,6 +73,11 @@ class Document(HTMLParser):
         self.current.children.append(data)
 
 
+def html_text(raw):
+    try: return raw.decode('utf-8') if isinstance(raw, bytes) else str(raw)
+    except UnicodeError as e: raise SourceError('parse_error', '网页编码无法解析') from e
+
+
 def plain(value):
     return Document(unescape(str(value or ''))).root.text()
 

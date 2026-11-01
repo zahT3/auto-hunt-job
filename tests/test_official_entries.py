@@ -3,7 +3,7 @@ import tempfile
 import unittest
 from pathlib import Path
 from hunt.sources import public_url, SourceError
-from hunt.domestic import embedded_json, moka_dom
+from hunt.providers.domestic import embedded_json, moka_dom
 from hunt.entries import inspect, check_job, official_job_link
 from hunt.discovery import discover
 from hunt.network import FetchError

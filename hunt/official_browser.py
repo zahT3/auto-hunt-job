@@ -13,7 +13,7 @@ MOKA_READ_PATHS = {'/api/outer/ats-apply/website/jobs/v2', '/api/outer/ats-apply
 
 def read_request(method, url):
     p, _ = validate_url(url)
-    from .minimax import read_request as minimax_read
+    from .providers.minimax import read_request as minimax_read
     return method in ('GET', 'HEAD') or (method == 'POST' and p.hostname in ('app.mokahr.com', 'hire-r1.mokahr.com') and p.path in MOKA_READ_PATHS) or minimax_read(method, url)
 
 

@@ -17,8 +17,7 @@ OPEN_TO_AI = 'search.query'
 FLAT = {
     '': 'app', '__main__': 'app', 'core': 'app', 'server': 'app', 'menu': 'app', 'bookmarklets': 'app',
     'network': 'net',
-    'sources': 'search', 'discovery': 'search', 'providers': 'search', 'anker': 'search', 'minimax': 'search',
-    'imtoken': 'search', 'domestic': 'search', 'catalog': 'search', 'companies': 'search', 'careers': 'search',
+    'sources': 'search', 'discovery': 'search', 'providers': 'search', 'careers': 'search',
     'inbox': 'search', 'entries': 'search', 'sources_browser': 'search', 'official_browser': 'search',
     'benchmark': 'search',
     'llm': 'ai', 'orient': 'ai', 'classify': 'ai',
@@ -31,7 +30,7 @@ ALLOWED_VIOLATIONS = {
 }
 # Modules that still sit on an import cycle; the goal is an empty set.
 ALLOWED_CYCLES = {
-    'discovery', 'domestic', 'providers', 'moka_session', 'official_browser', 'entries',
+    'moka_session', 'official_browser', 'entries',
 }
 
 
