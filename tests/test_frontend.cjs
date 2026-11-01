@@ -261,6 +261,117 @@ test('saving local material review returns keyboard focus to the current job tit
  assert.equal(h.node('#review-dialog').open,false);assert.equal(h.node('#detail-title').focused,true);
 });
 
+const ORIENT_XSS='<img src=x onerror=alert(1)>';
+function orientState(h,orientation,extra={}){
+ h.state({dataset:'app',config:{keywords:[],keyword:''},candidate:{facts:[{id:'f1',text:ORIENT_XSS+'事实'}]},
+  direction_table:[{id:'backend',name:'后端开发',family:'技术研发'},{id:'x"><script>',name:ORIENT_XSS,family:'<b>家族</b>'},
+   {id:'pm',name:'产品经理',family:'产品'},{id:'da',name:'数据分析师',family:'数据'},{id:'ops',name:'运营',family:'运营'}],
+  orientation,...extra});
+}
+const ORIENT_PROPOSAL={by:'ai',questions_by:'ai',notes:[ORIENT_XSS],answers:{},
+ questions:[{id:'q1',text:ORIENT_XSS,kind:'choice',options:['<script>alert(1)</script>','B']},{id:'q2',text:'城市',kind:'text',options:[]}],
+ directions:[{id:'backend',name:ORIENT_XSS,why:'<script>why</script>',fact_ids:['f1','gone<i>'],source:'ai'}],
+ terms:['<b>term</b>'],conditions:{cities:[ORIENT_XSS],years:null,remote:true,exclude_industries:[]}};
+
+test('orient view escapes every server and model string, including table ids in attributes',()=>{
+ const h=harness();orientState(h,ORIENT_PROPOSAL);
+ const steps=h.run('orientBody()');
+ h.run("orientMode='pick'");const pick=h.run('orientBody()');
+ for(const html of [steps,pick]){
+  assert.doesNotMatch(html,/<img|<script|<b>|<i>|onerror=alert\(1\)>/);
+ }
+ assert.match(steps,/&lt;img src=x onerror=alert\(1\)&gt;/);assert.match(steps,/&lt;script&gt;why&lt;\/script&gt;/);
+ assert.match(steps,/&lt;script&gt;alert\(1\)&lt;\/script&gt;/);assert.match(steps,/事实 gone&lt;i&gt;（已不在资料中）/);
+ assert.match(pick,/value="x&quot;&gt;&lt;script&gt;"/);assert.match(pick,/&lt;b&gt;家族&lt;\/b&gt;/);
+});
+test('orient view says whether AI was used, from the by and questions_by fields',()=>{
+ const h=harness();orientState(h,ORIENT_PROPOSAL);
+ assert.match(h.run('directionsSection()'),/建议方向.*使用了 AI/);
+ orientState(h,{...ORIENT_PROPOSAL,by:'rules',questions_by:'rules'});
+ assert.match(h.run('directionsSection()'),/建议方向.*未使用 AI · 本地规则/);assert.match(h.run('questionsSection()'),/未使用 AI · 本地规则/);
+ assert.doesNotMatch(h.run('orientBody()'),/使用了 AI/);
+ orientState(h,{...ORIENT_PROPOSAL,by:'user'});
+ assert.match(h.run('directionsSection()'),/已选方向.*未使用 AI · 你手动选择/);
+});
+test('without directions or keywords, 开始找岗位 opens 定方向 instead of searching',async()=>{
+ const h=harness();orientState(h,null);h.run(`globalThis.calls=[];action=async(name)=>{calls.push(name);return {};}`);
+ await h.run('startSearch()');
+ assert.equal(h.run('calls.length'),0);assert.equal(h.node('#orient-dialog').open,true);
+ assert.match(h.node('#orient-body').innerHTML,/还没有搜索方向。先定方向/);assert.match(h.node('#orient-body').innerHTML,/跳过问题，直接选方向/);
+ orientState(h,{directions:[{id:'backend',name:'后端开发'}],terms:['后端'],by:'user'});h.node('#orient-dialog').open=false;
+ await h.run('startSearch()');assert.deepEqual(Array.from(h.run('calls')),['run']);assert.equal(h.node('#orient-dialog').open,false);
+});
+test('answers keep multi-choice as lists, single choice as one string, and leave blanks out',async()=>{
+ const h=harness();
+ orientState(h,{questions:[{id:'family',text:'你想找哪些行业的工作？（可多选）',kind:'choice',options:['技术研发','产品']},
+  {id:'years',text:'经验？',kind:'choice',options:['1-3 年','3-5 年']},{id:'city',text:'城市',kind:'text',options:[]},{id:'exclude',text:'排除',kind:'text',options:[]}],answers:{}});
+ const html=h.run('questionsSection()');
+ assert.match(html,/type="checkbox" name="orient-q-0" value="技术研发"/);assert.match(html,/type="radio" name="orient-q-1" value="1-3 年"/);
+ assert.match(html,/type="radio" name="orient-q-1" value="" checked>暂不回答/);
+ const fields={'orient-q-0':[{checked:true,value:'技术研发'},{checked:true,value:'产品'}],'orient-q-1':[{checked:false,value:'1-3 年'},{checked:true,value:'3-5 年'},{checked:false,value:''}],
+  'orient-q-2':[{value:'  上海、杭州 '}],'orient-q-3':[{value:'  '}]};
+ h.run(`globalThis.calls=[];action=async(name,payload)=>{calls.push({name,payload});return {};}`);
+ await h.run(`submitAnswers({querySelectorAll:s=>(${JSON.stringify(fields)})[s.match(/"(.+)"/)[1]]})`);
+ assert.deepEqual(JSON.parse(h.run('JSON.stringify(calls)')),[{name:'orient_answer',payload:{answers:{family:['技术研发','产品'],years:'3-5 年',city:'上海、杭州'}}}]);
+});
+test('saving picked directions keeps known reasons, sends terms only when given, and refuses more than four',async()=>{
+ const h=harness();orientState(h,{directions:[{id:'backend',name:'后端开发',why:'有后端经历'}],terms:['后端'],by:'ai'});
+ h.run(`globalThis.calls=[];action=async(name,payload)=>{calls.push({name,payload});return {};}`);
+ const form={elements:{terms:{value:''}}};
+ h.selections.set('#orient-pick-form input[name=direction]:checked',[{value:'backend'},{value:'pm'}]);
+ await h.run(`savePick(${JSON.stringify(form)})`);
+ assert.deepEqual(JSON.parse(h.run('JSON.stringify(calls)')),[{name:'directions_set',payload:{directions:[{id:'backend',why:'有后端经历'},{id:'pm'}]}}]);
+ h.run('calls.length=0');form.elements.terms.value='后端\nPython 后端，后端';
+ await h.run(`savePick(${JSON.stringify(form)})`);
+ assert.deepEqual(JSON.parse(h.run('JSON.stringify(calls[0].payload.terms)')),['后端','Python 后端']);
+ h.run('calls.length=0');h.selections.set('#orient-pick-form input[name=direction]:checked',['backend','pm','da','ops','x'].map(value=>({value})));
+ await h.run(`savePick(${JSON.stringify(form)})`);assert.equal(h.run('calls.length'),0);assert.match(h.node('#orient-pick-count').textContent,/请选 1 到 4 个方向/);
+});
+test('orient is keyboard operable: native controls, labelled fields, and focus moved to each new step',async()=>{
+ const h=harness();orientState(h,null);
+ h.run('openOrient()');assert.equal(h.node('#orient-dialog').open,true);assert.equal(h.node('#orient-questions-title').focused,true);
+ orientState(h,{questions:[{id:'city',text:'城市',kind:'text',options:[]},{id:'years',text:'经验',kind:'choice',options:['1-3 年']}],answers:{}});
+ h.run("orientMode='steps'");const steps=h.run('orientBody()');
+ assert.doesNotMatch(steps,/<(div|span|a)[^>]*data-orient/);
+ assert.match(steps,/<label class="orient-question">1\. 城市<input type="text"/);assert.match(steps,/<fieldset class="orient-question"><legend>2\. 经验<\/legend>/);
+ assert.match(steps,/<button type="submit"[^>]*>提交回答，给出方向<\/button>/);assert.match(steps,/<button type="button" class="text-button" data-orient-pick>/);
+ h.run('showPick()');assert.equal(h.node('#orient-pick-title').focused,true);
+ const pick=h.node('#orient-body').innerHTML;
+ assert.match(pick,/<details class="orient-family"[^>]*><summary>/);assert.match(pick,/<label class="check-label"><input type="checkbox" name="direction"/);
+ assert.match(pick,/<button type="button" class="text-button" data-orient-back>返回<\/button>/);
+ h.run(`action=async()=>{state.orientation={directions:[{id:'backend',name:'后端开发'}],terms:['后端'],by:'rules'};return {};}`);
+ await h.run(`submitAnswers({querySelectorAll:()=>[]})`);assert.equal(h.node('#orient-directions-title').focused,true);
+ h.run('adopt()');assert.equal(h.node('#orient-dialog').open,false);assert.equal(h.node('#run-button').focused,true);
+ assert.match(h.node('#toast').textContent,/已采用 1 个方向。点「开始找岗位」/);
+});
+test('orient styles fit a 390px screen: no fixed width beyond it, wrapping rows, long words broken',()=>{
+ const css=fs.readFileSync(path.join(__dirname,'../static/style.css'),'utf8');
+ const orient=css.slice(css.indexOf('/* 定方向 dialog */'));
+ assert.ok(orient.length>100);
+ for(const m of orient.matchAll(/(?:^|[\s;{])(width|min-width|flex-basis)\s*:\s*(\d+)px/g))assert.ok(Number(m[2])<=358,m[0]);
+ assert.match(orient,/\.orient-body\s*\{[^}]*overflow-wrap:\s*anywhere/);
+ for(const rule of ['.orient-actions','.orient-options','.orient-line','.orient-section-head'])assert.match(orient,new RegExp(rule.replace('.','\\.')+'\\s*\\{[^}]*flex-wrap:\\s*wrap'),rule);
+ // The dialog itself is bounded by the viewport (existing rule the orient dialog relies on).
+ assert.match(css,/dialog\{[^}]*max-width:calc\(100vw - 32px\)/);
+});
+test('the real ES modules link and render one state through main.js',async()=>{
+ const {node,document}=fakeDocument();
+ const state={dataset:'app',control:'running',jobs:[{id:'j',title:'Synthetic role',company:'Co'}],config:{keywords:[]},candidate:{facts:[]},
+  orientation:{directions:[{id:'backend',name:'后端开发'}],terms:['后端'],by:'rules'},direction_table:[]};
+ const saved={};
+ for(const key of ['document','matchMedia','setInterval','fetch','CSS'])saved[key]=Object.getOwnPropertyDescriptor(globalThis,key);
+ Object.assign(globalThis,{document,matchMedia:()=>({matches:false}),setInterval:()=>1,CSS:{escape:s=>s},
+  fetch:async url=>{assert.equal(url,'/api/state');return {ok:true,json:async()=>state};}});
+ try{
+  await import(require('node:url').pathToFileURL(path.join(JS_DIR,'main.js')).href);
+  await new Promise(resolve=>setImmediate(resolve));
+  assert.equal(node('#queue-count').textContent,1);assert.match(node('#job-list').innerHTML,/Synthetic role/);
+  assert.equal(node('#orient-open').textContent,'方向：后端开发');assert.match(node('#orient-body').innerHTML,/建议方向/);
+ }finally{
+  for(const [key,desc] of Object.entries(saved))desc?Object.defineProperty(globalThis,key,desc):delete globalThis[key];
+ }
+});
+
 const BOOKMARKLETS=['boss-zhipin','liepin','liepin-list','lagou','mokahr','universal'];
 const BM_DIR=path.join(__dirname,'../static/bookmarklets');
 // Mirrors hunt/bookmarklets.py assemble(): the shared delivery prelude replaces each script's "// @deliver" line.

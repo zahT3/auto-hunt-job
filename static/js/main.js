@@ -2,6 +2,7 @@
 import { loadState } from "./shared/api.js";
 import { busy } from "./shared/state.js";
 import "./workbench/index.js";
+import "./orient/view.js";
 
 export function start() {
   loadState();

@@ -1,4 +1,6 @@
 // Search targets and channels, the task list, and the run controls in the header.
+import { canSearch } from "../orient/model.js";
+import { openOrient } from "../orient/view.js";
 import { action } from "../shared/api.js";
 import {
   $,
@@ -311,6 +313,10 @@ export async function startSearch() {
           ? "合成演示已启动，正在准备本地材料。"
           : "合成演示已结束，请查看准备结果。",
       );
+    return;
+  }
+  if (!canSearch()) {
+    openOrient({ forSearch: true });
     return;
   }
   const r = await action("run", {}, "正在收集与准备…");
