@@ -13,7 +13,7 @@ from urllib.parse import urlencode, urljoin, urlsplit, urlunsplit
 from .network import fetch, FetchError
 from .providers import Context, route
 from .search.query import search_terms, expanded_terms, matches
-from .sources import (SourceError, Document, now, json_data, at_board, plain, normalize,
+from .sources import (SourceError, Document, now, json_data, at_board,
                       greenhouse_row, lever_row, ashby_row, jsonld_jobs, platform_links,
                       platform_detail, liepin_cards, gate, public_url)
 

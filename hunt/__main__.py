@@ -11,7 +11,8 @@ import sys
 
 from . import llm
 from .catalog import CATALOG, boards
-from .core import Error, Store, synthetic_profile
+from .core import Error, Store
+from .profile import synthetic_profile
 
 DEFAULT_DATA = Path(__file__).resolve().parent.parent / 'private' / 'app'
 FORWARD = {

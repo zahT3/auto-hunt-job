@@ -13,7 +13,8 @@ from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
-from hunt.core import DEFAULT_CONFIG, Error, Store, dumps
+from hunt.app.config import DEFAULT_CONFIG
+from hunt.core import Error, Store, dumps
 from hunt.materials import synthetic_candidate
 from hunt.server import make_server
 
@@ -510,6 +511,22 @@ class HttpTests(CoreCase):
         status, _ = self.request('POST', '/api/action', {'action': 'event', 'kind': 'submitted', 'job_id': job['id'], 'evidence': 'trust me'}, headers)
         self.assertEqual(status, 400)
         self.assertEqual(self.saved_job(job['id'])['status'], 'review')
+
+
+
+class ActionTableTests(CoreCase):
+    def test_action_names_are_the_stable_http_api(self):
+        from hunt.core import ACTIONS
+        self.assertEqual(set(ACTIONS), {'run', 'demo', 'ai_settings', 'ai_consent', 'ai_revoke', 'resume_confirm', 'orient_questions',
+                                        'orient_answer', 'directions_set', 'classify', 'entry_verify', 'entry_finish', 'entry_cancel',
+                                        'import', 'prepare', 'review_materials', 'review', 'execute', 'control', 'config', 'candidate', 'event'})
+
+    def test_unknown_or_malformed_action_names_are_refused(self):
+        for name in (None, 'drop', ['run'], {'action': 'run'}, 3):
+            with self.subTest(name=name), self.assertRaisesRegex(Error, '未知操作'):
+                self.store.action(dict(action=name))
+        with self.assertRaisesRegex(Error, '核验窗口已结束'):
+            self.store.action(dict(action='entry_finish', job_id='none'))
 
 
 if __name__ == '__main__':

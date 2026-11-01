@@ -44,6 +44,16 @@ _SKILL_DIRECTIONS = {
 MAX_QUERIES_PER_DIRECTION = 3
 
 
+def synthetic_profile(candidate):
+    """Synthetic provenance survives editing the top-level profile toggle."""
+    if candidate.get('synthetic') is True:
+        return True
+    return any(isinstance(f, dict) and isinstance(f.get('source'), dict)
+               and (f['source'].get('synthetic') is True
+                    or str(f['source'].get('reference', '')).startswith('synthetic://'))
+               for f in candidate.get('facts', []))
+
+
 def source_facts(candidate, confirmed_only=False):
     """Keep only unique, well-formed, source-backed facts; privacy stays local."""
     rows = candidate.get('facts', []) if isinstance(candidate, dict) else []

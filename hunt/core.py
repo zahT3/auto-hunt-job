@@ -1,63 +1,34 @@
-"""Persistent orchestration. All outbound application actions enter through execute()."""
-import base64
+"""The Store: one SQLite file, its transactions, the state view, job import, and the action table.
+
+Use cases live in mixins: workbench actions (workbench.actions), orientation and AI settings (ai.*), the search run
+and candidate facts (app.*). All outbound application actions enter through WorkbenchActions.execute().
+"""
 import copy
-import hashlib
 import json
 import secrets
 import sqlite3
 import threading
 import uuid
 from contextlib import contextmanager
-from datetime import datetime, timezone, timedelta
 from pathlib import Path
 from urllib.parse import urlsplit, urlunsplit
 
-from . import classify, directions, llm, network, orient
-from .profile import build_profile
-
-
-def now():
-    return datetime.now(timezone.utc).isoformat(timespec='microseconds')
-
-
-def dumps(value):
-    return json.dumps(value, ensure_ascii=False, sort_keys=True, separators=(',', ':'))
-
-
-def digest(value):
-    return hashlib.sha256(dumps(value).encode()).hexdigest()
-
-
-class Error(Exception):
-    pass
-
-
-DEFAULT_CONFIG = dict(keyword='', keywords=[], cities=[], salary_min=None, max_jobs=20,
-                      interval_minutes=60, submission_limit=0, targets_confirmed=False,
-                      sources=['anker', 'greenhouse', 'lever', 'ashby'],
-                      company_boards=[dict(type='greenhouse', slug='anthropic', company='Anthropic'),
-                                      dict(type='lever', slug='binance', company='Binance'),
-                                      dict(type='ashby', slug='cursor', company='Cursor')], max_pages=2,
-                      source_modes={'boss': 'public', 'liepin': 'public'}, search_provider=None,
-                      official_only=False, browser_channel=None, check_entries=True, official_browser=False, liepin_cards=False)
-LOCKED = {'sending', 'unknown', 'submitted'}
+from . import directions, orient
+from .ai.orientation import OrientActions
+from .ai.settings import AiSettings
+from .app.candidate import CandidateActions
+from .app.config import DEFAULT_CONFIG, validate_config
+from .app.search_run import SearchRun
+from .base import Error, digest, dumps, now
+from .profile import build_profile, synthetic_profile
+from .workbench.actions import LOCKED, WorkbenchActions
 
 
 def summary_only(raw):
     return isinstance(raw, dict) and raw.get('summary_only') is True
 
 
-def synthetic_profile(candidate):
-    """Synthetic provenance survives editing the top-level profile toggle."""
-    if candidate.get('synthetic') is True:
-        return True
-    return any(isinstance(f, dict) and isinstance(f.get('source'), dict)
-               and (f['source'].get('synthetic') is True
-                    or str(f['source'].get('reference', '')).startswith('synthetic://'))
-               for f in candidate.get('facts', []))
-
-
-class Store:
+class Store(WorkbenchActions, OrientActions, AiSettings, SearchRun, CandidateActions):
     llm_transport = None  # tests inject a fake; None means network.fetch
 
     def __init__(self, root, channel=None, executor=None):
@@ -271,738 +242,66 @@ class Store:
         saved, duplicate = self.import_job(job)
         return dict(ok=True, job_id=saved['id'], duplicate=duplicate)
 
-    def snapshot(self, candidate, config, job, package):
-        return digest(dict(candidate=candidate, config=config, job={k: job.get(k) for k in ('id','platform_id','channel','url','title','company','jd','availability','requirements_text','questions','location','salary','experience','application_url')},
-                           package={k:v for k,v in package.items() if k != 'snapshot'},
-                           files=self.file_hashes(package)))
-
-    def file_hashes(self, package):
-        result = {}
-        for kind, filename in package.get('files', {}).items():
-            p = self.root / 'packages' / package['id'] / filename
-            result[kind] = hashlib.sha256(p.read_bytes()).hexdigest() if p.is_file() else None
-        return result
-
-    def _current_material_snapshot(self, candidate, config, job):
-        """A review is current only while the saved materials and files match."""
-        package = job.get('package')
-        if not isinstance(package, dict) or not package.get('snapshot') or not package.get('files'):
-            return None
-        try:
-            directory = self.root / 'packages' / package['id']
-            if not all((directory / filename).is_file() for filename in package['files'].values()):
-                return None
-            current = self.snapshot(candidate, config, job, package)
-        except (OSError, ValueError, TypeError, KeyError, AttributeError):
-            return None
-        return current if current == package['snapshot'] else None
-
-    def review_materials(self, payload):
-        """Record that selected local material versions were viewed, not approved."""
-        ids, snapshots = payload.get('job_ids'), payload.get('snapshots')
-        if (not isinstance(ids, list) or not 1 <= len(ids) <= 50 or
-                any(not isinstance(jid, str) or not jid for jid in ids) or len(ids) != len(set(ids))):
-            raise Error('请选择 1 至 50 个不同岗位复核材料')
-        if payload.get('acknowledge_review') is not True:
-            raise Error('请明确确认已查看所选材料；这不会授权对外申请')
-        if not isinstance(snapshots, dict):
-            raise Error('缺少材料快照，请刷新后复核')
-        with self.tx() as c:
-            candidate, config = self.meta(c, 'candidate'), self.meta(c, 'config')
-            selected = []
-            # Validate the entire batch before recording any event or review.
-            for jid in ids:
-                job = self.job(c, jid)
-                current = self._current_material_snapshot(candidate, config, job)
-                if not current or snapshots.get(jid) != current:
-                    raise Error('材料、事实、条件或文件已变化，或缺少具体快照；请重新准备后复核')
-                selected.append((job, current))
-            for job, current in selected:
-                if (job.get('material_review') or {}).get('snapshot') == current:
-                    continue
-                job['material_review'] = dict(snapshot=current, reviewed_at=now(),
-                    package_id=job['package']['id'], scope='local_materials',
-                    meaning='viewed', gaps_remaining=len(job['package'].get('gaps', [])))
-                self.event(job, 'materials_reviewed', '已查看此版本本地材料；缺口仍保留，未授权披露或对外申请',
-                           dict(snapshot=current, package_id=job['package']['id']))
-                self.save(c, job)
-
-    def prepare(self, jid):
-        from .materials import prepare, match
-        from .export import write_package
-        from .profile import recommend
-        with self.tx() as c:
-            j = self.job(c, jid)
-            if j['status'] in LOCKED or j['status'] == 'rejected':
-                raise Error('已拒绝、已发送或结果未知的岗位不能重新准备以绕过状态锁')
-            candidate, config = self.meta(c, 'candidate'), self.meta(c, 'config')
-            j['match'] = match(candidate, j, config)
-            j['recommendation'] = recommend(candidate, j, config)
-            package = prepare(candidate, j, config)
-            package.update(id=uuid.uuid4().hex, created_at=now(), job_id=jid)
-            out = self.root / 'packages' / package['id']
-            out.mkdir(parents=True, mode=0o700)
-            package['files'] = write_package(package, out)
-            package['snapshot'] = self.snapshot(candidate, config, j, package)
-            c.execute('INSERT INTO packages VALUES(?,?,?)', (package['id'], jid, dumps(package)))
-            j.update(package=package, approval=None, status='review', next_action='集中审核事实、缺口、披露范围和最终文件')
-            self.event(j, 'prepared', '生成本地证据草稿；不代表申请提交')
-            self.save(c, j)
-            return j
-
-    def upload_resume(self, payload):
-        from .intake import analyze_resume
-        filename = payload.get('filename')
-        encoded = payload.get('content_base64')
-        if not isinstance(filename, str) or not filename or len(filename) > 255:
-            raise Error('请选择有效的简历文件')
-        if not isinstance(encoded, str) or len(encoded) > 14 * 1024 * 1024:
-            raise Error('简历文件最大 10 MiB')
-        if type(payload.get('synthetic', False)) is not bool:
-            raise Error('合成资料标记必须为布尔值')
-        try:
-            content = base64.b64decode(encoded, validate=True)
-        except ValueError as exc:
-            raise Error('文件编码无效，请重新选择文件') from exc
-        if not content or len(content) > 10 * 1024 * 1024:
-            raise Error('请选择 10 MiB 以内的非空文件')
-        draft = analyze_resume(filename, content, synthetic=payload.get('synthetic', False))
-        draft.update(id=uuid.uuid4().hex, created_at=now())
-        # Keep the original bytes for local provenance; never expose arbitrary file paths.
-        directory = self.root / 'resumes' / draft['id']
-        directory.mkdir(parents=True, mode=0o700)
-        suffix = Path(filename).suffix.lower()
-        original = directory / ('original' + suffix)
-        original.write_bytes(content)
-        original.chmod(0o600)
-        (directory / 'analysis.json').write_text(dumps(draft), encoding='utf-8')
-        (directory / 'analysis.json').chmod(0o600)
-        with self.tx() as c:
-            self.setmeta(c, 'candidate_draft', draft)
-        return self.state()
-
-    def confirm_resume(self, payload):
-        ids = payload.get('confirmed_fact_ids', [])
-        if not isinstance(ids, list) or not ids or any(not isinstance(x, str) for x in ids) or len(ids) != len(set(ids)):
-            raise Error('请核对并选择要用于本地匹配的事实')
-        with self.tx() as c:
-            draft = self.meta(c, 'candidate_draft')
-            if not draft or draft.get('id') != payload.get('draft_id'):
-                raise Error('简历版本已变化，请刷新并核对新版本')
-            if draft.get('status') in ('needs_ocr', 'error', 'failed'):
-                raise Error('简历尚未成功提取文字，请先处理解析提示')
-            candidate = copy.deepcopy(draft['candidate'])
-            if set(ids) - {f['id'] for f in candidate['facts']}:
-                raise Error('所选事实不属于这份简历')
-            for fact in candidate['facts']:
-                fact['status'] = 'confirmed' if fact['id'] in ids else 'unconfirmed'
-                fact['disclosure'] = 'private'
-            candidate['version'] = int(self.meta(c, 'candidate').get('version', 0)) + 1
-            self.setmeta(c, 'candidate', candidate)
-            self.setmeta(c, 'candidate_draft', None)
-            self.intervene(c, '核对上传简历，用于本地画像与匹配；未授权任何对外申请')
-            # Persist a clear stale state, rather than presenting old recommendations as current.
-            for row in c.execute('SELECT data FROM jobs').fetchall():
-                job = json.loads(row[0])
-                if job['status'] not in LOCKED | {'rejected'}:
-                    job.update(status='new', package=None, approval=None, match=None, recommendation=None, next_action='候选资料已更新，运行搜索或重新准备以更新匹配')
-                    self.save(c, job)
-
-    def orientation(self):
-        with self.tx() as c:
-            return self.meta(c, 'orientation')
-
-    def _orient_inputs(self):
-        with self.tx() as c:
-            candidate, consent, current = self.meta(c, 'candidate'), self.meta(c, 'ai_consent'), self.meta(c, 'orientation')
-        settings = llm.load_settings(self.root)
-        key = llm.load_key(self.root, llm.host(settings))  # None for a key entered for another host
-        meter = llm.Meter(settings['budget_cny'], settings['price_in'], settings['price_out'])
-        return dict(candidate=candidate, consent=consent, current=current, settings=settings, key=key, meter=meter,
-                    facts=orient.confirmed_facts(candidate), names=orient.candidate_names(candidate),
-                    transport=self.llm_transport or network.fetch)
-
-    def _orient_save(self, change, spent):
-        with self.tx() as c:
-            o = self.meta(c, 'orientation') or dict(questions=[], answers={}, directions=[], conditions=orient.clean_conditions({}),
-                                                    terms=[], by='rules', notes=[], spent_cny=0.0)
-            o.update(change, spent_cny=round(float(o.get('spent_cny', 0)) + spent, 6), updated_at=now())
-            self.setmeta(c, 'orientation', o)
-            return o
-
-    def orient_questions(self):
-        a = self._orient_inputs()
-        profile = build_profile(a['candidate'], confirmed_only=True)
-        result = orient.questions(profile, a['facts'], a['names'], a['settings'], a['key'], a['consent'], a['meter'], a['transport'])
-        change = dict(questions=result['questions'], answers={}, notes=result['notes'], questions_by=result['by'])
-        if not (a['current'] or {}).get('directions'): change['by'] = result['by']
-        return self._orient_save(change, a['meter'].spent)
-
-    def orient_answer(self, payload):
-        a = self._orient_inputs()
-        asked = {q['id']: q for q in (a['current'] or {}).get('questions') or []}
-        if not asked: raise Error('请先获取追问')
-        answers = payload.get('answers')
-        if not isinstance(answers, dict): raise Error('回答须是对象')
-        for ident, value in answers.items():
-            q = asked.get(ident)
-            if not q: raise Error('回答里有不在追问中的问题')
-            values = [value] if isinstance(value, str) else value
-            if not (isinstance(values, list) and len(values) <= 20 and all(isinstance(v, str) and len(v) <= orient.ANSWER_CHARS for v in values)):
-                raise Error('回答须是不超过 %d 字的文字（选择题可多选）' % orient.ANSWER_CHARS)
-            if q['kind'] == 'choice' and not set(values) <= set(q['options']): raise Error('选择题的回答须在给出的选项里')
-            if q['kind'] == 'text' and not isinstance(value, str): raise Error('文字题须用文字回答')
-        profile = build_profile(a['candidate'], confirmed_only=True)
-        found = orient.propose(profile, answers, a['facts'], a['names'], list(asked.values()), a['settings'], a['key'], a['consent'],
-                               a['meter'], a['transport'])
-        return self._orient_save(dict(answers=answers, directions=found['directions'], conditions=found['conditions'], terms=found['terms'],
-                                      by=found['by'], notes=found['notes']), a['meter'].spent)
-
-    def directions_set(self, payload):
-        source = payload.get('source', 'user')
-        if source not in ('user', 'agent'): raise Error('来源须是 user 或 agent')
-        try:
-            rows = orient.clean_directions(payload)
-            terms = orient.clean_terms(payload['terms']) if 'terms' in payload else orient.terms_for([r['id'] for r in rows])
-            conditions = orient.clean_conditions(payload['conditions']) if 'conditions' in payload else None
-        except ValueError as e: raise Error(str(e)) from None
-        for row in rows: row['source'] = source
-        change = dict(directions=rows, terms=terms, by=source, notes=[])
-        if conditions is not None: change['conditions'] = conditions
-        return self._orient_save(change, 0.0)
-
-    def chosen_families(self):
-        """Families of the chosen directions, in order; a sweep scans employers tagged with them first."""
-        rows = (self.orientation() or {}).get('directions') or []
-        return list(dict.fromkeys(directions.get(d['id'])['family'] for d in rows))
-
-    def classify_run(self):
-        """Classify jobs that have no classification or a stale one (directions or job text changed); user and agent choices stay."""
-        with self.tx() as c:
-            dirs = (self.meta(c, 'orientation') or {}).get('directions') or []
-            consent = self.meta(c, 'ai_consent')
-            jobs = [json.loads(r[0]) for r in c.execute('SELECT data FROM jobs ORDER BY rowid')]
-        if not dirs:
-            return dict(directions=[], other_count=0, classify_spent_cny=0.0, classify_errors=[], classify_note='尚未确定方向，岗位未归类')
-        ids = [d['id'] for d in dirs]
-        todo = [j for j in jobs if classify.stale(j, ids)]
-        settings = llm.load_settings(self.root)
-        meter = llm.Meter(settings['budget_cny'], settings['price_in'], settings['price_out'])
-        out = classify.classify_jobs(todo, dirs, settings, llm.load_key(self.root, llm.host(settings)), consent, meter,
-                                     transport=self.llm_transport or network.fetch)
-        with self.tx() as c:
-            for j in todo:
-                current = json.loads((c.execute('SELECT data FROM jobs WHERE id=?', (j['id'],)).fetchone() or ['null'])[0])
-                # A choice made while the model was answering wins.
-                if current and (current.get('direction') or {}).get('by') not in ('user', 'agent'):
-                    current['direction'] = j['direction']
-                    self.save(c, current)
-            jobs = [json.loads(r[0]) for r in c.execute('SELECT data FROM jobs')]
-        rows, other = classify.report(dirs, jobs)
-        return dict(directions=rows, other_count=other, classify_spent_cny=round(meter.spent, 6), classify_errors=out['errors'],
-                    classify_note=out['note'] if todo else '方向与岗位都没有变化，沿用上次归类')
-
-    def classify(self, payload):
-        """One job by hand (user or agent; null means outside the chosen directions), or every stale job when job_id is absent."""
-        if 'job_id' not in payload:
-            if self.run_lock.locked(): raise Error('本轮搜索正在运行，结束时会自动归类')
-            return self.classify_run()
-        row = dict(job_id=payload['job_id'], direction_id=payload.get('direction_id'), reason=payload.get('reason'))
-        self.classify_many([row], payload.get('source', 'user'))
-
-    def classify_many(self, rows, source):
-        """Hand-made classifications [{job_id, direction_id|null, reason?}], all or nothing; returns how many were written."""
-        if source not in ('user', 'agent'): raise Error('来源须是 user 或 agent')
-        if not isinstance(rows, list) or not 1 <= len(rows) <= 5000: raise Error('归类结果须是 1–5000 条的数组')
-        with self.tx() as c:  # any error below rolls back the rows already written
-            ids = [d['id'] for d in (self.meta(c, 'orientation') or {}).get('directions') or []]
-            for n, row in enumerate(rows, 1):
-                if not isinstance(row, dict) or 'job_id' not in row or 'direction_id' not in row:
-                    raise Error('第 %d 条须有 job_id 与 direction_id（不属于所选方向时写 null）' % n)
-                ident, reason = row['direction_id'], row.get('reason')
-                if ident is not None and ident not in ids: raise Error('第 %d 条：方向须是当前所选方向之一，或 null 表示不属于所选方向' % n)
-                if reason is not None and not (isinstance(reason, str) and len(reason) <= 200): raise Error('第 %d 条：理由须是不超过 200 字的文字' % n)
-                try: j = self.job(c, str(row['job_id']))
-                except Error: raise Error('第 %d 条：岗位不存在：%s' % (n, str(row['job_id'])[:40])) from None
-                j['direction'] = dict(id=ident, by=source, score=1.0, reason=(reason or '').strip() or ('用户指定' if source == 'user' else '外部 agent 指定'),
-                                      dirs=ids, basis=classify.basis(j), unclear=False)
-                self.save(c, j)
-        return len(rows)
-
-    def start_run(self, demo=False):
-        with self.start_lock:
-            if self.run_lock.locked() or self.search_thread and self.search_thread.is_alive():
-                raise Error('本轮已在运行')
-            if not self.is_running():
-                raise Error('活动已暂停或停止，先恢复再运行')
-            if not demo: self.search_config()
-            self.search_thread = threading.Thread(target=self.run, kwargs={'demo': demo}, daemon=True)
-            self.search_thread.start()
-
-    def search_config(self):
-        """Config for a real search: explicit keywords win, else the orientation's terms; neither is an error (no built-in default terms)."""
-        with self.tx() as c:
-            cfg, orientation = self.meta(c, 'config'), self.meta(c, 'orientation')
-        if self.channel is not None or cfg.get('keywords') or cfg.get('search_terms') or cfg.get('keyword'):
-            return cfg
-        terms = (orientation or {}).get('terms')
-        if not terms: raise Error('请先确定方向或填写关键词')
-        return dict(cfg, keywords=list(terms))
-
-    def run(self, demo=False):
-        search = None if demo else self.search_config()  # raises before the lock; reused below
-        if not self.run_lock.acquire(False):
-            raise Error('本轮已在运行')
-        run = dict(id=uuid.uuid4().hex, started_at=now(), kind='fixture' if demo else 'real_discovery', discovered=0,
-                   duplicates=0, imported=0, prepared=0, applicable=0, verified_submissions=0, failures=[], status='running', user_interventions=0)
-        try:
-            with self.tx() as c:
-                cfg = self.meta(c, 'config')
-                candidate = self.meta(c, 'candidate')
-                if self.meta(c, 'control') != 'running':
-                    raise Error('活动已暂停或停止，先恢复再运行')
-            if demo:
-                if not self.is_demo:
-                    raise Error('合成夹具仅允许在独立 --demo 数据目录运行')
-                items = [dict(title='Python 数据工具工程师（合成夹具）',company='合成示例公司',location='深圳',jd='使用 Python 编写数据处理脚本。\n至少 3 年相关开发经验。\n熟悉 Kubernetes。',channel='fixture',platform_id='fixture-python',status='fixture')]
-            else:
-                with self.tx() as c:
-                    c.execute('INSERT INTO runs VALUES(?,?)', (run['id'], dumps(run)))
-                if self.channel is not None:
-                    items = self.channel.discover(limit=min(cfg['max_jobs'], 5), keyword=cfg['keyword'])
-                    if getattr(self.channel, 'last_discovery', None):
-                        run['discovery'] = self.channel.last_discovery
-                else:
-                    from .discovery import discover
-                    cfg = search
-                    def source_progress(report):
-                        run.setdefault('sources', []).append(copy.deepcopy(report))
-                        with self.tx() as connection:
-                            connection.execute('UPDATE runs SET data=? WHERE id=?', (dumps(run), run['id']))
-                    if cfg.get('sweep') is True and 'discovery_sources' not in cfg:
-                        from . import companies
-                        from .search.query import search_terms
-                        try:
-                            with self.tx() as c: extra = companies.encountered(c)
-                        except (ValueError, TypeError): extra = []
-                        cfg = dict(cfg, discovery_sources=companies.select(search_terms(cfg), cfg.get('sweep_max_companies', 300), extra,
-                                                                           families=self.chosen_families()))
-                    def known(item):
-                        # The identity import_job uses for discovered jobs, which always carry platform_id.
-                        if not item.get('platform_id'): return False
-                        with self.tx() as c:
-                            return c.execute('SELECT 1 FROM jobs WHERE identity=?', (item.get('channel', 'import') + ':' + str(item['platform_id']),)).fetchone() is not None
-                    result = discover(cfg, profile=build_profile(candidate, confirmed_only=True),
-                                      should_continue=self.is_running, browser_profile_root=self.root / 'browser-search',
-                                      on_source=source_progress, known=known)
-                    items = result['jobs']
-                    run['sources'] = result.get('sources', [])
-                    run['queries'] = result.get('queries', [])
-                    run['expanded_terms'] = result.get('expanded_terms', {})
-                    if result.get('entry_check'): run['entry_check'] = result['entry_check']
-                    if result.get('sweep'):
-                        run.update(sweep=result['sweep'], deadline_reached=result.get('deadline_reached', False))
-                    run['coverage_note'] = result.get('coverage_note', '仅覆盖本轮已配置来源与请求预算，不代表全网完整结果')
-            if not self.is_running():
-                with self.tx() as c:
-                    run['status'] = self.meta(c, 'control')
-            run['discovered'] = len(items)
-            sweep = run.get('sweep')
-            # A sweep imports everything it found but prepares only the first few new ones, in discovery order;
-            # duplicates take no slot, so a recurring sweep still reaches companies it has not seen.
-            fresh = 0
-            for item in items[:sweep['max_jobs']] if sweep else items[:cfg['max_jobs']]:
-                with self.tx() as c:
-                    if self.meta(c, 'control') != 'running':
-                        run['status'] = self.meta(c, 'control')
-                        break
-                try:
-                    j, duplicate = self.import_job(item)
-                    run['duplicates'] += int(duplicate)
-                    run['imported'] += 1
-                    slot = not sweep or not duplicate and fresh < sweep['prepare']
-                    fresh += int(not duplicate)
-                    if slot and j['status'] not in LOCKED | {'rejected', 'approved'}:
-                        j = self.prepare(j['id'])
-                        run['prepared'] += 1
-                        run['applicable'] += int(not j['package'].get('blockers') and not synthetic_profile(candidate) and cfg['targets_confirmed'] and j['channel']=='anker' and not any(x.get('status') == 'not_met' for x in j['match'].get('hard', [])))
-                except Exception as e:
-                    run['failures'].append(str(e))
-            try:
-                run.update(self.classify_run())
-            except Exception as e:
-                run['failures'].append('岗位归类失败：%s' % e)
-            if run['status'] == 'running':
-                failed_sources = [s for s in run.get('sources', []) if s.get('status') not in ('ok', 'success', 'completed', 'empty', 'filtered_empty') or s.get('truncated')]
-                if run.get('deadline_reached'): run['truncated'] = True
-                run['status'] = 'partial' if run.get('deadline_reached') else ('partial' if items else 'blocked') if failed_sources else ('empty' if not items else 'completed')
-                if run['failures']:
-                    run['status'] = 'partial' if run['prepared'] or sweep and run['imported'] else 'failed'
-        except Exception as e:
-            run.update(status='failed', failures=run['failures'] + [str(e)])
-        finally:
-            run['finished_at'] = now()
-            with self.tx() as c:
-                run['user_interventions'] = c.execute('SELECT COUNT(*) FROM interventions WHERE json_extract(data,\'$.time\')>=?',(run['started_at'],)).fetchone()[0]
-                c.execute('INSERT OR REPLACE INTO runs VALUES(?,?)', (run['id'], dumps(run)))
-            self.run_lock.release()
-        return run
-
-    def review(self, payload):
-        ids = payload.get('job_ids', [])
-        if not ids or len(ids) != len(set(ids)) or len(ids) > 5:
-            raise Error('每组明确选择 1 至 5 个不同岗位')
-        decision = payload.get('decision')
-        if decision not in ('approve', 'reject'):
-            raise Error('无效审核决定')
-        permissions = payload.get('permissions', [])
-        if not isinstance(permissions, list) or set(permissions) - {'input', 'upload', 'submit'}:
-            raise Error('权限类型无效')
-        hours = float(payload.get('expires_hours', 24))
-        if not 0 < hours <= 72:
-            raise Error('批准有效期必须在 0 至 72 小时以内')
-        limit = int(payload.get('limit', len(ids)))
-        if not 1 <= limit <= len(ids):
-            raise Error('额度必须小于等于本组岗位数')
-        with self.tx() as c:
-            candidate, cfg = self.meta(c,'candidate'), self.meta(c,'config')
-            plan_hash=payload.get('browser_plan_hash','')
-            if plan_hash and (len(plan_hash)!=64 or any(x not in '0123456789abcdef' for x in plan_hash)):
-                raise Error('执行计划 SHA-256 格式无效')
-            group = uuid.uuid4().hex
-            for jid in ids:
-                j = self.job(c, jid)
-                if j['status'] in LOCKED or j['status'] == 'rejected':
-                    raise Error('该岗位已锁定；不能用审核重置拒绝或执行状态')
-                p = j.get('package')
-                if not p:
-                    raise Error('先生成并审阅最终材料')
-                current = self.snapshot(candidate,cfg,j,p)
-                if current != p['snapshot'] or payload.get('snapshots', {}).get(jid) != current:
-                    raise Error('快照已变化或缺少具体快照，请重新准备并审核')
-                if decision == 'approve' and (p.get('blockers') or any(x.get('status')=='not_met' for x in j['match'].get('hard',[]))):
-                    raise Error('缺少必填事实或明确不符合硬条件，不能批准对外操作')
-                if decision == 'approve' and j['channel'] != 'anker':
-                    raise Error('此渠道当前仅支持岗位发现和审核，不具备可批准的申请执行器')
-                if decision == 'approve' and p.get('gaps') and payload.get('acknowledge_gaps') is not True:
-                    raise Error('请明确确认已阅读匹配缺口；确认不能补齐缺失事实')
-                j['status'] = 'approved' if decision == 'approve' else 'rejected'
-                j['approval'] = dict(group=group, snapshot=current, decision=decision, permissions=permissions,
-                    expires_at=(datetime.now(timezone.utc)+timedelta(hours=hours)).isoformat(),limit=limit,
-                    job_ids=ids, recipient=j['url'], disclosure='application', browser_plan_hash=plan_hash, created_at=now())
-                j['next_action'] = '在授权范围内执行；仍受活动额度和站点能力约束' if decision=='approve' else '已拒绝，不再自动处理'
-                self.event(j, 'reviewed', '用户'+('批准' if decision=='approve' else '拒绝')+'当前具体快照')
-                self.intervene(c, '申请快照审核：'+decision, jid)
-                self.save(c,j)
-
-    def execute(self, jid):
-        # Read-only refresh happens before entering the serialized outbound gateway.
-        with self.tx() as c:
-            j = self.job(c,jid)
-            if j['status'] in LOCKED:
-                raise Error('已发送、执行中或结果未知；禁止重复提交')
-            if j['channel'] != 'anker':
-                raise Error('该渠道没有真实执行适配；合成夹具永不进入真实申请')
-            candidate = self.meta(c,'candidate')
-            if synthetic_profile(candidate):
-                raise Error('合成候选人禁止外传')
-        channel = self.channel
-        if channel is None:
-            from .anker import Anker
-            channel=Anker()
-        fresh=channel.detail(j['platform_id'])
-        if fresh.get('status') != 'open' or str(fresh.get('platform_id')) != str(j['platform_id']):
-            raise Error('岗位状态或身份未通过重新核验')
-        if any(fresh.get(key)!=j.get(key) for key in ('jd','title','url','company','location','salary','requirements_text','application_url')) or fresh.get('questions',[])!=j.get('questions',[]):
-            raise Error('岗位内容已变化，需重新导入与审核')
-        with self.tx() as c:
-            j=self.job(c,jid)
-            candidate,cfg=self.meta(c,'candidate'),self.meta(c,'config')
-            if synthetic_profile(candidate):
-                raise Error('合成候选人禁止外传')
-            a,p=j.get('approval'),j.get('package')
-            if self.meta(c,'control') != 'running':
-                raise Error('活动已暂停或停止')
-            if j['status'] in LOCKED or j['status']=='rejected':
-                raise Error('该岗位已锁定')
-            if not a or a['decision']!='approve' or datetime.fromisoformat(a['expires_at'])<=datetime.now(timezone.utc):
-                raise Error('缺少有效批准或批准已过期')
-            if a['snapshot']!=self.snapshot(candidate,cfg,j,p) or a['snapshot']!=p['snapshot']:
-                raise Error('事实、材料或披露范围已改变，旧批准失效')
-            if set(a['permissions']) != {'input','upload','submit'}:
-                raise Error('尚未授权该接收方的输入、上传和最终提交')
-            if not cfg['targets_confirmed'] or cfg['submission_limit']<=0:
-                raise Error('确认求职范围并明确设置真实提交额度后才能执行')
-            count=c.execute("SELECT COUNT(*) FROM attempts WHERE state IN ('sending','unknown','submitted')").fetchone()[0]
-            if count>=cfg['submission_limit']:
-                raise Error('真实提交额度已耗尽')
-            for old in c.execute('SELECT state FROM attempts WHERE job_id=?',(jid,)):
-                if old[0] not in ('not_sent',):
-                    raise Error('历史结果未证实未发送，禁止重试')
-            used=0
-            for row in c.execute('SELECT data FROM attempts'):
-                old=json.loads(row[0])
-                used+=int(old.get('group')==a['group'] and old['state']!='not_sent')
-            if used>=a['limit']:
-                raise Error('本组批准额度已用完')
-            if self.executor is None:
-                self.intervene(c,'需启动已授权的真实浏览器执行器',jid)
-                raise Error('真实浏览器执行器未连接；请见渠道能力与运行说明，未发起外传')
-            attempt=dict(id=uuid.uuid4().hex,job_id=jid,state='sending',group=a['group'],snapshot=a['snapshot'],started_at=now())
-            c.execute('INSERT INTO attempts VALUES(?,?,?,?)',(attempt['id'],jid,'sending',dumps(attempt)))
-            j.update(status='sending',next_action='正在执行；中断后先查证')
-            self.event(j,'intent','对外动作意图已持久化')
-            self.save(c,j)
-        try:
-            result=self.executor.execute(j,p,a,lambda:self.can_continue(jid,a['snapshot']))
-        except BaseException as e:
-            result=dict(state='unknown',reason=str(e))
-        if not isinstance(result,dict):
-            result=dict(state='unknown',reason='执行器返回结构无效；禁止自动重发')
-        state=result.get('state','unknown')
-        if state not in ('not_sent','submitted','unknown'):
-            state='unknown'
-        if state=='not_sent' and (result.get('submit_attempted') is not False or result.get('phase') not in ('preflight','input','upload')):
-            state='unknown'
-        receipt=result.get('receipt')
-        if isinstance(receipt,dict):
-            try:
-                receipt_time=datetime.fromisoformat(receipt.get('time',''))
-                valid_receipt_time=receipt_time.tzinfo is not None and datetime.fromisoformat(attempt['started_at'])-timedelta(seconds=1)<=receipt_time<=datetime.now(timezone.utc)+timedelta(minutes=1)
-            except (TypeError,ValueError): valid_receipt_time=False
-        else: valid_receipt_time=False
-        if state=='submitted' and not (valid_receipt_time and isinstance(receipt.get('evidence'),str) and receipt['evidence'].strip() and isinstance(receipt,dict) and receipt.get('platform_id')==j['platform_id'] and receipt.get('evidence') and receipt.get('time') and receipt.get('kind') in ('application_record','application_number','explicit_success_page')):
-            state='unknown'
-        with self.tx() as c:
-            attempt.update(state=state,updated_at=now(),result=result)
-            c.execute('UPDATE attempts SET state=?,data=? WHERE id=?',(state,dumps(attempt),attempt['id']))
-            j=self.job(c,jid)
-            j.update(status='approved' if state=='not_sent' else state,next_action='核对站点申请记录' if state=='unknown' else '等待招聘反馈' if state=='submitted' else result.get('reason','已证实未发送，可恢复'))
-            self.event(j,state,j['next_action'],receipt)
-            self.save(c,j)
-        return dict(result,state=state)
-
-    def can_continue(self,jid,snapshot):
-        with self.tx() as c:
-            if self.meta(c,'control')!='running': return False
-            j=self.job(c,jid)
-            a,p=j.get('approval'),j.get('package')
-            if not a or not p or a['decision']!='approve' or a['snapshot']!=snapshot: return False
-            if datetime.fromisoformat(a['expires_at'])<=datetime.now(timezone.utc): return False
-            return j['status']=='sending' and self.snapshot(self.meta(c,'candidate'),self.meta(c,'config'),j,p)==snapshot
-
     def is_running(self):
         with self.tx() as c:
             return self.meta(c,'control')=='running'
 
-    def save_entry_check(self, original, check):
-        """A page observation cannot change the recipient, material or approval."""
-        with self.tx() as c:
-            job = self.job(c, original['id'])
-            if any(job.get(k) != original.get(k) for k in ('url','application_url','title','platform_id')):
-                raise Error('核验期间岗位已更新，请重新核验当前入口')
-            if not isinstance(job.get('raw'), dict): job['raw'] = {}
-            route = job['raw'].setdefault('application_route', {})
-            previous = route.get('entry_check')
-            if previous:
-                route['entry_check_history'] = (route.get('entry_check_history', []) + [previous])[-5:]
-            route['entry_check'] = check
-            self.event(job, 'entry_checked', '只读核验申请入口；未填写、上传或投递', dict(status=check['status'], method=check['method']))
-            self.save(c, job)
+    def set_control(self, value):
+        if value not in ('running','paused','stopped'): raise Error('活动状态无效')
+        with self.tx() as c: self.setmeta(c,'control',value)
 
-    def start_entry_verification(self, job_id):
-        from .moka_session import MokaVerifier, entry_identity
-        with self.tx() as c: job = self.job(c, job_id)
-        entry_identity(job.get('application_url') or job['url'])
-        with self.entry_lock:
-            if any(v['status'] in ('opening','awaiting_login','checking') for v in self.entry_verifications.values()):
-                raise Error('已有核验窗口，请先完成或关闭它')
-            finish, cancel = threading.Event(), threading.Event()
-            self.entry_signals[job_id] = (finish, cancel)
-            self.entry_verifications[job_id] = dict(status='opening', message='正在打开独立核验窗口。')
-        def progress(status, message, check=None):
-            with self.entry_lock:
-                self.entry_verifications[job_id] = dict(status=status, message=message, check=check)
-        def run():
-            try:
-                with MokaVerifier(self.root / 'browser-entry', job) as browser:
-                    check = browser.run(finish, cancel, progress)
-                self.save_entry_check(job, check)
-                progress('complete', '入口核验完成；未投递。', check)
-            except Exception as error:
-                status = 'cancelled' if getattr(error, 'status', None) == 'cancelled' else 'failed'
-                progress(status, str(error) if isinstance(error, (ValueError, Error)) else '核验未完成：' + type(error).__name__)
-            finally:
-                with self.entry_lock:
-                    if self.entry_signals.get(job_id) == (finish,cancel):
-                        self.entry_signals.pop(job_id, None)
-        threading.Thread(target=run, daemon=True).start()
+    def save_config(self, config):
+        cfg=validate_config(config)
+        with self.tx() as c: self.setmeta(c,'config',cfg); self.intervene(c,'更新求职范围')
 
-    def _ai(self, c):
-        settings, consent = llm.load_settings(self.root), self.meta(c, 'ai_consent')
-        stored_host = llm.key_host(self.root)
-        hint = llm.key_hint(self.root) if llm.load_key(self.root, llm.host(settings)) else None
-        current = any(llm.consent_ok(consent, settings, k) for k in llm.KINDS)
-        # Not the key: only its last four characters ever leave this module.
-        return dict(settings=settings, key_hint=hint, key_host=stored_host, key_mismatch=bool(stored_host and not hint), consent=consent, consent_current=current,
-                    active=bool(hint and current))
-
-    def ai_settings(self):
-        with self.tx() as c:
-            return self._ai(c)
-
-    def save_ai_settings(self, payload):
-        data = {k: payload[k] for k in llm.DEFAULTS if k in payload}
-        try:
-            settings = llm.clean_settings(dict(llm.load_settings(self.root), **data))
-            key = payload.get('api_key')
-            if key is not None and not isinstance(key, str): raise ValueError('密钥格式无效')
-            if key and key.strip() and not network.BEARER.fullmatch(key.strip()): raise ValueError('密钥格式无效')
-            # Settings first: a failing key write then leaves the old key bound to its old host, which is inert.
-            llm.save_settings(self.root, settings)
-            if key and key.strip(): llm.save_key(self.root, key, llm.host(settings))
-        except ValueError as e: raise Error(str(e)) from None
-        except OSError: raise Error('无法写入模型设置或密钥，请检查数据目录权限') from None
-        with self.tx() as c: self.intervene(c, '更新模型服务设置')
-        return self.ai_settings()
-
-    def grant_ai_consent(self, payload):
-        kinds = payload.get('kinds')
-        if not isinstance(kinds, list) or not kinds or any(k not in llm.KINDS for k in kinds):
-            raise Error('请选择要发送给模型服务的内容类别')
-        settings = llm.load_settings(self.root)
-        # The UI shows host and model when asking; a stale page must not grant consent for a different pair.
-        if payload.get('host', llm.host(settings)) != llm.host(settings) or payload.get('model', settings['model']) != settings['model']:
-            raise Error('模型服务或模型已变化，请刷新后重新确认')
-        consent = dict(host=llm.host(settings), model=settings['model'], kinds=[k for k in llm.KINDS if k in kinds], granted_at=now())
-        with self.tx() as c:
-            self.setmeta(c, 'ai_consent', consent); self.intervene(c, '同意向模型服务发送所选内容')
-        return self.ai_settings()
-
-    def revoke_ai_consent(self):
-        with self.tx() as c:
-            self.setmeta(c, 'ai_consent', None); self.intervene(c, '撤销模型服务同意')
-        return self.ai_settings()
+    def import_and_prepare(self, payload):
+        data=dict(payload)
+        if not data.get('jd') and data.get('url'):
+            from .network import fetch
+            from html.parser import HTMLParser
+            class Text(HTMLParser):
+                def __init__(self): super().__init__(); self.parts=[]; self.skip=0
+                def handle_starttag(self,t,a):
+                    if t in ('script','style'): self.skip+=1
+                def handle_endtag(self,t):
+                    if t in ('script','style'): self.skip=max(0,self.skip-1)
+                def handle_data(self,d):
+                    if not self.skip and d.strip(): self.parts.append(d.strip())
+            parser=Text(); parser.feed(fetch(data['url']).decode('utf-8',errors='replace'))
+            data['jd']='\n'.join(parser.parts)[:100000]
+            data['title']=data.get('title') or 'URL 导入岗位（标题待核对）'
+        j,_=self.import_job(data); self.prepare(j['id'])
 
     def action(self,payload):
-        action=payload.get('action')
-        if action=='run': self.start_run(demo=self.is_demo)
-        elif action=='demo': self.start_run(demo=True)
-        elif action=='ai_settings': self.save_ai_settings(payload)
-        elif action=='ai_consent': self.grant_ai_consent(payload)
-        elif action=='ai_revoke': self.revoke_ai_consent()
-        elif action=='resume_confirm': self.confirm_resume(payload)
-        elif action=='orient_questions': self.orient_questions()
-        elif action=='orient_answer': self.orient_answer(payload)
-        elif action=='directions_set': self.directions_set(payload)
-        elif action=='classify': self.classify(payload)
-        elif action=='entry_verify': self.start_entry_verification(payload['job_id'])
-        elif action in ('entry_finish', 'entry_cancel'):
-            with self.entry_lock:
-                signals = self.entry_signals.get(payload['job_id'])
-                if not signals: raise Error('核验窗口已结束')
-                signals[0 if action == 'entry_finish' else 1].set()
-        elif action=='import':
-            data=dict(payload)
-            if not data.get('jd') and data.get('url'):
-                from .network import fetch
-                from html.parser import HTMLParser
-                class Text(HTMLParser):
-                    def __init__(self): super().__init__(); self.parts=[]; self.skip=0
-                    def handle_starttag(self,t,a):
-                        if t in ('script','style'): self.skip+=1
-                    def handle_endtag(self,t):
-                        if t in ('script','style'): self.skip=max(0,self.skip-1)
-                    def handle_data(self,d):
-                        if not self.skip and d.strip(): self.parts.append(d.strip())
-                parser=Text(); parser.feed(fetch(data['url']).decode('utf-8',errors='replace'))
-                data['jd']='\n'.join(parser.parts)[:100000]
-                data['title']=data.get('title') or 'URL 导入岗位（标题待核对）'
-            j,_=self.import_job(data); self.prepare(j['id'])
-        elif action=='prepare': self.prepare(payload['job_id'])
-        elif action=='review_materials': self.review_materials(payload)
-        elif action=='review': self.review(payload)
-        elif action=='execute': self.execute(payload['job_id'])
-        elif action=='control':
-            if payload.get('value') not in ('running','paused','stopped'): raise Error('活动状态无效')
-            with self.tx() as c: self.setmeta(c,'control',payload['value'])
-        elif action=='config':
-            cfg=dict(DEFAULT_CONFIG,**payload.get('config',{}))
-            if not isinstance(cfg['cities'],list) or len(cfg['cities'])>20 or any(not isinstance(x,str) or len(x)>100 for x in cfg['cities']) or not 1<=int(cfg['max_jobs'])<=50 or not 1<=float(cfg['interval_minutes'])<=10080 or not 0<=int(cfg['submission_limit'])<=5:
-                raise Error('每轮准备 1-50 岗、间隔至少 1 分钟、提交额度 0-5')
-            cfg['max_jobs']=int(cfg['max_jobs']);cfg['submission_limit']=int(cfg['submission_limit'])
-            if type(cfg['targets_confirmed']) is not bool: raise Error('需要明确确认目标')
-            if type(cfg.get('official_only', False)) is not bool: raise Error('官网模式必须为明确的开关')
-            if any(type(cfg.get(k, False)) is not bool for k in ('check_entries', 'official_browser')): raise Error('入口核验与公开渲染必须为开关')
-            if type(cfg.get('liepin_cards', False)) is not bool: raise Error('猎聘只读卡片必须为开关')
-            if type(cfg.get('sweep', False)) is not bool: raise Error('大范围搜索必须为开关')
-            for key, low, high in (('sweep_max_companies', 1, 1000), ('sweep_max_jobs', 1, 5000), ('sweep_requests', 1, 10000),
-                                   ('sweep_deadline_seconds', 30, 3600), ('sweep_prepare', 0, 200), ('sweep_max_pages', 1, 50)):
-                if key in cfg and (type(cfg[key]) is not int or not low <= cfg[key] <= high):
-                    raise Error('大范围搜索参数 %s 必须是 %d 至 %d 的整数' % (key, low, high))
-            if cfg.get('browser_channel') not in (None, 'chrome'): raise Error('仅支持默认 Chromium 或 Google Chrome')
-            if not isinstance(cfg.get('keyword'),str) or len(cfg['keyword'])>100:
-                raise Error('岗位关键词最长 100 字符')
-            keywords=cfg.get('keywords',[])
-            if not isinstance(keywords,list) or len(keywords)>8 or any(not isinstance(q,str) or not q.strip() or len(q)>100 for q in keywords):
-                raise Error('设置 0-8 个岗位搜索词，每个不超过 100 字符')
-            sources=cfg.get('sources',[])
-            if not isinstance(sources,list) or not sources or any(not isinstance(s,str) for s in sources) or len(sources)!=len(set(sources)) or set(sources)-{'boss','liepin','anker','greenhouse','lever','ashby','website'}:
-                raise Error('请选择支持的搜索渠道')
-            boards=cfg.get('company_boards',[])
-            if not isinstance(boards,list) or len(boards)>20:
-                raise Error('公司官网配置最多 20 个')
-            sources=cfg.get('discovery_sources')
-            if sources is not None:
-                cap=cfg.get('sweep_max_companies',300) if cfg.get('sweep') else 20
-                if not isinstance(sources,list) or len(sources)>cap or any(not isinstance(s,dict) for s in sources):
-                    raise Error('搜索来源 discovery_sources 必须是对象数组，最多 %d 个' % cap)
-            import re
-            from .network import validate_url
-            for board in boards:
-                if isinstance(board,dict) and board.get('type')=='website':
-                    validate_url(board.get('url'))
-                    continue
-                if not isinstance(board,dict) or board.get('type') not in ('greenhouse','lever','ashby') or not re.fullmatch(r'[A-Za-z0-9_-]{1,100}',str(board.get('slug',''))) or len(str(board.get('company','')))>200:
-                    raise Error('官网需填写平台、公司标识和名称')
-            cfg['max_pages']=int(cfg.get('max_pages',2))
-            if not 1<=cfg['max_pages']<=5:
-                raise Error('每渠道每关键词最多 1-5 页')
-            cfg['keywords']=list(dict.fromkeys(q.strip() for q in keywords))
-            modes=cfg.get('source_modes',{})
-            if not isinstance(modes,dict) or set(modes)-{'boss','liepin'} or any(v not in ('public','browser') for v in modes.values()):
-                raise Error('采集模式仅支持公开读取或独立浏览器')
-            provider=cfg.get('search_provider')
-            if provider:
-                if not isinstance(provider,dict) or provider.get('provider')!='searxng':
-                    raise Error('通用搜索目前支持 SearXNG JSON 接口')
-                validate_url(provider.get('url'))
-            # Local profile roots are fixed by the runner, never accepted from requests.
-            cfg.pop('browser_profile_root',None)
-            with self.tx() as c: self.setmeta(c,'config',cfg); self.intervene(c,'更新求职范围')
-        elif action=='candidate':
-            candidate=payload.get('candidate')
-            if not isinstance(candidate,dict) or not isinstance(candidate.get('facts'),list): raise Error('候选资料需包含 facts 数组')
-            ids=set()
-            for f in candidate['facts']:
-                if not isinstance(f,dict) or not all(k in f for k in ('id','text','source','status','version','disclosure')) or not isinstance(f['id'],str) or f['id'] in ids or not isinstance(f['source'],dict): raise Error('事实需唯一 ID、原文、来源、状态、版本和披露范围')
-                if f['source'].get('kind')=='generated' or f['source'].get('kind')=='draft': raise Error('生成草稿不能作为事实源')
-                ids.add(f['id'])
-            if synthetic_profile(candidate):
-                candidate['synthetic']=True
-            with self.tx() as c:
-                candidate['version']=int(self.meta(c,'candidate').get('version',0))+1
-                self.setmeta(c,'candidate',candidate);self.intervene(c,'本地导入候选事实')
-                for row in c.execute('SELECT data FROM jobs').fetchall():
-                    job=json.loads(row[0])
-                    if job['status'] not in LOCKED | {'rejected'}:
-                        job.update(status='new',package=None,approval=None,match=None,recommendation=None,next_action='候选资料已更新，需重新准备和审核')
-                        self.save(c,job)
-        elif action=='event':
-            kind=payload.get('kind')
-            if kind not in ('note','followup_draft','interview','reply','chat_sent','hr_read'): raise Error('事件类型无效；不能手工注入申请成功')
-            if kind in ('chat_sent','hr_read','reply') and not payload.get('evidence'): raise Error('需要对应事件的证据')
-            with self.tx() as c:
-                j=self.job(c,payload['job_id']);self.event(j,kind,str(payload.get('note','')),payload.get('evidence'));self.save(c,j)
-        else: raise Error('未知操作')
+        name=payload.get('action')
+        handler=ACTIONS.get(name) if isinstance(name,str) else None
+        if not handler: raise Error('未知操作')
+        handler(self,payload)
         return self.state()
+
+
+# Action name -> handler(store, payload). The names are the HTTP API of /api/action; keep them stable.
+ACTIONS = {
+    'run': lambda s, p: s.start_run(demo=s.is_demo),
+    'demo': lambda s, p: s.start_run(demo=True),
+    'ai_settings': lambda s, p: s.save_ai_settings(p),
+    'ai_consent': lambda s, p: s.grant_ai_consent(p),
+    'ai_revoke': lambda s, p: s.revoke_ai_consent(),
+    'resume_confirm': lambda s, p: s.confirm_resume(p),
+    'orient_questions': lambda s, p: s.orient_questions(),
+    'orient_answer': lambda s, p: s.orient_answer(p),
+    'directions_set': lambda s, p: s.directions_set(p),
+    'classify': lambda s, p: s.classify(p),
+    'entry_verify': lambda s, p: s.start_entry_verification(p['job_id']),
+    'entry_finish': lambda s, p: s.signal_entry_verification(p['job_id'], finish=True),
+    'entry_cancel': lambda s, p: s.signal_entry_verification(p['job_id'], finish=False),
+    'import': lambda s, p: s.import_and_prepare(p),
+    'prepare': lambda s, p: s.prepare(p['job_id']),
+    'review_materials': lambda s, p: s.review_materials(p),
+    'review': lambda s, p: s.review(p),
+    'execute': lambda s, p: s.execute(p['job_id']),
+    'control': lambda s, p: s.set_control(p.get('value')),
+    'config': lambda s, p: s.save_config(p.get('config',{})),
+    'candidate': lambda s, p: s.import_candidate(p.get('candidate')),
+    'event': lambda s, p: s.add_event(p),
+}
