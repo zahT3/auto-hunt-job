@@ -8,6 +8,7 @@ import json
 import tempfile
 import threading
 import unittest
+from unittest.mock import patch
 from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
@@ -470,6 +471,31 @@ class HttpTests(CoreCase):
         headers = {'X-Local-Token': self.token, 'Content-Type': 'application/json'}
         self.assertEqual(self.request('POST', '/api/action', body, headers)[0], 200)
         self.assertFalse(self.store.is_running())
+
+    def test_es_module_route_serves_only_js_files_inside_static_js(self):
+        from hunt import server
+        with tempfile.TemporaryDirectory() as tmp:
+            static = Path(tmp) / 'static'
+            (static / 'js' / 'views').mkdir(parents=True)
+            (static / 'js' / 'views' / 'search.js').write_text('export const view = 1;\n')
+            (static / 'js' / 'x.py').write_text('print(1)\n')
+            (static / 'core.py').write_text('secret = 1\n')
+            (static / 'outside.js').write_text('export const leaked = 1;\n')
+            (static / 'js' / 'link.js').symlink_to(static / 'outside.js')
+            with patch.object(server, 'STATIC', static):
+                connection = http.client.HTTPConnection('127.0.0.1', self.port, timeout=5)
+                try:
+                    connection.request('GET', '/js/views/search.js')
+                    response = connection.getresponse()
+                    self.assertEqual((response.status, response.getheader('Content-Type'), response.read()),
+                                     (200, 'text/javascript; charset=utf-8', b'export const view = 1;\n'))
+                finally:
+                    connection.close()
+                for path in ('/js/../core.py', '/js/x.py', '/js/missing.js', '/js/link.js', '/js/../outside.js', '/js/', '/js/views'):
+                    self.assertEqual(self.request('GET', path)[0], 404, path)
+                self.assertEqual(self.request('GET', '/js/views/search.js', headers={'Host': 'attacker.invalid'})[0], 403)
+                self.assertEqual(self.request('GET', '/js/views/search.js', headers={'Origin': 'https://attacker.invalid'})[0], 403)
+                self.assertEqual(self.request('GET', '/app.js')[0], 404)  # the legacy route reads static/app.js, absent here
 
     def test_export_route_and_traversal(self):
         job = self.prepared()

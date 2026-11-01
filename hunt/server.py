@@ -56,6 +56,12 @@ def make_server(store, port=8766):
                 return self.send(200,file.read_bytes(),mimetypes.guess_type(file.name)[0] or 'application/octet-stream')
             # same-origin, not no-referrer: under no-referrer Chrome sends "Origin: null" on the reset form post, which cannot be told from a sandboxed attacker.
             if path=='/bookmarklets': return self.send(200,bookmarklets.page(self.server.server_port,inbox_token[0],token).encode(),'text/html; charset=utf-8',extra=(('Referrer-Policy','same-origin'),))
+            if path.startswith('/js/'):
+                # ES modules: only existing .js files that resolve inside static/js (no traversal, no symlink out).
+                base=(STATIC/'js').resolve(); file=(STATIC/path[1:]).resolve()
+                if path.endswith('.js') and base in file.parents and file.is_file():
+                    return self.send(200,file.read_bytes(),'text/javascript; charset=utf-8')
+                return self.send(404,{'error':'不存在的路由'})
             assets={'/':'index.html','/index.html':'index.html','/app.js':'app.js','/styles.css':'styles.css','/style.css':'style.css'}
             if path in assets:
                 file=STATIC/assets[path]
