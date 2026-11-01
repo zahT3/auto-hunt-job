@@ -1,0 +1,2 @@
+-r requirements-executor.txt
+patchright==1.64.3

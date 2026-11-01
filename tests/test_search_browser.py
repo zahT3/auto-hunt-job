@@ -24,17 +24,33 @@ class SearchBrowserTests(unittest.TestCase):
             self.assertEqual(seen[-1][1], root, argv)
         self.assertEqual(sb.DEFAULT_DATA, Path(sb.__file__).resolve().parent.parent / 'private' / 'app')
 
-    def test_driver_is_patchright_when_installed_else_playwright(self):
-        from unittest.mock import patch
-        from hunt.sources_browser import _sync_playwright
+    def test_driver_is_patchright_when_installed(self):
+        from hunt.sources_browser import _driver
         try:
             import patchright.sync_api as patched
         except ImportError:
             self.skipTest('Optional Patchright is not installed')
-        import playwright.sync_api as plain
-        self.assertIs(_sync_playwright(), patched.sync_playwright)
-        with patch.dict('sys.modules', {'patchright.sync_api': None}):
+        self.assertEqual(_driver(), ('patchright', patched.sync_playwright))
+
+    def test_driver_falls_back_to_playwright_without_patchright(self):
+        from unittest.mock import patch
+        from hunt.sources_browser import _driver, _sync_playwright
+        try:
+            import playwright.sync_api as plain
+        except ImportError:
+            self.skipTest('Optional Playwright is not installed')
+        with patch.dict('sys.modules', {'patchright': None, 'patchright.sync_api': None}):
+            self.assertEqual(_driver(), ('playwright', plain.sync_playwright))
             self.assertIs(_sync_playwright(), plain.sync_playwright)
+
+    def test_patchright_is_an_optional_platform_dependency(self):
+        root = Path(__file__).resolve().parent.parent
+        executor = (root / 'requirements-executor.txt').read_text()
+        platform = (root / 'requirements-platform.txt').read_text().splitlines()
+        self.assertNotIn('patchright', executor)
+        self.assertIn('playwright==', executor)
+        self.assertEqual(platform[0], '-r requirements-executor.txt')
+        self.assertTrue(any(line.startswith('patchright==') for line in platform))
 
     def test_delayed_blank_redirect_stops_once_instead_of_emitting_empty_html(self):
         try:

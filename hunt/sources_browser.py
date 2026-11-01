@@ -21,14 +21,23 @@ HOME = {'boss': 'https://www.zhipin.com/', 'liepin': 'https://www.liepin.com/'}
 HOSTS = {'boss': ('zhipin.com', 'bosszhipin.com'), 'liepin': ('liepin.com', 'lietou-static.com')}
 
 
-def _sync_playwright():
-    """Patchright when installed: it never turns on CDP's Runtime domain, which 猎聘 detects and answers by blanking every
-    tab, and it drops the navigator.webdriver flag. Same API as Playwright, which stays the fallback."""
+FALLBACK_NOTE = '未安装可选的 Patchright（requirements-platform.txt），改用 Playwright；登录后的猎聘页面可能白屏。'
+
+
+def _driver():
+    """('patchright', sync_playwright) when the optional Patchright is installed: it never turns on CDP's Runtime domain,
+    which 猎聘 detects and answers by blanking every tab, and it drops the navigator.webdriver flag. Same API as
+    Playwright, which stays the fallback."""
     try:
         from patchright.sync_api import sync_playwright
+        return 'patchright', sync_playwright
     except ImportError:
         from playwright.sync_api import sync_playwright
-    return sync_playwright
+        return 'playwright', sync_playwright
+
+
+def _sync_playwright():
+    return _driver()[1]
 
 
 def navigation_state(kind, url):
@@ -51,6 +60,7 @@ class BrowserReader:
         if kind not in HOME: raise SourceError('not_configured', '浏览器只读模式仅支持 BOSS 与猎聘')
         if channel not in (None, 'chrome'): raise SourceError('not_configured', '只支持默认 Chromium 或已安装的 Google Chrome')
         self.kind, self.headless, self.context, self.playwright, self.locked = kind, headless, None, None, False
+        self.driver = None
         self.channel = channel
         self.denied_requests = []
         self.profile_root = Path(profile_root) if profile_root else ROOT
@@ -61,7 +71,8 @@ class BrowserReader:
             raise SourceError('blocked', '此渠道的独立浏览器正在使用，请完成登录或等待当前扫描结束')
         self.locked = True
         try:
-            self.playwright = _sync_playwright()().start()
+            self.driver, start = _driver()
+            self.playwright = start().start()
             profile = self.profile_root / (self.kind + ('-chrome' if self.channel else ''))
             profile.mkdir(parents=True, exist_ok=True, mode=0o700)
             profile.chmod(0o700)
@@ -148,6 +159,7 @@ class BrowserReader:
             self.page.wait_for_timeout(100)
         navigation_state(self.kind, self.page.url)
         print('窗口操作已结束；登录是否有效仍需只读搜索核验。')
+        if self.driver == 'playwright': print(FALLBACK_NOTE)
 
     def __exit__(self, *args):
         try:

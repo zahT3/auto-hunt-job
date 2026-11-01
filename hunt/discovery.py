@@ -533,6 +533,12 @@ def discover(config, profile=None, transport=None, *, browser_profile_root=None,
         if denied:
             tally = Counter((d['method'], d['url'], d.get('why')) for d in denied)
             report['blocked_requests'] = [dict(method=m, url=u, why=w, count=n) for (m, u, w), n in tally.most_common(20)]
+        driver = getattr(context, 'driver', None)
+        if driver:
+            report['browser_driver'] = driver
+            if driver == 'playwright':
+                from .sources_browser import FALLBACK_NOTE
+                report['browser_note'] = FALLBACK_NOTE
         report['elapsed_seconds'] = round(clock() - began, 2)
 
     def scan(group):

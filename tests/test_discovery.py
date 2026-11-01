@@ -184,6 +184,22 @@ class DiscoveryTests(unittest.TestCase):
         plain = discover(dict(sources=['liepin'], keywords=['AI']), transport=lambda *a, **k: b'<html><body>x</body></html>')
         self.assertNotIn('blocked_requests', plain['sources'][0])
 
+    def test_browser_report_names_the_driver_and_notes_the_playwright_fallback(self):
+        from hunt.sources_browser import FALLBACK_NOTE
+        for driver in ('playwright', 'patchright'):
+            class Reader:
+                def __init__(self, *a, **k): self.driver, self.denied_requests = driver, []
+                def __enter__(self): return self
+                def __exit__(self, *a): pass
+                def read(self, url): return b'<html><body>no cards</body></html>'
+            with patch('hunt.sources_browser.BrowserReader', Reader):
+                report = discover(dict(sources=['liepin'], source_modes={'liepin': 'browser'}, keywords=['AI']),
+                                  transport=lambda *a, **k: self.fail('no plain fetch'))['sources'][0]
+            self.assertEqual(report['browser_driver'], driver)
+            self.assertEqual(report.get('browser_note'), FALLBACK_NOTE if driver == 'playwright' else None)
+        plain = discover(dict(sources=['liepin'], keywords=['AI']), transport=lambda *a, **k: b'<html><body>x</body></html>')
+        self.assertNotIn('browser_driver', plain['sources'][0])
+
     def test_browser_guard_names_why_it_cut_each_request(self):
         from hunt.sources_browser import BrowserReader
         def route(url, method):
