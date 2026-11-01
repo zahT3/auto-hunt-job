@@ -2,13 +2,13 @@ import json
 import tempfile
 import unittest
 from pathlib import Path
-from hunt.sources import public_url, SourceError
-from hunt.providers.domestic import embedded_json, moka_dom
-from hunt.entries import inspect, check_job, official_job_link
-from hunt.discovery import discover
-from hunt.network import FetchError
-from hunt.official_browser import read_request
-from hunt.core import Store
+from hunt.search.parse import public_url, SourceError
+from hunt.search.sources.domestic import embedded_json, moka_dom
+from hunt.search.entries import inspect, check_job, official_job_link
+from hunt.search.engine import discover
+from hunt.net.network import FetchError
+from hunt.search.official_browser import read_request
+from hunt.app.store import Store
 
 
 class OfficialTests(unittest.TestCase):
@@ -109,8 +109,8 @@ class OfficialTests(unittest.TestCase):
         self.assertEqual(len(calls),2);self.assertTrue(all(k.get('method','GET')=='GET' for _,k in calls))
 
     def test_recent_definite_entry_check_survives_lower_confidence_refresh(self):
-        from hunt.careers import preserve_entry_check
-        from hunt.sources import now
+        from hunt.search.sources.careers import preserve_entry_check
+        from hunt.search.parse import now
         url='https://jobs.lever.co/acme/one'
         old=dict(application_route=dict(entry_check=dict(url=url,status='not_found',checked_at=now())))
         incoming=dict(application_route=dict(entry_check=dict(url=url,status='needs_browser',checked_at=now())))

@@ -3,8 +3,8 @@ import unittest
 from pathlib import Path
 from unittest import mock
 
-from hunt.discovery import discover
-from hunt.providers import REGISTRY, route
+from hunt.search.engine import discover
+from hunt.search.sources import REGISTRY, route
 
 FIXTURES = Path(__file__).parent / 'fixtures' / 'providers'
 
@@ -41,7 +41,7 @@ def run(transport, **config):
 class MeituanTests(unittest.TestCase):
     def setUp(self):
         for name in ('PAUSE', 'BACKOFF'):
-            patch = mock.patch('hunt.providers.meituan.' + name, 0)
+            patch = mock.patch('hunt.search.sources.meituan.' + name, 0)
             patch.start(); self.addCleanup(patch.stop)
 
     def test_parses_page(self):

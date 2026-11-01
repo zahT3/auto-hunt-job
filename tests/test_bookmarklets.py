@@ -8,9 +8,9 @@ import unittest
 from pathlib import Path
 from urllib.parse import quote, unquote, urlencode
 
-from hunt import bookmarklets
-from hunt.core import Store
-from hunt.server import make_server
+from hunt.app import bookmarklets
+from hunt.app.store import Store
+from hunt.app.server import make_server
 
 NAMES = ('boss-zhipin', 'liepin', 'liepin-list', 'lagou', 'mokahr', 'universal')
 PORTED = ('boss-zhipin', 'liepin', 'lagou', 'mokahr', 'universal')  # liepin-list was written here

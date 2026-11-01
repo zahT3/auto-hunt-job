@@ -1,7 +1,7 @@
 """Application-owned fixture: no network, no account, no recruiting platform."""
 import unittest
-from hunt.official_browser import PublicRenderer
-from hunt.sources import SourceError
+from hunt.search.official_browser import PublicRenderer
+from hunt.search.parse import SourceError
 
 
 class OfficialBrowserTests(unittest.TestCase):

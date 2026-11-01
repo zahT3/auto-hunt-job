@@ -3,8 +3,8 @@ import unittest
 from pathlib import Path
 from urllib.parse import parse_qs, urlsplit
 
-from hunt.discovery import discover
-from hunt.providers import REGISTRY, route
+from hunt.search.engine import discover
+from hunt.search.sources import REGISTRY, route
 
 FIXTURES = Path(__file__).parent / 'fixtures' / 'providers'
 

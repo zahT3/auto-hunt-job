@@ -7,9 +7,9 @@ import unittest
 from pathlib import Path
 from unittest.mock import patch
 
-from hunt import menu
-from hunt.__main__ import main
-from hunt.core import Store
+from hunt.app import menu
+from hunt.app.cli import main
+from hunt.app.store import Store
 
 ITEMS = ['脱敏简历（resume_redacted）', '完整简历（resume_full）', '岗位原文（job_text）']
 DOWN, UP, SPACE, ENTER, ESC = curses.KEY_DOWN, curses.KEY_UP, ord(' '), 10, 27

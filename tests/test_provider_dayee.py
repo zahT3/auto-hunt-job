@@ -2,8 +2,8 @@ import json
 import unittest
 from urllib.parse import parse_qs, urlsplit
 
-from hunt.discovery import discover
-from hunt.providers import REGISTRY, route
+from hunt.search.engine import discover
+from hunt.search.sources import REGISTRY, route
 
 URL = 'https://crc.wintalent.cn/wt/crcbank/web/index?brandCode=1'
 

@@ -1,7 +1,7 @@
 import unittest
-from hunt.intake import analyze_resume
-from hunt.profile import build_profile, confirm_candidate
-from hunt.materials import accepted_facts
+from hunt.profile.intake import analyze_resume
+from hunt.profile.profile import build_profile, confirm_candidate
+from hunt.workbench.materials import accepted_facts
 
 
 class ProfileTests(unittest.TestCase):
@@ -52,7 +52,7 @@ class ProfileTests(unittest.TestCase):
 
 
     def test_recommend_uses_confirmed_local_facts_without_disclosure(self):
-        from hunt.profile import recommend
+        from hunt.profile.profile import recommend
         candidate = self.profile('工作经验：3年\n使用Python和RAG制作原型')['candidate']
         job = {'title': 'AI 应用开发', 'description': 'Python RAG Docker'}
         self.assertEqual(recommend(candidate, job)['priority'], 0)
@@ -98,7 +98,7 @@ class ProfileTests(unittest.TestCase):
 
     def test_malformed_or_duplicate_facts_do_not_create_recommendations(self):
         import copy
-        from hunt.profile import recommend
+        from hunt.profile.profile import recommend
         candidate = self.profile('Python')['candidate']
         candidate = confirm_candidate(candidate, [candidate['facts'][0]['id']])
         mutations = [
@@ -136,7 +136,7 @@ class ProfileTests(unittest.TestCase):
         confirmed = confirm_candidate(candidate, [f['id'] for f in candidate['facts']])
         profile = build_profile(confirmed, confirmed_only=True)
         self.assertTrue({'财务', '会计'} <= {s['name'] for s in profile['skills']})
-        from hunt import directions
+        from hunt.profile import directions
         families = {directions.get(d['id'])['family'] for d in profile['directions']}
         self.assertIn('人力行政财务法务', families)
         self.assertTrue(profile['suggested_queries'])
@@ -145,8 +145,8 @@ class ProfileTests(unittest.TestCase):
             self.assertTrue(item['fact_ids'])
 
     def test_skill_bridge_points_only_at_table_directions(self):
-        from hunt import directions
-        from hunt.profile import _SKILLS, _SKILL_DIRECTIONS
+        from hunt.profile import directions
+        from hunt.profile.profile import _SKILLS, _SKILL_DIRECTIONS
         known = {r['id'] for r in directions.load()}
         self.assertTrue(set(_SKILL_DIRECTIONS) <= set(_SKILLS))
         self.assertTrue({i for ids in _SKILL_DIRECTIONS.values() for i in ids} <= known)

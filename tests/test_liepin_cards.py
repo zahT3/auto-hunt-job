@@ -4,9 +4,10 @@ import unittest
 from pathlib import Path
 from unittest.mock import patch
 
-from hunt.core import Error, Store
-from hunt.discovery import discover, source_configs
-from hunt.sources import liepin_cards
+from hunt.app.store import Store
+from hunt.base import Error
+from hunt.search.engine import discover, source_configs
+from hunt.search.parse import liepin_cards
 
 SEARCH = 'https://www.liepin.com/zhaopin/?key=AI'
 
@@ -64,7 +65,7 @@ class Reader:
 
 
 def run(reader, **config):
-    with patch('hunt.sources_browser.BrowserReader', reader):
+    with patch('hunt.search.sources_browser.BrowserReader', reader):
         return discover(dict(dict(sources=['liepin'], source_modes={'liepin': 'browser'}, liepin_cards=True, keywords=['AI'],
                                   max_pages=2, check_entries=True), **config),
                         transport=lambda *a, **k: (_ for _ in ()).throw(AssertionError('plain request to 猎聘')))

@@ -5,7 +5,8 @@ import unittest
 from pathlib import Path
 from unittest.mock import patch
 
-from hunt.core import Error, Store, dumps
+from hunt.app.store import Store
+from hunt.base import Error, dumps
 
 
 class MaterialReviewTests(unittest.TestCase):

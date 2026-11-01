@@ -8,9 +8,9 @@ import tempfile
 import unittest
 from unittest.mock import Mock, patch
 
-from hunt import benchmark
-from hunt.__main__ import DEFAULT_DATA, main, parser
-from hunt.core import Store
+from hunt.search import benchmark
+from hunt.app.cli import DEFAULT_DATA, main, parser
+from hunt.app.store import Store
 
 
 COLLECTED = '2026-10-28T10:00:00+08:00'
@@ -302,7 +302,7 @@ class BenchmarkFileTests(unittest.TestCase):
 
     def test_default_report_uses_shanghai_date_and_records_provenance(self):
         fixed = datetime(2026, 10, 28, 0, 30, tzinfo=timezone(timedelta(hours=8)))
-        with patch('hunt.benchmark.datetime', wraps=datetime) as clock:
+        with patch('hunt.search.benchmark.datetime', wraps=datetime) as clock:
             clock.now.return_value = fixed
             result = self.run_jobs([])
             clock.now.assert_called_once_with(benchmark.SHANGHAI)
@@ -351,8 +351,8 @@ class BenchmarkFileTests(unittest.TestCase):
                 store.save(c, dict(imported, direction=dict(id=direction, by='user')))
         before = store.state()['jobs']
         output = self.root / 'reports' / 'cli.json'
-        with patch('hunt.network.fetch', side_effect=AssertionError('禁止联网')), \
-                patch('hunt.llm.chat_json', side_effect=AssertionError('禁止模型调用')):
+        with patch('hunt.net.network.fetch', side_effect=AssertionError('禁止联网')), \
+                patch('hunt.ai.llm.chat_json', side_effect=AssertionError('禁止模型调用')):
             code, out, err = self.invoke(['benchmark', '--truth', str(self.truth_path), '--data', str(self.data),
                 '--direction', 'ai-product-manager', '--since', COLLECTED, '--output', str(output), '--json'])
         self.assertEqual((code, err), (0, ''))

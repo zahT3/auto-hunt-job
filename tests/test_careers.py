@@ -1,10 +1,10 @@
 import json
 import unittest
 from datetime import datetime, timezone, timedelta
-from hunt.careers import linked_boards, preserve_entry_check
-from hunt.discovery import discover, source_configs
-from hunt.sources import SourceError
-from hunt.sources_browser import navigation_state
+from hunt.search.sources.careers import linked_boards, preserve_entry_check
+from hunt.search.engine import discover, source_configs
+from hunt.search.parse import SourceError
+from hunt.search.sources_browser import navigation_state
 
 
 class CareerTests(unittest.TestCase):

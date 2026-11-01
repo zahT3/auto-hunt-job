@@ -1,9 +1,9 @@
 """Search terms: what a search may send, the inspectable recall aliases, and the local matches() filter.
 
-Shared by the sources, the search engine and the AI orientation; it imports nothing above hunt.sources.
+Shared by the sources, the search engine and the AI orientation; it imports only hunt.search.parse.
 """
 import re
-from ..sources import plain
+from .parse import plain
 
 
 def search_terms(config, profile=None):

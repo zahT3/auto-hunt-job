@@ -8,9 +8,10 @@ import unittest
 from pathlib import Path
 from unittest.mock import patch
 
-from hunt.core import Store, Error
-from hunt.materials import accepted_facts, match
-from hunt.server import make_server
+from hunt.app.store import Store
+from hunt.base import Error
+from hunt.workbench.materials import accepted_facts, match
+from hunt.app.server import make_server
 
 
 class WorkflowTests(unittest.TestCase):
@@ -135,7 +136,7 @@ class WorkflowTests(unittest.TestCase):
             self.assertFalse(kwargs['should_continue']())
             return dict(jobs=[],sources=[dict(source_id='boss',status='cancelled')],queries=['AI'])
         self.store.action(dict(action='directions_set',directions=['backend'],terms=['后端开发']))  # run() has no default terms
-        with patch('hunt.discovery.discover', side_effect=scan):
+        with patch('hunt.search.engine.discover', side_effect=scan):
             result = self.store.run()
         self.assertEqual(result['status'],'stopped')
         self.assertEqual(seen['browser_profile_root'],self.store.root/'browser-search')

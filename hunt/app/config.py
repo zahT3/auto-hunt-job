@@ -2,7 +2,7 @@
 import re
 
 from ..base import Error
-from ..network import validate_url
+from ..net.network import validate_url
 
 DEFAULT_CONFIG = dict(keyword='', keywords=[], cities=[], salary_min=None, max_jobs=20,
                       interval_minutes=60, submission_limit=0, targets_confirmed=False,

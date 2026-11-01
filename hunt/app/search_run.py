@@ -4,7 +4,7 @@ import threading
 import uuid
 
 from ..base import Error, dumps, now
-from ..profile import build_profile, synthetic_profile
+from ..profile.profile import build_profile, synthetic_profile
 from ..workbench.actions import LOCKED
 
 
@@ -55,14 +55,14 @@ class SearchRun:
                     if getattr(self.channel, 'last_discovery', None):
                         run['discovery'] = self.channel.last_discovery
                 else:
-                    from ..discovery import discover
+                    from ..search.engine import discover
                     cfg = search
                     def source_progress(report):
                         run.setdefault('sources', []).append(copy.deepcopy(report))
                         with self.tx() as connection:
                             connection.execute('UPDATE runs SET data=? WHERE id=?', (dumps(run), run['id']))
                     if cfg.get('sweep') is True and 'discovery_sources' not in cfg:
-                        from ..providers import companies
+                        from ..search.sources import companies
                         from ..search.query import search_terms
                         try:
                             with self.tx() as c: extra = companies.encountered(c)

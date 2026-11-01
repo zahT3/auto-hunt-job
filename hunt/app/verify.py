@@ -4,9 +4,9 @@ import json
 import threading
 from pathlib import Path
 
-from ..core import Store
-from ..moka_session import MokaVerifier
-from ..sources import SourceError
+from .store import Store
+from ..workbench.moka_session import MokaVerifier
+from ..search.parse import SourceError
 
 
 def main():

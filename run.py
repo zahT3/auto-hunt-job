@@ -5,7 +5,8 @@ import json
 import os
 import threading
 from pathlib import Path
-from hunt.core import Error, Store
+from hunt.app.store import Store
+from hunt.base import Error
 
 
 def main():
@@ -29,11 +30,11 @@ def main():
     except BlockingIOError: parser.error('该数据目录已有运行器；请使用现有窗口或不同 --data')
     executor=None
     if args.login:
-        from hunt.execution import BrowserExecutor
+        from hunt.workbench.execution import BrowserExecutor
         BrowserExecutor(Path(args.browser_plan or data/'plan.json'),data).login()
         return
     if args.browser_plan:
-        from hunt.execution import BrowserExecutor
+        from hunt.workbench.execution import BrowserExecutor
         executor=BrowserExecutor(Path(args.browser_plan),data)
     store=Store(data,executor=executor)
     store.recover()
@@ -42,7 +43,7 @@ def main():
         except Error as e: parser.exit(1,'错误：%s\n'%e)
         print(json.dumps(result,ensure_ascii=False,indent=2))
         if args.once: return
-    from hunt.server import make_server,periodic
+    from hunt.app.server import make_server, periodic
     server=make_server(store,args.port)
     stop=threading.Event()
     if args.periodic:

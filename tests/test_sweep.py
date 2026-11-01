@@ -4,10 +4,11 @@ import unittest
 from pathlib import Path
 from unittest.mock import patch
 
-from hunt.core import Store, Error
-from hunt.discovery import discover
-from hunt.providers import Provider, REGISTRY, register
-from hunt.sources import normalize, SourceError
+from hunt.app.store import Store
+from hunt.base import Error
+from hunt.search.engine import discover
+from hunt.search.sources import Provider, REGISTRY, register
+from hunt.search.parse import normalize, SourceError
 
 
 def job(source, n):
@@ -98,7 +99,7 @@ class SweepDiscoveryTests(unittest.TestCase):
                 try: read('https://jobs.example.test/entry/' + item['platform_id'])
                 except SourceError: pass
                 return item
-            with patch('hunt.entries.check_job', side_effect=fake_check), patch.dict(REGISTRY):
+            with patch('hunt.search.entries.check_job', side_effect=fake_check), patch.dict(REGISTRY):
                 register(provider(dict(a=300)))
                 discover(dict(dict(keywords=['AI'], check_entries=True, discovery_sources=sources('a')), **config),
                          transport=lambda u, **kw: calls.append(u) or b'{}')
@@ -154,7 +155,7 @@ class SweepDiscoveryTests(unittest.TestCase):
     def test_deadline_before_entry_checks_keeps_job(self):
         now = [0.0]
         def hook(entry, ctx): now[0] = 1000.0
-        with patch('hunt.entries.check_job') as check:
+        with patch('hunt.search.entries.check_job') as check:
             result = run_discover(dict(sweep=True, check_entries=True, discovery_sources=sources('a')), provider(dict(a=1), hook), clock=lambda: now[0])
         check.assert_not_called()
         self.assertEqual(len(result['jobs']), 1)
@@ -258,7 +259,7 @@ class SweepDiscoveryTests(unittest.TestCase):
         events = []
         def fake_check(item, read, renderer=None):
             events.append('check:' + item['platform_id']); return item
-        with patch('hunt.entries.check_job', side_effect=fake_check):
+        with patch('hunt.search.entries.check_job', side_effect=fake_check):
             result = run_discover(dict(sweep=True, check_entries=True, sweep_prepare=3, discovery_sources=sources('a', 'b')),
                                   provider(dict(a=2, b=2), lambda entry, ctx: events.append('fetch:' + entry['name'])))
         self.assertEqual(events, ['fetch:a', 'fetch:b', 'check:a-0', 'check:a-1', 'check:b-0'])
@@ -270,7 +271,7 @@ class SweepDiscoveryTests(unittest.TestCase):
         checked = []
         def fake_check(item, read, renderer=None):
             checked.append(item['platform_id']); return item
-        with patch('hunt.entries.check_job', side_effect=fake_check):
+        with patch('hunt.search.entries.check_job', side_effect=fake_check):
             run_discover(dict(sweep=True, check_entries=True, sweep_prepare=2, discovery_sources=sources('a')),
                          provider(dict(a=4)), known=lambda item: item['platform_id'] == 'a-0')
         self.assertEqual(checked, ['a-1', 'a-2'])
@@ -282,7 +283,7 @@ class SweepDiscoveryTests(unittest.TestCase):
             read('https://jobs.example.test/entry/' + item['platform_id'])
             item['raw'].setdefault('application_route', {})['entry_check'] = dict(status='job_page_seen')
             return item
-        with patch('hunt.entries.check_job', side_effect=fake_check):
+        with patch('hunt.search.entries.check_job', side_effect=fake_check):
             result = run_discover(dict(sweep=True, check_entries=True, discovery_sources=sources('a')), provider(dict(a=5)), clock=lambda: now[0])
         self.assertEqual(len(result['jobs']), 5)
         self.assertEqual([bool(j['raw'].get('application_route')) for j in result['jobs']], [True, False, False, False, False])
@@ -296,7 +297,7 @@ class SweepDiscoveryTests(unittest.TestCase):
         events = []
         def fake_check(item, read, renderer=None):
             events.append('check:' + item['platform_id']); return item
-        with patch('hunt.entries.check_job', side_effect=fake_check):
+        with patch('hunt.search.entries.check_job', side_effect=fake_check):
             result = run_discover(dict(check_entries=True, discovery_sources=sources('a', 'b')),
                                   provider(dict(a=1, b=1), lambda entry, ctx: events.append('fetch:' + entry['name'])))
         self.assertEqual(events, ['fetch:a', 'check:a-0', 'fetch:b', 'check:b-0'])
@@ -349,7 +350,7 @@ class SweepRunTests(unittest.TestCase):
         checked = []
         def fake_check(item, read, renderer=None):
             checked.append(item['platform_id']); return item
-        with patch('hunt.entries.check_job', side_effect=fake_check):
+        with patch('hunt.search.entries.check_job', side_effect=fake_check):
             result = self.run_with(provider(dict(a=5)), sweep=True, sweep_prepare=2, check_entries=True)
         self.assertEqual((result['imported'], result['duplicates'], result['prepared']), (5, 2, 2))
         status = {j['platform_id']: j['status'] for j in self.store.state()['jobs']}
@@ -364,7 +365,7 @@ class SweepRunTests(unittest.TestCase):
         self.configure(sweep=True, discovery_sources=sources('a', 'b'))
         def timed(config, **kwargs):
             return discover(config, clock=lambda: now[0], **kwargs)
-        with patch.dict(REGISTRY), patch('hunt.discovery.discover', side_effect=timed):
+        with patch.dict(REGISTRY), patch('hunt.search.engine.discover', side_effect=timed):
             register(provider(dict(a=2, b=2), hook))
             result = self.store.run()
         self.assertEqual(result['status'], 'partial')
@@ -372,7 +373,7 @@ class SweepRunTests(unittest.TestCase):
         self.assertEqual(result['imported'], 2)
 
     def test_run_caps_imports_at_sweep_max_jobs(self):
-        with patch('hunt.discovery.discover', side_effect=lambda config, **kw: dict(
+        with patch('hunt.search.engine.discover', side_effect=lambda config, **kw: dict(
                 jobs=[job('a', n) for n in range(40)], sources=[], queries=['AI'], sweep=dict(max_jobs=25, prepare=0), deadline_reached=False)):
             result = self.run_with(provider(dict(a=1)), sweep=True, sweep_max_jobs=25, sweep_prepare=0)
         self.assertEqual(result['imported'], 25)
@@ -383,7 +384,7 @@ class SweepRunTests(unittest.TestCase):
             ticks.append(1)
             return 0.0 if len(ticks) == 1 else 1000.0
         self.configure(sweep=True)
-        with patch.dict(REGISTRY), patch('hunt.discovery.discover', side_effect=lambda config, **kw: discover(config, clock=clock, **kw)):
+        with patch.dict(REGISTRY), patch('hunt.search.engine.discover', side_effect=lambda config, **kw: discover(config, clock=clock, **kw)):
             register(provider(dict(a=1)))
             result = self.store.run()
         self.assertEqual(result['imported'], 0)

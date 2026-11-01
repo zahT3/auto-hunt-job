@@ -5,7 +5,7 @@ import unittest
 from unittest.mock import patch
 from urllib.parse import parse_qs, urlsplit
 
-from hunt import network
+from hunt.net import network
 
 
 def answer(*ips, status=0):

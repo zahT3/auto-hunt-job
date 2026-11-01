@@ -13,17 +13,8 @@ ALLOWED = dict(base=set(), net={'base'}, search={'net', 'base'}, profile={'net',
                ai={'profile', 'net', 'base'}, workbench={'search', 'profile', 'net', 'base'}, app=set(LAYERS))
 # The one module of another layer that ai may read: the search-term logic it shares with the sources.
 OPEN_TO_AI = 'search.query'
-# Top-level modules not yet moved into their layer's package, and the layer each belongs to.
-FLAT = {
-    '': 'app', '__main__': 'app', 'core': 'app', 'server': 'app', 'menu': 'app', 'bookmarklets': 'app',
-    'network': 'net',
-    'sources': 'search', 'discovery': 'search', 'providers': 'search', 'careers': 'search',
-    'inbox': 'search', 'entries': 'search', 'sources_browser': 'search', 'official_browser': 'search',
-    'benchmark': 'search',
-    'llm': 'ai', 'orient': 'ai', 'classify': 'ai',
-    'profile': 'profile', 'intake': 'profile', 'redact': 'profile', 'directions': 'profile',
-    'materials': 'workbench', 'export': 'workbench', 'execution': 'workbench', 'moka_session': 'workbench', 'moka_read': 'search',
-}
+# The package's own entry modules; every other module sits in its layer's package.
+FLAT = {'': 'app', '__main__': 'app'}
 # Existing violations (importer, imported). Each step of the refactor deletes entries; the goal is an empty set.
 ALLOWED_VIOLATIONS = set()
 # Modules that still sit on an import cycle; the goal is an empty set.

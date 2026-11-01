@@ -4,8 +4,8 @@ import tempfile
 import unittest
 import zipfile
 from pathlib import Path
-from hunt.intake import extract
-from hunt.materials import accepted_facts
+from hunt.profile.intake import extract
+from hunt.workbench.materials import accepted_facts
 
 
 class IntakeTests(unittest.TestCase):
@@ -38,7 +38,7 @@ class IntakeTests(unittest.TestCase):
             with self.assertRaises(ValueError): extract([root/'x.pdf'],root/'out')
 
     def test_unmapped_glyph_codes_are_removed_and_flagged(self):
-        from hunt.intake import analyze_resume
+        from hunt.profile.intake import analyze_resume
         result = analyze_resume('cv.txt', '负责/cid003/cid5482产品规划\n/cid12/cid13/cid14\n熟悉 SQL'.encode(), synthetic=True)
         texts = [f['text'] for f in result['candidate']['facts']]
         self.assertEqual(texts, ['负责产品规划', '熟悉 SQL'])  # a line that was only glyph codes is dropped
@@ -48,7 +48,7 @@ class IntakeTests(unittest.TestCase):
         self.assertEqual((clean['status'], clean['warnings']), ('ready_for_review', []))
 
     def test_long_lines_split_into_sentences_with_stable_ids(self):
-        from hunt.intake import analyze_resume
+        from hunt.profile.intake import analyze_resume
         long = '负责华东区域大客户销售与渠道拓展工作，年销售额两千万元以上。' * 6 + '主导三个重点项目从立项到交付的全过程管理；协调研发与运营团队按期上线。'
         self.assertGreater(len(long), 160)
         result = analyze_resume('cv.txt', ('姓名：测试\n' + long).encode(), synthetic=True)
@@ -63,7 +63,7 @@ class IntakeTests(unittest.TestCase):
 
 class UploadTests(unittest.TestCase):
     def analyze(self, filename, content):
-        from hunt.intake import analyze_resume
+        from hunt.profile.intake import analyze_resume
         return analyze_resume(filename, content, synthetic=True)
 
     def pdf(self, lines=(), pages=1):
@@ -151,7 +151,7 @@ class UploadTests(unittest.TestCase):
 
     def test_size_limit_and_empty_content(self):
         from unittest.mock import patch
-        with patch('hunt.intake.MAX_FILE_BYTES', 4):
+        with patch('hunt.profile.intake.MAX_FILE_BYTES', 4):
             with self.assertRaises(ValueError):
                 self.analyze('large.txt', b'12345')
         with self.assertRaises(ValueError):

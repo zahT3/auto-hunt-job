@@ -9,7 +9,7 @@ import uuid
 from datetime import datetime, timezone, timedelta
 
 from ..base import Error, digest, dumps, now
-from ..profile import synthetic_profile
+from ..profile.profile import synthetic_profile
 
 LOCKED = {'sending', 'unknown', 'submitted'}
 
@@ -74,9 +74,9 @@ class WorkbenchActions:
                 self.save(c, job)
 
     def prepare(self, jid):
-        from ..materials import prepare, match
-        from ..export import write_package
-        from ..profile import recommend
+        from .materials import prepare, match
+        from .export import write_package
+        from ..profile.profile import recommend
         with self.tx() as c:
             j = self.job(c, jid)
             if j['status'] in LOCKED or j['status'] == 'rejected':
@@ -156,7 +156,7 @@ class WorkbenchActions:
                 raise Error('合成候选人禁止外传')
         channel = self.channel
         if channel is None:
-            from ..providers.anker import Anker
+            from ..search.sources.anker import Anker
             channel=Anker()
         fresh=channel.detail(j['platform_id'])
         if fresh.get('status') != 'open' or str(fresh.get('platform_id')) != str(j['platform_id']):
@@ -255,8 +255,8 @@ class WorkbenchActions:
             self.save(c, job)
 
     def start_entry_verification(self, job_id):
-        from ..moka_read import entry_identity
-        from ..moka_session import MokaVerifier
+        from ..search.moka_read import entry_identity
+        from .moka_session import MokaVerifier
         with self.tx() as c: job = self.job(c, job_id)
         entry_identity(job.get('application_url') or job['url'])
         with self.entry_lock:

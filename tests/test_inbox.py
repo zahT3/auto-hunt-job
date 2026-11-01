@@ -7,9 +7,9 @@ import unittest
 from pathlib import Path
 from unittest.mock import patch
 
-from hunt.core import Store
-from hunt.inbox import normalize_payload
-from hunt.server import make_server
+from hunt.app.store import Store
+from hunt.search.sources.inbox import normalize_payload
+from hunt.app.server import make_server
 
 BOSS = 'https://www.zhipin.com'
 JOB_URL = 'https://www.zhipin.com/job_detail/abc123.html'

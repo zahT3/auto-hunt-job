@@ -7,11 +7,11 @@ from pathlib import Path
 from unittest.mock import patch
 from urllib.parse import urlsplit
 
-from hunt.core import Store
-from hunt.entries import inspect
-from hunt.moka_session import MokaVerifier
-from hunt.official_browser import PublicRenderer
-from hunt.sources import SourceError
+from hunt.app.store import Store
+from hunt.search.entries import inspect
+from hunt.workbench.moka_session import MokaVerifier
+from hunt.search.official_browser import PublicRenderer
+from hunt.search.parse import SourceError
 
 
 URL = 'https://app.mokahr.com/apply/acme/123#/job/role-one/apply'
@@ -75,7 +75,7 @@ class MokaReadFailureBrowserTests(unittest.TestCase):
                 fixture = NetworkFixture(browser.page)
                 # The guard-abort case reproduces the original DNS/routing
                 # failure without making a DNS query or outbound connection.
-                with patch('hunt.moka_session.resolve_public', side_effect=OSError('fixture-only network failure')):
+                with patch('hunt.workbench.moka_session.resolve_public', side_effect=OSError('fixture-only network failure')):
                     for mode in ('abort', 'pending', 'http500', 'guard_abort'):
                         with self.subTest(mode=mode):
                             fixture.mode = mode
@@ -164,7 +164,7 @@ class MokaRunRaceTests(unittest.TestCase):
                         old_cleanup.set()
 
             store.entry_lock = HookLock()
-            with patch('hunt.moka_session.MokaVerifier', Browser):
+            with patch('hunt.workbench.moka_session.MokaVerifier', Browser):
                 try:
                     store.start_entry_verification(job['id'])
                     self.assertTrue(started.wait(3), 'Second run did not start')

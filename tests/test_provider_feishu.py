@@ -3,8 +3,8 @@ import unittest
 from pathlib import Path
 from unittest import mock
 
-from hunt.discovery import discover
-from hunt.providers import REGISTRY, route
+from hunt.search.engine import discover
+from hunt.search.sources import REGISTRY, route
 
 FIXTURES = Path(__file__).parent / 'fixtures' / 'providers'
 BYTEDANCE = 'https://jobs.bytedance.com'
@@ -44,7 +44,7 @@ def run(transport, url=BYTEDANCE, **config):
 
 class FeishuTests(unittest.TestCase):
     def setUp(self):
-        patch = mock.patch('hunt.providers.feishu.PAUSE', 0)
+        patch = mock.patch('hunt.search.sources.feishu.PAUSE', 0)
         patch.start(); self.addCleanup(patch.stop)
 
     def test_parses_page(self):

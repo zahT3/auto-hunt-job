@@ -3,10 +3,10 @@ import unittest
 from unittest.mock import patch
 from urllib.parse import unquote, urlsplit
 
-from hunt.discovery import discover
-from hunt.providers import Context, REGISTRY, route
-from hunt.providers import xiaohongshu
-from hunt.sources import SourceError
+from hunt.search.engine import discover
+from hunt.search.sources import Context, REGISTRY, route
+from hunt.search.sources import xiaohongshu
+from hunt.search.parse import SourceError
 
 API = 'https://job.xiaohongshu.com/websiterecruit/position/pageQueryPosition'
 LIST = 'https://job.xiaohongshu.com/social/position'

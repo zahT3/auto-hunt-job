@@ -1,8 +1,8 @@
 import json
 import unittest
 
-from hunt.discovery import discover
-from hunt.providers import REGISTRY, route
+from hunt.search.engine import discover
+from hunt.search.sources import REGISTRY, route
 
 URL = 'https://njzq.zhiye.com/social'
 

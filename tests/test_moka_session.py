@@ -2,10 +2,11 @@ import copy
 import tempfile
 import unittest
 from pathlib import Path
-from hunt.moka_read import allowed_request, classify, entry_identity, READ_POSTS
-from hunt.moka_session import MokaVerifier
-from hunt.sources import SourceError
-from hunt.core import Store, Error
+from hunt.search.moka_read import allowed_request, classify, entry_identity, READ_POSTS
+from hunt.workbench.moka_session import MokaVerifier
+from hunt.search.parse import SourceError
+from hunt.app.store import Store
+from hunt.base import Error
 
 URL = 'https://app.mokahr.com/apply/acme/123#/job/role-one/apply'
 JOB = dict(title='Agent Engineer',url=URL,application_url=URL,platform_id='acme:role-one')

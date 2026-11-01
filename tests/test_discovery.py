@@ -3,9 +3,9 @@ import unittest
 from unittest.mock import patch
 from types import SimpleNamespace
 from hunt.app.config import DEFAULT_CONFIG
-from hunt.discovery import discover, default_sources, source_configs, DEFAULT_KINDS
+from hunt.search.engine import discover, default_sources, source_configs, DEFAULT_KINDS
 from hunt.search.query import search_terms, matches, expanded_terms
-from hunt.sources import SourceError, Document, jd_text, gate, jsonld_jobs, platform_detail, platform_links
+from hunt.search.parse import SourceError, Document, jd_text, gate, jsonld_jobs, platform_detail, platform_links
 
 
 def raw(value): return json.dumps(value).encode()
@@ -147,7 +147,7 @@ class DiscoveryTests(unittest.TestCase):
             Document('<div>' * 200 + 'AI')
 
     def test_browser_allows_only_explicit_read_search_post(self):
-        from hunt.sources_browser import BrowserReader
+        from hunt.search.sources_browser import BrowserReader
         class Route:
             def __init__(self, url, method):
                 self.request=SimpleNamespace(url=url,method=method)
@@ -155,7 +155,7 @@ class DiscoveryTests(unittest.TestCase):
             def abort(self): self.action='aborted'
             def continue_(self): self.action='allowed'
         browser=BrowserReader('liepin')
-        with patch('hunt.sources_browser.resolve_public', return_value=['1.1.1.1']):
+        with patch('hunt.search.sources_browser.resolve_public', return_value=['1.1.1.1']):
             read=Route('https://api-c.liepin.com/api/com.liepin.searchfront4c.pc-search-job','POST')
             browser._read_route(read)
             submit=Route('https://api-c.liepin.com/api/apply','POST')
@@ -175,7 +175,7 @@ class DiscoveryTests(unittest.TestCase):
                 self.denied_requests += [dict(method='POST', url='https://api-c.liepin.com/api/com.liepin.im.init', why='method')] * 3
                 self.denied_requests.append(dict(method='GET', url='https://hm.baidu.com/hm.js', why='host'))
                 return b'<html><body>no cards</body></html>'
-        with patch('hunt.sources_browser.BrowserReader', Reader):
+        with patch('hunt.search.sources_browser.BrowserReader', Reader):
             result = discover(dict(sources=['liepin'], source_modes={'liepin': 'browser'}, keywords=['AI']), transport=lambda *a, **k: self.fail('no plain fetch'))
         report = result['sources'][0]
         self.assertEqual(report['mode'], 'browser')
@@ -186,14 +186,14 @@ class DiscoveryTests(unittest.TestCase):
         self.assertNotIn('blocked_requests', plain['sources'][0])
 
     def test_browser_report_names_the_driver_and_notes_the_playwright_fallback(self):
-        from hunt.sources_browser import FALLBACK_NOTE
+        from hunt.search.sources_browser import FALLBACK_NOTE
         for driver in ('playwright', 'patchright'):
             class Reader:
                 def __init__(self, *a, **k): self.driver, self.denied_requests = driver, []
                 def __enter__(self): return self
                 def __exit__(self, *a): pass
                 def read(self, url): return b'<html><body>no cards</body></html>'
-            with patch('hunt.sources_browser.BrowserReader', Reader):
+            with patch('hunt.search.sources_browser.BrowserReader', Reader):
                 report = discover(dict(sources=['liepin'], source_modes={'liepin': 'browser'}, keywords=['AI']),
                                   transport=lambda *a, **k: self.fail('no plain fetch'))['sources'][0]
             self.assertEqual(report['browser_driver'], driver)
@@ -202,11 +202,11 @@ class DiscoveryTests(unittest.TestCase):
         self.assertNotIn('browser_driver', plain['sources'][0])
 
     def test_browser_guard_names_why_it_cut_each_request(self):
-        from hunt.sources_browser import BrowserReader
+        from hunt.search.sources_browser import BrowserReader
         def route(url, method):
             return SimpleNamespace(request=SimpleNamespace(url=url, method=method), abort=lambda: 'aborted', continue_=lambda: 'allowed')
         browser = BrowserReader('liepin')
-        with patch('hunt.sources_browser.resolve_public', side_effect=lambda host, **kw: ['1.1.1.1'] if host != 'bad.liepin.com' else (_ for _ in ()).throw(ValueError('private'))):
+        with patch('hunt.search.sources_browser.resolve_public', side_effect=lambda host, **kw: ['1.1.1.1'] if host != 'bad.liepin.com' else (_ for _ in ()).throw(ValueError('private'))):
             for url, method in (('https://api-c.liepin.com/api/x', 'POST'), ('https://hm.baidu.com/hm.js', 'GET'),
                                 ('https://bad.liepin.com/a.js', 'GET'), ('https://www.liepin.com/', 'GET')):
                 browser._read_route(route(url, method))
@@ -214,9 +214,9 @@ class DiscoveryTests(unittest.TestCase):
                          [('https://api-c.liepin.com/api/x', 'method'), ('https://hm.baidu.com/hm.js', 'host'), ('https://bad.liepin.com/a.js', 'address')])
 
     def test_browser_rejects_private_dns(self):
-        from hunt.sources_browser import BrowserReader
+        from hunt.search.sources_browser import BrowserReader
         route=SimpleNamespace(request=SimpleNamespace(url='https://www.liepin.com/',method='GET'),abort=lambda: 'aborted',continue_=lambda:self.fail('private DNS allowed'))
-        with patch('hunt.sources_browser.resolve_public', side_effect=ValueError('private address')):
+        with patch('hunt.search.sources_browser.resolve_public', side_effect=ValueError('private address')):
             self.assertEqual(BrowserReader('liepin')._read_route(route),'aborted')
 
     def test_stop_callback_prevents_more_network_requests(self):
@@ -247,7 +247,7 @@ class NoDefaultTermsTests(unittest.TestCase):
         import contextlib, io, sys, tempfile
         from pathlib import Path
         from hunt.app import scan
-        from hunt.core import Store
+        from hunt.app.store import Store
         with patch.object(sys, 'argv', ['scan']), contextlib.redirect_stderr(io.StringIO()), self.assertRaises(SystemExit):
             scan.main()
         with tempfile.TemporaryDirectory() as tmp:

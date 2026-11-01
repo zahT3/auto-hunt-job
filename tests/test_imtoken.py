@@ -1,8 +1,8 @@
 import unittest
 
-from hunt.providers.imtoken import BASE, listed_links, parse_job, read_jobs, sitemap_jobs
-from hunt.network import FetchError
-from hunt.sources import SourceError
+from hunt.search.sources.imtoken import BASE, listed_links, parse_job, read_jobs, sitemap_jobs
+from hunt.net.network import FetchError
+from hunt.search.parse import SourceError
 
 
 def detail(title='Senior Backend Engineer (Wallet)', email=True):

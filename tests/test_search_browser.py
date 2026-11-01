@@ -2,14 +2,14 @@
 import tempfile
 import unittest
 from pathlib import Path
-from hunt.sources import SourceError
-from hunt.sources_browser import BrowserReader
+from hunt.search.parse import SourceError
+from hunt.search.sources_browser import BrowserReader
 
 
 class SearchBrowserTests(unittest.TestCase):
     def test_login_without_data_uses_the_workbench_profile(self):
         from unittest.mock import patch
-        import hunt.sources_browser as sb
+        import hunt.search.sources_browser as sb
         seen = []
         class Reader:
             def __init__(self, kind, profile_root, channel): seen.append((kind, profile_root, channel))
@@ -22,10 +22,10 @@ class SearchBrowserTests(unittest.TestCase):
             with patch.object(sb, 'BrowserReader', Reader), patch('sys.argv', ['sources_browser'] + argv):
                 sb.main()
             self.assertEqual(seen[-1][1], root, argv)
-        self.assertEqual(sb.DEFAULT_DATA, Path(sb.__file__).resolve().parent.parent / 'private' / 'app')
+        self.assertEqual(sb.DEFAULT_DATA, Path(sb.__file__).resolve().parents[2] / 'private' / 'app')
 
     def test_driver_is_patchright_when_installed(self):
-        from hunt.sources_browser import _driver
+        from hunt.search.sources_browser import _driver
         try:
             import patchright.sync_api as patched
         except ImportError:
@@ -34,7 +34,7 @@ class SearchBrowserTests(unittest.TestCase):
 
     def test_driver_falls_back_to_playwright_without_patchright(self):
         from unittest.mock import patch
-        from hunt.sources_browser import _driver, _sync_playwright
+        from hunt.search.sources_browser import _driver, _sync_playwright
         try:
             import playwright.sync_api as plain
         except ImportError:

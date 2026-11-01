@@ -1,8 +1,8 @@
 import unittest
 from urllib.parse import parse_qs, urlsplit
 
-from hunt.providers.minimax import HOST, detail, listing, official_board, read_jobs, read_request, search_url
-from hunt.sources import SourceError
+from hunt.search.sources.minimax import HOST, detail, listing, official_board, read_jobs, read_request, search_url
+from hunt.search.parse import SourceError
 
 
 BOARD = 'https://' + HOST + '/index/'

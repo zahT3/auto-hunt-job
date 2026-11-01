@@ -7,8 +7,8 @@ from unittest import mock
 from cryptography.hazmat.primitives import padding
 from cryptography.hazmat.primitives.ciphers import Cipher, algorithms, modes
 
-from hunt.discovery import discover
-from hunt.providers import REGISTRY, route
+from hunt.search.engine import discover
+from hunt.search.sources import REGISTRY, route
 
 APP = 'https://app.mokahr.com'
 INTL = 'https://hire-r1.mokahr.com'
@@ -61,7 +61,7 @@ def run(transport, url=TENANT, **config):
 
 class MokahrTests(unittest.TestCase):
     def setUp(self):
-        patch = mock.patch('hunt.providers.mokahr.PAUSE', 0)
+        patch = mock.patch('hunt.search.sources.mokahr.PAUSE', 0)
         patch.start(); self.addCleanup(patch.stop)
 
     def test_decrypts_envelope(self):

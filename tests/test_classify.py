@@ -4,8 +4,9 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from hunt import classify, llm
-from hunt.core import Error, Store
+from hunt.ai import classify, llm
+from hunt.app.store import Store
+from hunt.base import Error
 
 KEY = 'test-key-0123456789abcd'
 RESUME_MARK = '张伟13812345678'

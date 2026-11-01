@@ -9,11 +9,11 @@ import unittest
 import unittest.mock
 from urllib.parse import urlsplit
 
-from hunt.providers import companies
-from hunt.providers.catalog import CATALOG
-from hunt.__main__ import main
-from hunt.core import Store
-from hunt.sources import public_url
+from hunt.search.sources import companies
+from hunt.search.sources.catalog import CATALOG
+from hunt.app.cli import main
+from hunt.app.store import Store
+from hunt.search.parse import public_url
 
 ROOT = Path(__file__).resolve().parent.parent
 spec = importlib.util.spec_from_file_location('build_company_seeds', ROOT / 'scripts' / 'build_company_seeds.py')
@@ -42,7 +42,7 @@ class SeedFileTests(unittest.TestCase):
         self.assertRegex(data['generated_from']['commit'], '^[0-9a-f]{40}$')
 
     def test_provider_matches_detection(self):
-        from hunt.providers import REGISTRY, route
+        from hunt.search.sources import REGISTRY, route
         for s in companies.load_seeds():
             if s['provider'] is not None:
                 self.assertIn(s['provider'], REGISTRY)
@@ -60,7 +60,7 @@ class NontechSeedTests(unittest.TestCase):
                          '42db2af677ea47df1448ed3159ebe98f521c81f2ca98942d44f09f9cdd94e938')
 
     def test_seed_url_fixes_route_to_supported_readers(self):
-        from hunt.providers import route
+        from hunt.search.sources import route
         rows = {s['id']: s for s in companies.load_seeds()}
         for ident, url in builder.SEED_URLS.items():
             row = rows[ident]
@@ -70,7 +70,7 @@ class NontechSeedTests(unittest.TestCase):
             self.assertEqual(route(dict(careers_url=url)).id, row['provider'])
 
     def test_at_least_40_nontech_employers_cover_families_and_industries(self):
-        from hunt import directions
+        from hunt.profile import directions
         families = {r['family'] for r in directions.load()}
         nontech = families - {'技术研发', '产品', '设计', '数据与算法'}
         rows = companies.load_seeds()[53:]
@@ -89,8 +89,8 @@ class NontechSeedTests(unittest.TestCase):
         self.assertEqual(len({r['id'] for r in companies.load_seeds()}), len(companies.load_seeds()))
 
     def test_new_tags_and_provider_detection(self):
-        from hunt import directions
-        from hunt.providers import route
+        from hunt.profile import directions
+        from hunt.search.sources import route
         families = {r['family'] for r in directions.load()}
         for r in companies.load_seeds()[53:]:
             with self.subTest(company=r['id']):
@@ -110,7 +110,7 @@ class SelectTests(unittest.TestCase):
         self.assertEqual([c['company'] for c in chosen if c['kind'] == 'feishu'][:1], ['字节跳动'])
 
     def test_select_entries_are_discover_ready(self):
-        from hunt.providers import route
+        from hunt.search.sources import route
         for c in companies.select(['AI'], 300):
             self.assertTrue(c['company'] and c['id'])
             if c['kind'] == 'website':
@@ -120,8 +120,8 @@ class SelectTests(unittest.TestCase):
             self.assertIsNotNone(route(c), c)
 
     def test_select_entries_run_through_discover(self):
-        from hunt.discovery import discover
-        from hunt.network import FetchError
+        from hunt.search.engine import discover
+        from hunt.net.network import FetchError
         def down(url, **kwargs): raise FetchError('HTTP 500')
         chosen = companies.select(['AI'], 300)
         result = discover(dict(keywords=['AI'], sweep=True, check_entries=False, discovery_sources=chosen), transport=down)
@@ -313,7 +313,7 @@ class RunWiringTests(unittest.TestCase):
         def fake(cfg, **kwargs):
             self.seen.append(cfg)
             return dict(jobs=[], sources=[], queries=['AI'], sweep=None, deadline_reached=False)
-        with unittest.mock.patch('hunt.discovery.discover', side_effect=fake):
+        with unittest.mock.patch('hunt.search.engine.discover', side_effect=fake):
             self.store.run()
         return self.seen[-1]
 
@@ -329,7 +329,7 @@ class RunWiringTests(unittest.TestCase):
 
     def test_sweep_passes_distinct_orientation_families_in_direction_order(self):
         self.store.directions_set(dict(directions=['b2b-enterprise-sales', 'channel-sales', 'quality-engineer']))
-        with unittest.mock.patch('hunt.providers.companies.select', wraps=companies.select) as select:
+        with unittest.mock.patch('hunt.search.sources.companies.select', wraps=companies.select) as select:
             self.run_store(sweep=True)
         self.assertEqual(select.call_args.kwargs['families'], ['销售与商务', '供应链与生产制造'])
 

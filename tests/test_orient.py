@@ -9,9 +9,11 @@ import unittest
 from pathlib import Path
 from unittest.mock import patch
 
-from hunt import directions, orient
-from hunt.server import periodic
-from hunt.core import Error, Store
+from hunt.profile import directions
+from hunt.ai import orient
+from hunt.app.server import periodic
+from hunt.app.store import Store
+from hunt.base import Error
 
 KEY = 'test-key-0123456789abcd'
 PHONE, EMAIL, NAME = '13812345678', 'zhangwei@example.com', '张伟'
@@ -246,7 +248,7 @@ class ProposeTests(OrientCase):
         self.assertTrue(any('nope' in n for n in o['notes']))
 
     def test_model_failures_fall_back_to_rules_without_failing(self):
-        from hunt import network
+        from hunt.net import network
         self.enable_ai()
         self.use(QUESTIONS)
         self.ask()
@@ -346,7 +348,7 @@ class RunTests(OrientCase):
         def fake_discover(cfg, **kw):
             calls.append(cfg)
             return dict(jobs=[], sources=[])
-        with patch('hunt.discovery.discover', fake_discover):
+        with patch('hunt.search.engine.discover', fake_discover):
             run = self.store.run()
         return run, calls
 
@@ -413,7 +415,7 @@ class RunTests(OrientCase):
 
 class TermsTests(unittest.TestCase):
     def test_slash_names_are_not_search_terms_and_every_term_can_match(self):
-        from hunt import directions
+        from hunt.profile import directions
         from hunt.search.query import matches
         ids = [r['id'] for r in directions.load()]
         for n in range(0, len(ids), 4):
@@ -442,8 +444,8 @@ class TermsTests(unittest.TestCase):
 class RuleProposalUsesProfileTests(unittest.TestCase):
     """The rule proposal must start from the profile's own direction list (skills bridged to the table)."""
     def propose_for(self, *lines):
-        from hunt.intake import analyze_resume
-        from hunt.profile import build_profile, confirm_candidate
+        from hunt.profile.intake import analyze_resume
+        from hunt.profile.profile import build_profile, confirm_candidate
         candidate = analyze_resume('cv.txt', '\n'.join(lines).encode(), synthetic=True)['candidate']
         candidate = confirm_candidate(candidate, [f['id'] for f in candidate['facts']])
         return orient.propose(build_profile(candidate, confirmed_only=True), {})

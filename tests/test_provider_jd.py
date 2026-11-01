@@ -2,9 +2,9 @@ import json
 import unittest
 from urllib.parse import parse_qs, urlsplit
 
-from hunt.discovery import discover
-from hunt.network import FetchError
-from hunt.providers import REGISTRY, route
+from hunt.search.engine import discover
+from hunt.net.network import FetchError
+from hunt.search.sources import REGISTRY, route
 
 URL = 'https://zhaopin.jd.com/web/job/job_info_list/3'
 

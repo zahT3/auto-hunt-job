@@ -14,9 +14,10 @@ from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 from hunt.app.config import DEFAULT_CONFIG
-from hunt.core import Error, Store, dumps
-from hunt.materials import synthetic_candidate
-from hunt.server import make_server
+from hunt.app.store import Store
+from hunt.base import Error, dumps
+from hunt.workbench.materials import synthetic_candidate
+from hunt.app.server import make_server
 
 
 FACT_TEXT = synthetic_candidate()['facts'][2]['text']
@@ -474,7 +475,7 @@ class HttpTests(CoreCase):
         self.assertFalse(self.store.is_running())
 
     def test_es_module_route_serves_only_js_files_inside_static_js(self):
-        from hunt import server
+        from hunt.app import server
         with tempfile.TemporaryDirectory() as tmp:
             static = Path(tmp) / 'static'
             (static / 'js' / 'views').mkdir(parents=True)
@@ -516,7 +517,7 @@ class HttpTests(CoreCase):
 
 class ActionTableTests(CoreCase):
     def test_action_names_are_the_stable_http_api(self):
-        from hunt.core import ACTIONS
+        from hunt.app.store import ACTIONS
         self.assertEqual(set(ACTIONS), {'run', 'demo', 'ai_settings', 'ai_consent', 'ai_revoke', 'resume_confirm', 'orient_questions',
                                         'orient_answer', 'directions_set', 'classify', 'entry_verify', 'entry_finish', 'entry_cancel',
                                         'import', 'prepare', 'review_materials', 'review', 'execute', 'control', 'config', 'candidate', 'event'})

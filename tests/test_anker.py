@@ -7,9 +7,9 @@ from datetime import datetime, timezone, timedelta
 from pathlib import Path
 from unittest.mock import patch
 
-from hunt import network
-from hunt.providers.anker import Anker, ChannelError, WEBSITE, platform_id
-from hunt.execution import BrowserExecutor, PlanError
+from hunt.net import network
+from hunt.search.sources.anker import Anker, ChannelError, WEBSITE, platform_id
+from hunt.workbench.execution import BrowserExecutor, PlanError
 
 PID = '7695699480502651178'
 JOB_URL = 'https://career.anker.com.cn/larkJobDetail/?websiteId=' + WEBSITE + '&jobId=' + PID

@@ -1,5 +1,6 @@
 """Model-service settings, key hint and consent on a Store; the key itself never leaves llm."""
-from .. import llm, network
+from . import llm
+from ..net import network
 from ..base import Error, now
 
 

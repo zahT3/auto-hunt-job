@@ -9,8 +9,9 @@ import unittest
 from unittest.mock import patch
 import zipfile
 
-from hunt.__main__ import main
-from hunt.core import Store, dumps
+from hunt.app.cli import main
+from hunt.app.store import Store
+from hunt.base import dumps
 
 
 class CLITests(unittest.TestCase):
@@ -138,7 +139,7 @@ class CLITests(unittest.TestCase):
         for command, module in [('web', 'run'), ('scan', 'hunt.app.scan'), ('verify', 'hunt.app.verify'), ('prepare', 'run')]:
             observed = []
             fake = types.SimpleNamespace(main=lambda: observed.append(list(sys.argv)))
-            with patch('hunt.__main__.importlib.import_module', return_value=fake) as load:
+            with patch('hunt.app.cli.importlib.import_module', return_value=fake) as load:
                 self.assertEqual(main([command, '--data', str(self.data)]), 0)
             load.assert_called_once_with(module)
             self.assertEqual(observed[0][1:], (['--once'] if command == 'prepare' else []) + ['--data', str(self.data)])
@@ -148,7 +149,7 @@ class CLITests(unittest.TestCase):
         payload = [dict(id='one', text='Agent Engineer', descriptionPlain='Build AI agents with Python',
                         hostedUrl='https://jobs.lever.co/binance/one', applyUrl='https://jobs.lever.co/binance/one/apply',
                         categories=dict(location='Remote'))]
-        with patch('hunt.discovery.fetch', return_value=json.dumps(payload).encode()) as transport:
+        with patch('hunt.search.engine.fetch', return_value=json.dumps(payload).encode()) as transport:
             code, output, _ = self.invoke(['scan', '--source', 'lever', '--keyword', 'Agent', '--max-jobs', '1', '--skip-entry-checks'])
         self.assertEqual(code, 0)
         self.assertEqual(json.loads(output)['jobs'], 1)
@@ -160,7 +161,7 @@ class CLITests(unittest.TestCase):
         self.assertEqual(failure.exception.code, 2)
 
     def test_catalog_is_machine_readable_without_creating_a_store(self):
-        with patch('hunt.__main__.Store', side_effect=AssertionError('Catalog must not initialize private data')):
+        with patch('hunt.app.cli.Store', side_effect=AssertionError('Catalog must not initialize private data')):
             code, result, _ = self.json(['catalog'])
         self.assertEqual(code, 0)
         self.assertIn('minimax', [row['id'] for row in result['companies']])

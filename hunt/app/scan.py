@@ -3,10 +3,10 @@ import argparse
 import json
 from pathlib import Path
 
-from ..providers.catalog import boards
-from ..core import Store
-from ..discovery import DEFAULT_KINDS, discover
-from ..providers import REGISTRY
+from ..search.sources.catalog import boards
+from .store import Store
+from ..search.engine import DEFAULT_KINDS, discover
+from ..search.sources import REGISTRY
 
 
 def main():

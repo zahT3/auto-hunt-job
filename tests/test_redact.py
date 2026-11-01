@@ -1,7 +1,7 @@
 import unittest
 from pathlib import Path
 
-from hunt.redact import redact, redact_facts
+from hunt.profile.redact import redact, redact_facts
 
 ROOT = Path(__file__).resolve().parent.parent
 
@@ -283,7 +283,7 @@ class FactsTests(unittest.TestCase):
 
 class SpacedNameTests(unittest.TestCase):
     def test_spaced_leading_name_is_redacted_and_reused_later(self):
-        from hunt.redact import redact_facts
+        from hunt.profile.redact import redact_facts
         facts = [dict(id='a', text='林 示 例'), dict(id='b', text='University of Example · MSc'),
                  dict(id='c', text='作品集：林示例的设计作品'), dict(id='d', text='联系人 林 示 例')]
         out = [f['text'] for f in redact_facts(facts)]
@@ -292,14 +292,14 @@ class SpacedNameTests(unittest.TestCase):
         self.assertNotIn('林示例', out[2]); self.assertNotIn('林 示 例', out[3])
 
     def test_spaced_heading_is_not_taken_for_a_name(self):
-        from hunt.redact import redact_facts
+        from hunt.profile.redact import redact_facts
         out = [f['text'] for f in redact_facts([dict(id='a', text='个 人 简 历'), dict(id='b', text='林 示 例 | 产品经理')])]
         self.assertEqual(out[0], '个 人 简 历')
         self.assertTrue(out[1].startswith('[姓名]'), out[1])
         self.assertIn('产品经理', out[1])
 
     def test_known_name_matches_with_spaces_between_characters(self):
-        from hunt.redact import redact
+        from hunt.profile.redact import redact
         self.assertEqual(redact('负责人：林 示 例，组长 林示例', names=['林示例']).count('[姓名]'), 2)
 
 

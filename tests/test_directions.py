@@ -1,7 +1,7 @@
 import unittest
-from hunt import directions
-from hunt.intake import analyze_resume
-from hunt.profile import build_profile, confirm_candidate
+from hunt.profile import directions
+from hunt.profile.intake import analyze_resume
+from hunt.profile.profile import build_profile, confirm_candidate
 
 FAMILIES = ['技术研发', '产品', '设计', '数据与算法', '运营', '市场与品牌', '销售与商务', '客户服务', '人力行政财务法务',
             '供应链与生产制造', '教育培训', '医疗健康', '金融专业', '内容与传媒']

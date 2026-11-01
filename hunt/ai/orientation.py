@@ -1,9 +1,11 @@
 """Orientation (questions, answers, chosen directions) and job classification on a Store."""
 import json
 
-from .. import classify, directions, llm, network, orient
+from . import classify, llm, orient
+from ..profile import directions
+from ..net import network
 from ..base import Error, now
-from ..profile import build_profile
+from ..profile.profile import build_profile
 
 
 class OrientActions:

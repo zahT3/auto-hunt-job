@@ -3,9 +3,9 @@ import unittest
 from pathlib import Path
 from unittest import mock
 
-from hunt import network
-from hunt.discovery import discover
-from hunt.providers import REGISTRY, route
+from hunt.net import network
+from hunt.search.engine import discover
+from hunt.search.sources import REGISTRY, route
 
 FIXTURES = Path(__file__).parent / 'fixtures' / 'providers'
 
@@ -41,7 +41,7 @@ def run(transport, **config):
 
 class AlibabaTests(unittest.TestCase):
     def setUp(self):
-        patch = mock.patch('hunt.providers.alibaba.PAUSE', 0)
+        patch = mock.patch('hunt.search.sources.alibaba.PAUSE', 0)
         patch.start(); self.addCleanup(patch.stop)
 
     def test_parses_page(self):
@@ -244,7 +244,7 @@ class CookieGuardTests(unittest.TestCase):
 
     def test_xsrf_token_cookie_passes_header_check(self):
         class Reached(Exception): pass
-        with mock.patch('hunt.network.validate_url', side_effect=Reached):
+        with mock.patch('hunt.net.network.validate_url', side_effect=Reached):
             with self.assertRaises(Reached):
                 network.fetch('https://talent.alibaba.com/position/search', method='POST', data=b'{}',
                               headers={'Cookie': 'XSRF-TOKEN=00000000-0000-4000-8000-000000000000'})

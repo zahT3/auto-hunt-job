@@ -4,10 +4,10 @@ import unittest
 from unittest.mock import patch
 from urllib.parse import parse_qs, urlsplit
 
-from hunt.discovery import discover
-from hunt.providers import Context, REGISTRY, route
-from hunt.providers import didi
-from hunt.sources import SourceError
+from hunt.search.engine import discover
+from hunt.search.sources import Context, REGISTRY, route
+from hunt.search.sources import didi
+from hunt.search.parse import SourceError
 
 
 def post(n, **fields):
@@ -50,7 +50,7 @@ def run(transport, **config):
 class DidiTests(unittest.TestCase):
     def setUp(self):
         # Any accidental fallback to the real reader fails before it can contact a host.
-        for name in ('hunt.network.fetch', 'hunt.discovery.fetch'):
+        for name in ('hunt.net.network.fetch', 'hunt.search.engine.fetch'):
             guard = patch(name, side_effect=AssertionError('Tests must use synthetic transport'))
             guard.start()
             self.addCleanup(guard.stop)

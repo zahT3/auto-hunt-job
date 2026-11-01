@@ -4,8 +4,8 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from hunt.materials import accepted_facts, match, prepare, synthetic_candidate
-from hunt.export import write_package
+from hunt.workbench.materials import accepted_facts, match, prepare, synthetic_candidate
+from hunt.workbench.export import write_package
 
 
 class MaterialTests(unittest.TestCase):

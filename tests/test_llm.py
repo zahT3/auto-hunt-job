@@ -8,9 +8,11 @@ import unittest
 from pathlib import Path
 from unittest.mock import patch
 
-from hunt import llm, network
-from hunt.__main__ import main
-from hunt.core import Error, Store
+from hunt.ai import llm
+from hunt.net import network
+from hunt.app.cli import main
+from hunt.app.store import Store
+from hunt.base import Error
 
 KEY = 'test-key-0123456789abcd'
 

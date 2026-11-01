@@ -6,7 +6,7 @@ import uuid
 from pathlib import Path
 
 from ..base import Error, dumps, now
-from ..profile import synthetic_profile
+from ..profile.profile import synthetic_profile
 from ..workbench.actions import LOCKED
 
 
@@ -14,7 +14,7 @@ class CandidateActions:
     """Resume and candidate facts, mixed into the Store."""
 
     def upload_resume(self, payload):
-        from ..intake import analyze_resume
+        from ..profile.intake import analyze_resume
         filename = payload.get('filename')
         encoded = payload.get('content_base64')
         if not isinstance(filename, str) or not filename or len(filename) > 255:

@@ -1,10 +1,10 @@
 import unittest
 from types import SimpleNamespace
 from unittest.mock import patch
-from hunt import providers
-from hunt.providers import Provider, REGISTRY, register, route
-from hunt.discovery import discover
-from hunt.sources import normalize
+from hunt.search import sources as providers
+from hunt.search.sources import Provider, REGISTRY, register, route
+from hunt.search.engine import discover
+from hunt.search.parse import normalize
 
 
 class ProviderRegistryTests(unittest.TestCase):
@@ -58,7 +58,7 @@ class ProviderRegistryTests(unittest.TestCase):
         with patch('pkgutil.iter_modules', return_value=[SimpleNamespace(name='demo')]), \
              patch('importlib.import_module') as load:
             providers.load_all()
-        load.assert_called_once_with('hunt.providers.demo')
+        load.assert_called_once_with('hunt.search.sources.demo')
 
 
 

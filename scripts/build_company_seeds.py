@@ -216,8 +216,8 @@ def _key(url):
 
 
 def build(rows):
-    from hunt.providers.catalog import CATALOG
-    from hunt.providers import route
+    from hunt.search.sources.catalog import CATALOG
+    from hunt.search.sources import route
     def provider_of(url):
         found = route(dict(careers_url=url))
         return found.id if found else None
