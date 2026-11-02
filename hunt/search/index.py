@@ -15,7 +15,7 @@ from ..base import Error, digest, dumps, now
 from .normalize import normalize_company, normalize_title
 from .query import matches
 
-SCHEMA_VERSION = 2
+SCHEMA_VERSION = 3
 # A job closes after this many consecutive clean rounds of its source without it.
 CLOSE_AFTER = 2
 # Source report statuses that mean the source read everything it was asked for; a truncated report never counts.
@@ -23,15 +23,17 @@ CLEAN = ('ok', 'empty', 'filtered_empty')
 DERIVED = ('company', 'title', 'city', 'source', 'source_id', 'platform_id', 'direction', 'group_key', 'jd_digest')
 UNKNOWN_COMPANY = ('', '待确认')
 MAX_LIMIT = 500
+MAX_CITIES = 10
 
 _CITIES = ('北京|上海|天津|重庆|深圳|广州|杭州|南京|成都|武汉|西安|苏州|郑州|长沙|青岛|宁波|无锡|合肥|厦门|福州|济南|大连|沈阳|哈尔滨|'
            '长春|石家庄|太原|南昌|昆明|贵阳|南宁|海口|兰州|西宁|银川|乌鲁木齐|呼和浩特|拉萨|佛山|东莞|珠海|中山|惠州|常州|南通|徐州|'
            '温州|嘉兴|绍兴|金华|台州|烟台|潍坊|临沂|洛阳|唐山|保定|泉州|漳州|扬州|镇江|盐城|芜湖|襄阳|宜昌|株洲|湘潭|岳阳|柳州|桂林|'
-           '三亚|汕头|江门|湛江|肇庆|绵阳|德阳|遵义|香港|澳门|台北|新加坡').split('|')
+           '三亚|汕头|江门|湛江|肇庆|绵阳|德阳|遵义|香港|澳门|台北|新加坡|远程').split('|')
 _ENGLISH = {'beijing': '北京', 'shanghai': '上海', 'shenzhen': '深圳', 'guangzhou': '广州', 'hangzhou': '杭州', 'chengdu': '成都',
             'wuhan': '武汉', 'nanjing': '南京', 'suzhou': '苏州', 'xian': '西安', "xi'an": '西安', 'tianjin': '天津',
             'chongqing': '重庆', 'xiamen': '厦门', 'hefei': '合肥', 'changsha': '长沙', 'qingdao': '青岛', 'zhuhai': '珠海',
-            'dongguan': '东莞', 'hong kong': '香港', 'hongkong': '香港', 'taipei': '台北', 'singapore': '新加坡'}
+            'dongguan': '东莞', 'hong kong': '香港', 'hongkong': '香港', 'taipei': '台北', 'singapore': '新加坡',
+            'remote': '远程'}
 _CITY_RE = re.compile('|'.join(sorted(_CITIES, key=len, reverse=True)) + '|' +
                       '|'.join(r'(?<![a-z])' + re.escape(k) + r'(?![a-z])' for k in sorted(_ENGLISH, key=len, reverse=True)))
 _SEPARATORS = re.compile(r'[/,，、;；|·\s]+')
@@ -118,7 +120,14 @@ def _to_v2(c):
         if fts: c.execute('INSERT INTO jobs_fts(rowid, title, jd) VALUES(?,?,?)', (rowid, cols['title'], str(job.get('jd') or '')))
 
 
-STEPS = {2: _to_v2}
+def _to_v3(c):
+    # '远程' became a place of its own (the AI search-condition step offers it as a city): re-derive every row's columns.
+    for rowid, data in c.execute('SELECT rowid, data FROM jobs').fetchall():
+        cols = _derived(json.loads(data))
+        c.execute('UPDATE jobs SET %s WHERE rowid=?' % ', '.join(k + '=?' for k in cols), (*cols.values(), rowid))
+
+
+STEPS = {2: _to_v2, 3: _to_v3}
 
 
 def migrate(c):
@@ -220,11 +229,21 @@ FIELDS = ('rowid', 'job_id', 'company', 'title', 'city', 'source', 'source_id', 
           'first_seen', 'last_seen', 'status', 'url', 'application_url', 'salary', 'location')
 
 
+def city_filter(city):
+    """A city argument as canonical names: '深圳市' and 'Shenzhen' both become '深圳'; a list keeps its order, without repeats."""
+    if city is None: return []
+    names = [city] if isinstance(city, str) else city
+    if not isinstance(names, (list, tuple)) or not all(isinstance(n, str) for n in names): raise Error('city 必须是城市名或城市名列表')
+    names = [n.strip() for n in names if n.strip()]
+    if len(names) > MAX_CITIES: raise Error('city 最多 %d 个' % MAX_CITIES)
+    return list(dict.fromkeys((cities(n) or [n])[0] for n in names))
+
+
 def search(c, q='', city=None, direction=None, source=None, fresh=None, limit=50):
     """Jobs matching every word of q in the title or JD, grouped by group_key; each group lists all its sources.
 
-    Words of 3+ characters use the trigram index; shorter ones ('AI', '产品') fall back to LIKE. city matches one of a
-    job's cities, source a channel ('liepin') or a source id ('feishu:...'), direction a classified direction id, and
+    Words of 3+ characters use the trigram index; shorter ones ('AI', '产品') fall back to LIKE. city, one name or a list
+    of up to MAX_CITIES, keeps jobs with any of them among their cities; source a channel ('liepin') or a source id ('feishu:...'), direction a classified direction id, and
     fresh=N keeps open jobs seen in the last N days. Groups rank open first, then all words in the title, then newest."""
     began = time.monotonic()
     if not isinstance(limit, int) or not 1 <= limit <= MAX_LIMIT: raise Error('limit 必须是 1 至 %d' % MAX_LIMIT)
@@ -242,9 +261,10 @@ def search(c, q='', city=None, direction=None, source=None, fresh=None, limit=50
         if fts: where.append("j.rowid IN (SELECT rowid FROM jobs_fts WHERE title LIKE ? ESCAPE '\\' OR jd LIKE ? ESCAPE '\\')")
         else: where.append("(j.title LIKE ? ESCAPE '\\' OR json_extract(j.data, '$.jd') LIKE ? ESCAPE '\\')")
         args += [_like(word)] * 2
-    place = (cities(city) or [None])[0] if city else None
-    if city:
-        where.append("instr('/' || coalesce(j.city, '') || '/', ?) > 0"); args.append('/' + (place or str(city).strip()) + '/')
+    places = city_filter(city)
+    if places:
+        where.append('(%s)' % ' OR '.join(["instr('/' || coalesce(j.city, '') || '/', ?) > 0"] * len(places)))
+        args += ['/' + p + '/' for p in places]
     if direction:
         where.append('j.direction=?'); args.append(direction)
     if source:
@@ -288,7 +308,7 @@ def search(c, q='', city=None, direction=None, source=None, fresh=None, limit=50
                     _rank=(best['status'] == 'open', best['title_match'], best['last_seen'] or '', best['rowid']))
     rows = sorted((shown(k, v) for k, v in groups.items()), key=lambda g: g['_rank'], reverse=True)
     for row in rows: del row['_rank']
-    return dict(schema_version=1, query=dict(q=str(q or ''), words=words, city=place or city, direction=direction, source=source,
+    return dict(schema_version=1, query=dict(q=str(q or ''), words=words, city=places, direction=direction, source=source,
                                              fresh=fresh, limit=limit),
                 total_groups=len(rows), total_jobs=len(hits), groups=rows[:limit], full_text=fts,
                 elapsed_ms=round((time.monotonic() - began) * 1000, 1),

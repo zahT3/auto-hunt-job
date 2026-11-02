@@ -48,10 +48,10 @@ def make_server(store, port=8766):
             if path=='/api/state': return self.send(200,dict(store.state(),csrf_token=token))
             if path=='/api/search':
                 # Read-only, so same-origin is enough (as for /api/state); the CSRF token guards writes only.
-                query={k:v[-1] for k,v in parse_qs(urlsplit(self.path).query).items()}
+                repeated=parse_qs(urlsplit(self.path).query); query={k:v[-1] for k,v in repeated.items()}
                 try:
                     number=lambda k,d=None: int(query[k]) if query.get(k) else d
-                    return self.send(200,store.search_jobs(query.get('q',''),city=query.get('city') or None,direction=query.get('direction') or None,
+                    return self.send(200,store.search_jobs(query.get('q',''),city=repeated.get('city'),direction=query.get('direction') or None,
                                                            source=query.get('source') or None,fresh=number('fresh'),limit=number('limit',50)))
                 except (Error,ValueError) as e: return self.send(400,{'error':str(e)})
             if path.startswith('/api/file/'):
