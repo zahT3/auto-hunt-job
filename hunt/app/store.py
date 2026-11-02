@@ -14,6 +14,7 @@ from pathlib import Path
 from urllib.parse import urlsplit, urlunsplit
 
 from ..ai import orient
+from ..ai.assist import AssistActions
 from ..ai.orientation import OrientActions
 from ..ai.settings import AiSettings
 from .candidate import CandidateActions
@@ -29,7 +30,7 @@ def summary_only(raw):
     return isinstance(raw, dict) and raw.get('summary_only') is True
 
 
-class Store(WorkbenchActions, OrientActions, AiSettings, SearchRun, CandidateActions):
+class Store(WorkbenchActions, OrientActions, AiSettings, AssistActions, SearchRun, CandidateActions):
     llm_transport = None  # tests inject a fake; None means network.fetch
 
     def __init__(self, root, channel=None, executor=None):
@@ -277,8 +278,10 @@ class Store(WorkbenchActions, OrientActions, AiSettings, SearchRun, CandidateAct
         name=payload.get('action')
         handler=ACTIONS.get(name) if isinstance(name,str) else None
         if not handler: raise Error('未知操作')
-        handler(self,payload)
-        return self.state()
+        result=handler(self,payload)
+        state=self.state()
+        if name in RESULT_ACTIONS: state['result']=result
+        return state
 
 
 # Action name -> handler(store, payload). The names are the HTTP API of /api/action; keep them stable.
@@ -293,6 +296,9 @@ ACTIONS = {
     'orient_answer': lambda s, p: s.orient_answer(p),
     'directions_set': lambda s, p: s.directions_set(p),
     'classify': lambda s, p: s.classify(p),
+    'jd_extract': lambda s, p: s.jd_extract(p),
+    'job_match': lambda s, p: s.job_match(p),
+    'nl_query': lambda s, p: s.nl_query(p),
     'entry_verify': lambda s, p: s.start_entry_verification(p['job_id']),
     'entry_finish': lambda s, p: s.signal_entry_verification(p['job_id'], finish=True),
     'entry_cancel': lambda s, p: s.signal_entry_verification(p['job_id'], finish=False),
@@ -306,3 +312,5 @@ ACTIONS = {
     'candidate': lambda s, p: s.import_candidate(p.get('candidate')),
     'event': lambda s, p: s.add_event(p),
 }
+# Read-only actions whose answer is the point: the response carries it as `result` next to the state.
+RESULT_ACTIONS = {'jd_extract', 'job_match', 'nl_query'}
