@@ -383,6 +383,55 @@ test('the real ES modules link and render one state through main.js',async()=>{
  }
 });
 
+test('card choice buttons send the triage action with job_id and value, and undo sends null',async()=>{
+ const h=harness();h.state({jobs:[{id:'j"1',title:'AI',status:'new',bucket:'pending',triage:null}]});
+ h.run(`globalThis.calls=[];action=async(name,payload)=>{calls.push({name,payload});return {};};CSS={escape:s=>s}`);
+ const html=h.run('triageControls(state.jobs[0])');
+ for(const [value,label] of [['interested','感兴趣'],['later','稍后'],['skipped','跳过']])
+  assert.match(html,new RegExp(`<button type="button" class="secondary" data-triage="${value}" data-triage-job="j&quot;1" aria-pressed="false">${label}</button>`));
+ assert.doesNotMatch(html,/撤销选择/);
+ const click=(value)=>({target:{closest:s=>s==='[data-triage-job]'?{dataset:{triageJob:'j"1',triage:value}}:null}});
+ for(const fn of h.document.listeners.click)fn(click('later'));
+ await h.run('Promise.resolve()');
+ await h.run(`chooseTriage('j"1',null)`);
+ assert.deepEqual(JSON.parse(h.run('JSON.stringify(calls)')),[{name:'triage',payload:{job_id:'j"1',value:'later'}},{name:'triage',payload:{job_id:'j"1',value:null}}]);
+ h.run("state.jobs[0].triage='interested'");
+ assert.match(h.run('triageControls(state.jobs[0])'),/class="primary" data-triage="interested"[^>]*aria-pressed="true"/);
+ assert.match(h.run('triageControls(state.jobs[0])'),/data-triage="" data-triage-job="j&quot;1">撤销选择/);
+ assert.match(h.run('triageControls(state.jobs[0])'),/正在后台准备材料/);
+});
+test('locked or approved jobs cannot change or undo their card choice',()=>{
+ const h=harness();
+ for(const status of ['sending','unknown','submitted','rejected']){
+  const html=h.run(`triageControls({id:'j',status:${JSON.stringify(status)},triage:'interested'})`);
+  assert.doesNotMatch(html,/data-triage=/);assert.match(html,/已锁定，不能改选择/);
+ }
+ const approved=h.run(`triageControls({id:'j',status:'approved',triage:'interested',package:{}})`);
+ assert.doesNotMatch(approved,/data-triage="">|删除这份材料/);assert.match(approved,/材料已批准，不能撤销选择/);
+});
+test('the queue groups jobs by the server bucket in a fixed order and shows the server counts',()=>{
+ const h=harness();
+ h.state({counts:{pending:2,chosen:1,materials:1,sent:0,skipped:1,new_today:3},jobs:[
+  {id:'s',title:'Skipped',bucket:'skipped',triage:'skipped',status:'new'},{id:'m',title:'Materials',bucket:'materials',status:'review',package:{}},
+  {id:'p1',title:'Pending',bucket:'pending',status:'new'},{id:'c',title:'Chosen',bucket:'chosen',triage:'interested',status:'new'},
+  {id:'x',title:'Unknown bucket',bucket:'<b>',status:'new'}]});
+ h.run('renderQueue()');const html=h.node('#job-list').innerHTML;
+ assert.match(html,/待选 2 · 已选 1 · 材料 1 · 已投 0 · 已跳过 1 · 今天新增 3/);
+ const order=[...html.matchAll(/class="queue-group-title">([^ <]+) <span class="count">(\d+)<\/span>/g)].map(m=>m[1]+m[2]);
+ assert.deepEqual(order,['待选2','已选1','材料1','已跳过1']);
+ assert.ok(html.indexOf('Pending')<html.indexOf('Chosen')&&html.indexOf('Chosen')<html.indexOf('Materials')&&html.indexOf('Materials')<html.indexOf('Skipped'));
+ assert.match(html,/<details class="queue-group" data-disclosure="bucket-skipped"><summary class="queue-group-title">已跳过/);
+ assert.match(html,/待选 <span class="count">2<\/span><\/h2>.*Pending.*Unknown bucket.*<\/section><section class="queue-group" aria-label="已选">/);
+ assert.doesNotMatch(html,/<b>/);
+});
+test('prepare_error is escaped in the detail and flagged in the queue row',()=>{
+ const h=harness();h.state({candidate:{facts:[]},jobs:[{id:'j',title:'AI',status:'new',bucket:'chosen',triage:'interested',application_url:'https://example.com/apply',prepare_error:'<img src=x onerror=alert(1)>'}]});
+ h.run("activeId='j';renderQueue();renderDetail()");
+ const detail=h.node('#detail-pane').innerHTML;
+ assert.match(detail,/材料准备失败：&lt;img src=x onerror=alert\(1\)&gt;/);assert.doesNotMatch(detail,/<img|正在后台准备材料/);
+ assert.match(h.node('#job-list').innerHTML,/<span class="badge warn">准备失败<\/span>/);
+});
+
 const BOOKMARKLETS=['boss-zhipin','liepin','liepin-list','lagou','mokahr','universal'];
 const BM_DIR=path.join(__dirname,'../static/bookmarklets');
 // Mirrors hunt/bookmarklets.py assemble(): the shared delivery prelude replaces each script's "// @deliver" line.

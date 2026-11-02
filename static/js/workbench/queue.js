@@ -1,6 +1,7 @@
 import { $, $$, esc, items, motionBehavior, replaceContent, textOf } from "../shared/dom.js";
 import { state } from "../shared/state.js";
 import { renderDetail, setActiveTab } from "./detail.js";
+import { countsLine, groupedRows } from "../triage/view.js";
 import { badge } from "./labels.js";
 import { setMobileDetail } from "./layout.js";
 import { openReview } from "./review.js";
@@ -45,8 +46,9 @@ export function renderQueue() {
   replaceContent(
     "#job-list",
     jobs.length
-      ? jobs
-          .map(
+      ? countsLine() +
+          groupedRows(
+            jobs,
             (j) =>
               `<article class="job-row ${j.id === activeId ? "selected" : ""}">` +
               `<input type="checkbox" class="job-checkbox" data-id="${esc(j.id)}" aria-label="选择 ${esc(j.title)}" ${selected.has(j.id) ? "checked" : ""}>` +
@@ -54,10 +56,9 @@ export function renderQueue() {
               `<div class="job-title">${esc(j.title || "岗位名称待确认")}</div>` +
               `<div class="job-company">${esc(j.company || "公司待确认")}</div>` +
               `<div class="job-meta">${esc(j.location || "地点未知")}${j.salary ? " · " + esc(textOf(j.salary)) : ""}</div>` +
-              `<div class="job-foot">${jobBadge(j)}<span class="job-entry-state">${esc(queueEntryLabel(j))}</span></div>` +
+              `<div class="job-foot">${jobBadge(j)}${j.prepare_error ? '<span class="badge warn">准备失败</span>' : ""}<span class="job-entry-state">${esc(queueEntryLabel(j))}</span></div>` +
               `</button></article>`,
           )
-          .join("")
       : `<div class="empty-state">` +
           `<h3>${query ? "没有找到匹配岗位" : filter === "all" ? "开始寻找下一份机会" : "暂无符合此筛选的岗位"}</h3>` +
           `<p>${query ? "换一个关键词，或清空搜索。" : filter === "all" ? "上传简历并确认搜索方向。也可以导入岗位。" : "切换到「全部」查看其他岗位。"}</p>` +

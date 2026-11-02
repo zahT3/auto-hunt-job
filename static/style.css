@@ -202,3 +202,34 @@ label.orient-question input {
     min-height: 36px;
   }
 }
+
+/* 卡片选择：只给新元素加排版需要的样式，视觉等新的 DESIGN.md 定 */
+.triage-counts {
+  margin: 0 24px 8px;
+}
+.queue-group-title {
+  display: block;
+  margin: 14px 24px 6px;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--muted);
+}
+details.queue-group > summary {
+  cursor: pointer;
+}
+.triage-controls {
+  margin: 16px 0;
+}
+.triage-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 4px 12px;
+  margin-bottom: 8px;
+}
+.triage-buttons {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 10px;
+}

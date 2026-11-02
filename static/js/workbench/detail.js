@@ -2,6 +2,7 @@ import { action } from "../shared/api.js";
 import { $, dateOf, esc, items, replaceContent, safeUrl, sourceOf, textOf } from "../shared/dom.js";
 import { toast } from "../shared/feedback.js";
 import { state } from "../shared/state.js";
+import { triageControls } from "../triage/view.js";
 import { badge, matchMap } from "./labels.js";
 import { activeId, jobBadge, jobCurrent, materialNeedsAttention } from "./queue.js";
 import {
@@ -66,6 +67,7 @@ export function renderDetail() {
       `<div class="detail-heading"><div><h2 id="detail-title" tabindex="-1">${esc(j.title)}</h2>` +
       `<p class="detail-company">${esc(j.company || "公司待确认")}<span>${esc(j.location || "地点未知")}</span>${j.salary ? `<span>${esc(textOf(j.salary))}</span>` : ""}</p>` +
       `</div>${jobBadge(j)}</div>` +
+      triageControls(j) +
       `${availabilityNotice(j)}${recommendationSummary(j)}${applicationRoute(j)}` +
       `<div class="detail-next"><div><strong>${esc(next)}</strong><p>${nextNote}</p></div>${actionButton(j)}</div>` +
       `<nav class="detail-tabs" aria-label="岗位详情">` +
