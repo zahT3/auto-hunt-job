@@ -17,6 +17,7 @@ class AssistActions:
         settings = llm.load_settings(self.root)
         return dict(settings=settings, key=llm.load_key(self.root, llm.host(settings)), consent=consent, candidate=candidate,
                     conditions=(orientation or {}).get('conditions'),
+                    chosen=[d['id'] for d in (orientation or {}).get('directions') or [] if isinstance(d, dict)],
                     meter=llm.Meter(settings['budget_cny'], settings['price_in'], settings['price_out']),
                     transport=self.llm_transport or network.fetch)
 
@@ -54,7 +55,8 @@ class AssistActions:
         """payload: text. Returns search parameters for the caller to confirm; never runs the search."""
         a = self._assist_inputs()
         try:
-            out = nlquery.parse(payload.get('text'), a['settings'], a['key'], a['consent'], a['meter'], transport=a['transport'])
+            out = nlquery.parse(payload.get('text'), a['settings'], a['key'], a['consent'], a['meter'], transport=a['transport'],
+                                chosen=a['chosen'])
         except ValueError as e:
             raise Error(str(e)) from None
         return dict(schema_version=1, **out)
