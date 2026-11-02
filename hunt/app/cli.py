@@ -85,6 +85,13 @@ def parser():
     benchmark.add_argument('--since', help='仅比较此时间及之后采集的岗位，须为带时区的 ISO 8601 时间')
     benchmark.add_argument('--output', type=Path, help='报告路径，默认写到标准答案同目录')
     benchmark.add_argument('--json', action='store_true', help='输出结构化 JSON')
+    find = commands.add_parser('search', help='查本机岗位库：全文检索标题和 JD，按跨来源的同一岗位分组')
+    find.add_argument('q', nargs='*', metavar='WORD', help='检索词，多个词须同时出现；不填列出全部')
+    find.add_argument('--city', help='只看这个城市，例如 深圳')
+    find.add_argument('--direction', metavar='ID', help='只看归到这个方向 ID 的岗位')
+    find.add_argument('--source', help='只看这个来源：渠道（如 liepin）或来源 ID（如 feishu:jobs.example.cn）')
+    find.add_argument('--fresh', type=int, metavar='DAYS', help='只看最近 DAYS 天内搜到、仍在招的岗位')
+    find.add_argument('--limit', type=int, default=50, help='最多返回的组数，1–500，默认 50')
     status = commands.add_parser('status', help='查看候选资料、岗位 ID 和申请尝试数')
     resume = commands.add_parser('resume', help='本地导入 PDF/DOCX，生成待核对事实')
     resume.add_argument('path', type=Path, metavar='PATH')
@@ -107,7 +114,7 @@ def parser():
             command.add_argument('--kind', action='append', choices=llm.KINDS, metavar='KIND',
                                  help='内容类别，可重复：' + '、'.join('%s=%s' % kv for kv in KIND_LABELS.items()))
             command.add_argument('--yes', action='store_true', help='不再询问，直接同意（用于脚本）')
-    for command in (status, resume, confirm, config):
+    for command in (find, status, resume, confirm, config):
         command.add_argument('--data', type=Path, default=DEFAULT_DATA, help='与网页相同的本地数据目录')
         command.add_argument('--json', action='store_true', help='输出结构化 JSON')
     # Agent mode (docs/agent-mode.md): an external agent reads, decides and writes back; every command prints JSON.
@@ -235,6 +242,15 @@ def print_summary(result):
         print('{id}  {title} · {company} · {state}'.format(**job, state=state))
 
 
+def print_search(result):
+    print('%d 组 · %d 个岗位记录 · %.0f ms' % (result['total_groups'], result['total_jobs'], result['elapsed_ms']))
+    for group in result['groups']:
+        sources = '、'.join(s['source'] or '?' for s in group['sources'])
+        print('{title} · {company} · {city} · {state} · 来源 {sources}'.format(
+            **dict(group, city=group['city'] or '地点未知', company=group['company'] or '待确认',
+                   state='在招' if group['status'] == 'open' else '已下线', sources=sources)))
+
+
 def configure(store, args):
     config = dict(store.state()['config'])
     if args.catalog is not None:
@@ -329,7 +345,10 @@ def main(argv=None):
             return 0
         # Only the existing runner owns recovery and its OS lock. These local
         # commands must never reinterpret an active process as a crashed send.
-        if args.command == 'status':
+        if args.command == 'search':
+            result = store.search_jobs(' '.join(args.q), city=args.city, direction=args.direction, source=args.source,
+                                       fresh=args.fresh, limit=args.limit)
+        elif args.command == 'status':
             result = summary(store)
         elif args.command == 'resume':
             if not args.path.is_file():
@@ -353,6 +372,8 @@ def main(argv=None):
             print(json.dumps(result, ensure_ascii=False, indent=2))
         elif args.command in ('status', 'confirm'):
             print_summary(result)
+        elif args.command == 'search':
+            print_search(result)
         elif args.command == 'resume':
             print('待核对草稿：' + result['draft_id'] + ' · ' + ('合成资料' if result['synthetic'] else '真实资料'))
             print('解析状态：' + result['status'])

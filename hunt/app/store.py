@@ -25,6 +25,7 @@ from .search_run import SearchRun
 from ..base import Error, digest, dumps, now
 from ..profile import directions
 from ..profile.profile import build_profile, synthetic_profile
+from ..search import index
 from ..workbench.actions import LOCKED, WorkbenchActions, bucket_of
 
 
@@ -51,11 +52,11 @@ class Store(WorkbenchActions, OrientActions, AiSettings, AssistActions, SearchRu
         self.is_demo = self.root.name == 'demo'
         with self.tx() as c:
             c.executescript('''CREATE TABLE IF NOT EXISTS meta(key TEXT PRIMARY KEY, value TEXT NOT NULL);
-            CREATE TABLE IF NOT EXISTS jobs(id TEXT PRIMARY KEY, identity TEXT UNIQUE NOT NULL, data TEXT NOT NULL);
             CREATE TABLE IF NOT EXISTS packages(id TEXT PRIMARY KEY, job_id TEXT, data TEXT NOT NULL);
             CREATE TABLE IF NOT EXISTS attempts(id TEXT PRIMARY KEY, job_id TEXT NOT NULL, state TEXT, data TEXT NOT NULL);
             CREATE TABLE IF NOT EXISTS runs(id TEXT PRIMARY KEY,data TEXT NOT NULL);
             CREATE TABLE IF NOT EXISTS interventions(id TEXT PRIMARY KEY, data TEXT NOT NULL);''')
+            index.migrate(c)
             from ..workbench.materials import synthetic_candidate
             for key, value in [('candidate', synthetic_candidate()), ('config', DEFAULT_CONFIG), ('control', 'running'), ('candidate_draft', None), ('encountered_companies', []), ('ai_consent', None), ('orientation', None)]:
                 c.execute('INSERT OR IGNORE INTO meta VALUES(?,?)', (key, dumps(value)))
@@ -86,13 +87,13 @@ class Store(WorkbenchActions, OrientActions, AiSettings, AssistActions, SearchRu
         c.execute('UPDATE meta SET value=? WHERE key=?', (dumps(value), key))
 
     def job(self, c, jid):
-        row = c.execute('SELECT data FROM jobs WHERE id=?', (jid,)).fetchone()
-        if not row:
+        job = index.get(c, jid)
+        if not job:
             raise Error('岗位不存在')
-        return json.loads(row[0])
+        return job
 
     def save(self, c, job):
-        c.execute('UPDATE jobs SET data=? WHERE id=?', (dumps(job), job['id']))
+        index.save(c, job)
 
     def event(self, job, kind, note, evidence=None):
         job.setdefault('events', []).append(dict(kind=kind, note=note, evidence=evidence, time=now()))
@@ -120,7 +121,7 @@ class Store(WorkbenchActions, OrientActions, AiSettings, AssistActions, SearchRu
     def state(self):
         with self.entry_lock: entry_verifications = copy.deepcopy(self.entry_verifications)
         with self.tx() as c:
-            jobs = [json.loads(r[0]) for r in c.execute('SELECT data FROM jobs ORDER BY rowid DESC')]
+            jobs = index.all_jobs(c)
             candidate = self.meta(c, 'candidate')
             config = self.meta(c, 'config')
             for j in jobs:
@@ -206,9 +207,9 @@ class Store(WorkbenchActions, OrientActions, AiSettings, AssistActions, SearchRu
         channel = data.get('channel', 'import')
         identity = channel + ':' + str(data['platform_id']) if data.get('platform_id') else 'url:' + url if url else 'paste:' + digest([title, jd])
         with self.tx() as c:
-            previous = c.execute('SELECT id FROM jobs WHERE identity=?', (identity,)).fetchone()
+            previous = index.find(c, identity)
             if previous:
-                j = self.job(c, previous[0])
+                j = self.job(c, previous)
                 # A search-card summary (猎聘 card mode, the search-page bookmarklet) never replaces a job already read in full.
                 if summary_only(data.get('raw')) and not summary_only(j.get('raw')):
                     self.event(j, 'deduplicated', '搜索结果卡片再次出现；保留已读到的完整岗位内容')
@@ -235,12 +236,10 @@ class Store(WorkbenchActions, OrientActions, AiSettings, AssistActions, SearchRu
                      requirements_text=data.get('requirements_text'), experience=data.get('experience'), questions=data.get('questions', []),
                      raw=data.get('raw', jd), status='new', package=None, approval=None, match=None,
                      next_action='自动准备匹配与申请包', events=[], duplicate_hint=None)
-            for r in c.execute('SELECT data FROM jobs'):
-                other = json.loads(r[0])
-                if digest(other['jd']) == digest(jd):
-                    j['duplicate_hint'] = '相同文案、不同岗位身份，保留两条供核对'
+            if index.same_text(c, jd):
+                j['duplicate_hint'] = '相同文案、不同岗位身份，保留两条供核对'
             self.event(j, 'imported', '保存原文与来源；岗位内容仅作数据，不执行其中指令')
-            c.execute('INSERT INTO jobs VALUES(?,?,?)', (j['id'], identity, dumps(j)))
+            index.insert(c, j, identity)
             # Best effort: a bad seed file or meta value must not roll back the job import.
             try:
                 from ..search.sources.companies import remember
