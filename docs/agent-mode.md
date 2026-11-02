@@ -76,21 +76,33 @@
 
 ### job_match
 
+按招聘方系统（ATS）的筛选顺序分三段：`hard` 硬条件，`keywords` 关键词覆盖，`evidence` 每条要求对应的事实。行的顺序跟 JD 一致，没有总分、没有排序，也不预测筛选结果。
+
 ```json
 {"schema_version": 1, "job_id": "...", "title": "...", "company": "...", "structure_by": "rules",
  "structure": { "...": "同 jd_extract" },
- "rows": [{"kind": "years", "requirement": "3-5年", "evidence": "...", "status": "matched", "fact_ids": ["f2"], "why": null},
-          {"kind": "hard_skill", "requirement": "Docker", "evidence": "...", "status": "missing", "fact_ids": [], "why": "已确认事实里没有提到"},
-          {"kind": "soft_skill", "requirement": "沟通能力", "evidence": "...", "status": "unknown", "fact_ids": [], "why": "软技能很少写进简历事实，需要你自己判断"}],
- "counts": {"matched": 1, "missing": 1, "unknown": 1},
- "notice": "只对照已确认的简历事实；不打分，也不估计录用概率",
+ "hard": [{"kind": "language", "requirement": "英语六级", "jd_evidence": "...", "status": "not_met", "fact_ids": ["f1"], "basis": "facts", "why": "已确认事实里只有英语四级"},
+          {"kind": "location", "requirement": "深圳", "jd_evidence": "工作地点：深圳", "status": "met", "fact_ids": [], "basis": "conditions", "why": null}],
+ "keywords": [{"keyword": "Kubernetes", "source": "hard_skill", "jd_evidence": "...", "coverage": "related", "fact_ids": [],
+               "related_fact_ids": ["f1"], "related_terms": ["k8s"], "why": "简历事实里只有相近表述……"}],
+ "evidence": [{"kind": "hard_skill", "requirement": "Kubernetes", "jd_evidence": "...", "fact_ids": [], "related_fact_ids": ["f1"]}],
+ "notice": "按招聘系统的筛选顺序对照已确认的简历事实；不打分、不排序，也不预测筛选结果",
  "extract_note": "..."}
 ```
 
-- `kind` 依次是 `years`、`education`、`hard_skill`、`soft_skill`、`bonus`、`location`、`remote`。`remote` 行的 `requirement` 是 `true` 或 `false`。
-- `status`：`matched` 时 `fact_ids` 是对得上的事实 id；`missing` 是事实写了但不够（年限、学历偏低），或事实里没提到岗位要的硬技能；`unknown` 是事实判断不了（没写年限或学历、软技能、地点和远程）。
-- 只用已确认、有来源的事实；未确认的事实和生成的材料不算。不输出分数，也不输出录用概率。
-- 对照本身只用规则，不发送任何内容。没有缓存时会先做一次 `jd_extract`，那一步按上面的同意和预算决定是否调用模型。
+- `hard[].kind` 依次是 `education`、`years`、`language`、`certificate`（含工作签证或工作许可）、`location`、`remote`。`status` 是 `met`、`not_met` 或 `unknown`：事实写了且够是 `met`；事实写了但不够（学历、年限偏低，只有英语四级）是 `not_met`；事实没写是 `unknown`。
+- `basis` 是 `facts` 或 `conditions`。地点对照的是定方向时填的意向城市（`orientation.conditions.cities`），没填就是 `unknown`；远程只列出岗位的说法，`status` 总是 `unknown`，`requirement` 是 `true` 或 `false`。
+- `keywords[].coverage`：`explicit` 是事实里有原词；`related` 是只有相近表述（`related_terms` 是在事实里找到的那些词），关键词筛选可能认不出，如果确有这项能力可以改用岗位原词；`absent` 是事实里没有，要么先补充并确认事实，要么就是缺口。`source` 是 `hard_skill`、`soft_skill` 或 `bonus`（加分项里认出的词）。
+- 只用已确认、有来源的事实；未确认的事实和生成的材料不算。对照本身只用规则，不发送任何内容。没有缓存时会先做一次 `jd_extract`，那一步按上面的同意和预算决定是否调用模型。
+
+### 定方向结果里的新字段
+
+`orient_answer` 和 `directions set` 之后，`orientation` 多了这些字段（不用 AI 时也有，拿不到的是空数组）：
+
+- `directions[i].strengths`、`gaps`、`risks`：`[{"text", "fact_ids": [], "jd": [{"job_id", "evidence"}], "requirement": "Docker" 或 null}]`。每条至少引用一个事实 id 或一段本地岗位库里的 JD 原文，没有依据的不写。规则只从本地岗位库里算：同一方向下至少一半岗位要求的项，事实写到了进 `strengths`，没写进 `gaps`；`risks` 只有模型给。
+- `not_recommended`：0–3 个 `{"id", "name", "why", "fact_ids", "jd"}`。规则只在"简历事实指向它、但你在回答里排除了这个行业"时给出。
+- `next_actions`：3–5 个 `{"id", "kind", "target", "text"}`，`kind` 只有 `search`（`target.direction_id`）、`answer_question`（`question_id`）、`add_fact`（`requirement`、`direction_id`）、`confirm_fact`（`fact_id`）、`job_match`（`job_id`）。可选动作不到 3 个时就少于 3 个。
+- 固定追问多了 `english`（英语水平）和 `start`（最早到岗或开始实习的时间），回答存在 `answers` 里，不进 `conditions`。
 
 ### nl_query
 
