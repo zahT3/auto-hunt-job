@@ -5,6 +5,7 @@ import uuid
 
 from ..base import Error, dumps, now
 from ..profile.profile import build_profile, synthetic_profile
+from ..search import index
 from ..workbench.actions import LOCKED
 
 
@@ -20,6 +21,11 @@ class SearchRun:
             if not demo: self.search_config()
             self.search_thread = threading.Thread(target=self.run, kwargs={'demo': demo}, daemon=True)
             self.search_thread.start()
+
+    def search_jobs(self, q='', city=None, direction=None, source=None, fresh=None, limit=50):
+        """Read-only search of the local job library (hunt.search.index.search); the web and the CLI both call this."""
+        with self.tx() as c:
+            return index.search(c, q, city=city, direction=direction, source=source, fresh=fresh, limit=limit)
 
     def search_config(self):
         """Config for a real search: explicit keywords win, else the orientation's terms; neither is an error (no built-in default terms)."""
