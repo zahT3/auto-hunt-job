@@ -63,7 +63,7 @@ def make_server(store, port=8766):
                 if path.endswith('.js') and base in file.parents and file.is_file():
                     return self.send(200,file.read_bytes(),'text/javascript; charset=utf-8')
                 return self.send(404,{'error':'不存在的路由'})
-            assets={'/':'index.html','/index.html':'index.html','/app.js':'app.js','/styles.css':'styles.css','/style.css':'style.css'}
+            assets={'/':'index.html','/index.html':'index.html','/styles.css':'styles.css','/style.css':'style.css'}
             if path in assets:
                 file=STATIC/assets[path]
                 if file.is_file(): return self.send(200,file.read_bytes(),mimetypes.guess_type(str(file))[0] or 'text/plain')

@@ -497,7 +497,7 @@ class HttpTests(CoreCase):
                     self.assertEqual(self.request('GET', path)[0], 404, path)
                 self.assertEqual(self.request('GET', '/js/views/search.js', headers={'Host': 'attacker.invalid'})[0], 403)
                 self.assertEqual(self.request('GET', '/js/views/search.js', headers={'Origin': 'https://attacker.invalid'})[0], 403)
-                self.assertEqual(self.request('GET', '/app.js')[0], 404)  # the legacy route reads static/app.js, absent here
+                self.assertEqual(self.request('GET', '/app.js')[0], 404)  # the pre-module script route is gone
 
     def test_export_route_and_traversal(self):
         job = self.prepared()
