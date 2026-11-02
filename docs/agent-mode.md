@@ -158,6 +158,8 @@
  "executed": false, "spent_cny": 0.0, "confirm": "这些参数还没有执行；确认或修改后再交给搜索"}
 ```
 
-- `params` 恰好四个键：`q`（不超过 100 字，不含链接、邮箱、长数字）、`city`（最多 10 个，接受远程时含 `远程`）、`direction`（方向表 id 或 `null`）、`fresh`（只看最近多少天，1–365 或 `null`）。
-- 命令只返回参数，`executed` 永远是 `false`。给用户看、让用户改，确认后再交给搜索。参数名按路线图的 `search(q, city, direction, source, fresh)` 写，搜索接口定下来以后再对齐。
+- `params` 恰好四个键，对应 `search` 命令的同名参数：`q`（不超过 100 字，不含链接、邮箱、长数字）、`city`（最多 10 个，接受远程时含 `远程`）、`direction`、`fresh`（1–365 或 `null`）。
+- `fresh` 和 `search --fresh` 同义：只看仍在招、最近 N 天内被搜到过的岗位。岗位库里没有发布日期，所以"最近一周的岗位""最新岗位"也按这个意思转换，`notes` 里会写明"按最近被搜到的时间筛选，不是发布时间"。
+- `direction` 只会是你已选定的方向 id 或 `null`：`search` 按归类结果筛方向，岗位只会归到已选方向里。需求里提到的方向不在已选方向里时，`direction` 为 `null`，`notes` 里说明，只靠 `q` 搜。
+- 命令只返回参数，`executed` 永远是 `false`。给用户看、让用户改，确认后再交给 `search`。`search` 目前只接受一个城市，交给它时先取 `city` 的第一个；它改成接受城市列表以后可以原样传。
 - 用模型需要新的同意类别"搜索需求"（`search_query`）：`python -m hunt ai consent --kind search_query`。模型的回答必须恰好是这四个键且值合法，否则按规则转换。

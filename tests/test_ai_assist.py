@@ -464,6 +464,68 @@ class NlQueryTests(Case):
             store.action(dict(action='nl_query', text=''))
 
 
+class SearchAlignmentTests(Case):
+    """nl_query output fed to hunt.search.index.search as it is, on a synthetic library."""
+    LIBRARY = [('AI 产品经理', '深圳', '负责大模型产品规划。'), ('AI 产品经理', '北京', '负责 Agent 产品。'),
+               ('AI 产品经理', '上海', '负责 AI 应用。'), ('后端开发工程师', '深圳', '负责订单服务。'),
+               ('AI 产品经理（远程）', '远程', '全远程，负责 AI 产品。')]
+
+    def setUp(self):
+        super().setUp()
+        self.store = Store(self.root)
+        for n, (title, city, text) in enumerate(self.LIBRARY):
+            self.store.import_job(dict(title=title, jd=text, company='公司%d' % n, location=city, channel='feishu', platform_id='p%d' % n))
+        self.store.action(dict(action='directions_set', directions=['ai-product-manager', 'backend']))
+        self.store.classify_run()
+
+    def query(self, text):
+        return self.store.action(dict(action='nl_query', text=text))['result']
+
+    def search(self, params):
+        from hunt.search import index
+        # TODO(p2 city list): pass params['city'] as is once search() accepts a list of cities; until then only the
+        # first city is searched, so '北京' below is not checked.
+        city = params['city'][0] if params['city'] else None
+        with self.store.tx() as c:
+            return index.search(c, params['q'], city=city, direction=params['direction'], fresh=params['fresh'])
+
+    def test_params_run_through_search(self):
+        out = self.query('深圳或北京，最近一周的 AI 产品经理')
+        self.assertEqual(out['params']['direction'], 'ai-product-manager')
+        self.assertEqual(out['params']['fresh'], 7)
+        found = self.search(out['params'])
+        self.assertEqual(found['query']['fresh'], 7)
+        cities = {g['city'] for g in found['groups']}
+        self.assertTrue(cities and cities <= {'深圳', '北京'}, cities)
+        self.assertTrue(all(g['direction'] == 'ai-product-manager' for g in found['groups']))
+        self.assertEqual(out['executed'], False)
+
+    def test_remote_and_plain_queries_run_too(self):
+        for text in ('远程 AI 产品', '后端', '还在招的岗位', 'AI 产品 杭州'):
+            with self.subTest(text=text):
+                found = self.search(self.query(text)['params'])
+                self.assertIn('groups', found)
+        self.assertEqual([g['city'] for g in self.search(self.query('远程 AI 产品')['params'])['groups']], ['远程'])
+
+    def test_fresh_means_recently_seen_not_posted(self):
+        out = self.query('最近一周的 AI 产品经理')
+        self.assertIn('按最近被搜到的时间筛选，不是发布时间', out['notes'][-1])
+        self.assertIn('仍在招', nlquery.SYSTEM)
+        self.assertIn('没有发布日期', nlquery.SYSTEM)
+        with self.store.tx() as c:
+            c.execute("UPDATE jobs SET last_seen='2020-01-01T00:00:00+00:00'")
+        self.assertEqual(self.search(out['params'])['groups'], [])  # seen long ago: not "recent", whatever its posting date
+        self.assertTrue(self.search(dict(out['params'], fresh=None))['groups'])
+
+    def test_direction_is_limited_to_chosen_directions(self):
+        out = self.query('数据分析 深圳')
+        self.assertIsNone(out['params']['direction'])  # 数据分析师 is in the table but not chosen: nothing is classified there
+        self.assertIn('不是你选定的方向', ' '.join(out['notes']))
+        model = FakeModel(dict(q='数据分析', city=['深圳'], direction='data-analyst', fresh=None))
+        out = nlquery.parse('数据分析 深圳', SETTINGS, KEY, CONSENT, meter(), transport=model, chosen=['backend'])
+        self.assertEqual((out['by'], out['params']['direction']), ('rules', None))
+
+
 class CliTests(Case):
     def run_cli(self, *argv):
         out = io.StringIO()
@@ -477,6 +539,7 @@ class CliTests(Case):
             store.setmeta(c, 'candidate', candidate())
         store.action(dict(action='ai_settings', api_key=KEY))
         store.action(dict(action='ai_consent', kinds=['job_text', 'search_query']))
+        store.action(dict(action='directions_set', directions=['backend']))
         j, _ = store.import_job(dict(title='后端', jd=BACKEND))
         model = FakeModel(good_answer, dict(q='后端', city=['深圳'], direction='backend', fresh=7))
         with patch.object(Store, 'llm_transport', model):
