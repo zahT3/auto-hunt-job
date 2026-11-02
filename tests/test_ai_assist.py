@@ -483,11 +483,8 @@ class SearchAlignmentTests(Case):
 
     def search(self, params):
         from hunt.search import index
-        # TODO(p2 city list): pass params['city'] as is once search() accepts a list of cities; until then only the
-        # first city is searched, so '北京' below is not checked.
-        city = params['city'][0] if params['city'] else None
         with self.store.tx() as c:
-            return index.search(c, params['q'], city=city, direction=params['direction'], fresh=params['fresh'])
+            return index.search(c, params['q'], city=params['city'] or None, direction=params['direction'], fresh=params['fresh'])
 
     def test_params_run_through_search(self):
         out = self.query('深圳或北京，最近一周的 AI 产品经理')
@@ -496,7 +493,7 @@ class SearchAlignmentTests(Case):
         found = self.search(out['params'])
         self.assertEqual(found['query']['fresh'], 7)
         cities = {g['city'] for g in found['groups']}
-        self.assertTrue(cities and cities <= {'深圳', '北京'}, cities)
+        self.assertEqual(cities, {'深圳', '北京'})
         self.assertTrue(all(g['direction'] == 'ai-product-manager' for g in found['groups']))
         self.assertEqual(out['executed'], False)
 
