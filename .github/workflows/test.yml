@@ -31,7 +31,7 @@ jobs:
           python -m pip install -r requirements-sources.txt
       - name: Validate frontend syntax and safety contracts
         run: |
-          node --check static/app.js
+          for f in $(git ls-files 'static/js/*.js'); do node --input-type=module --check < "$f"; done
           node --test tests/test_frontend.cjs
       - name: Check tracked files for private data
         run: python scripts/build_release.py --check

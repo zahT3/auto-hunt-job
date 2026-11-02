@@ -178,7 +178,7 @@ BOSS 白屏调查、参考项目及官网替代路径见 [调查记录](docs/bos
 
 ```sh
 .venv/bin/python -m unittest discover -s tests -v
-node --check static/app.js
+for f in static/js/*.js static/js/*/*.js; do node --input-type=module --check < "$f"; done
 node --test tests/test_frontend.cjs
 # 生成纯合成 PDF/DOCX 样例
 .venv/bin/python examples/generate_synthetic_resume.py
