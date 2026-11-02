@@ -1,4 +1,4 @@
-"""The job library (hunt.search.index): migration of an old library, full-text search and cross-source groups.
+"""The job library (hunt.search.index): migration of an old library, full-text search, freshness and cross-source groups.
 
 All data is synthetic; nothing is fetched.
 """
@@ -12,6 +12,7 @@ import threading
 import time
 import unittest
 from pathlib import Path
+from unittest.mock import patch
 from urllib.parse import quote
 
 from hunt.app.cli import main
@@ -233,6 +234,58 @@ class LibraryOf1500(unittest.TestCase):
         with contextlib.redirect_stdout(out):
             code = main(['search', '--limit', '0', '--json', '--data', str(self.data)])
         self.assertEqual((code, json.loads(out.getvalue())['error']), (1, 'limit 必须是 1 至 500'))
+
+
+class Freshness(unittest.TestCase):
+    """Store.run with discovery replaced by fixture rounds; each round reports its sources as the engine does."""
+    TERMS = ['AI 产品经理']
+
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.store = Store(Path(self.tmp.name) / 'app')
+        with self.store.tx() as c:
+            self.store.setmeta(c, 'config', dict(self.store.meta(c, 'config'), keywords=self.TERMS))
+
+    def tearDown(self):
+        self.tmp.cleanup()
+
+    def item(self, pid, title='AI 产品经理', source='feishu:jobs.example.cn'):
+        return dict(title=title, jd=title + '：负责产品规划。', company='示例公司', location='深圳', channel='feishu', platform_id=pid,
+                    url='https://jobs.example.cn/position/' + pid, status='open',
+                    raw=dict(discovery=dict(source_id=source, queries=self.TERMS)))
+
+    def round(self, items, status='ok', truncated=False, source='feishu:jobs.example.cn'):
+        result = dict(jobs=items, queries=self.TERMS, sources=[dict(source_id=source, kind='feishu', status=status, truncated=truncated)])
+        with patch('hunt.search.engine.discover', return_value=result):
+            return self.store.run()
+
+    def listing(self):
+        with self.store.tx() as c:
+            return {r[0]: (r[1], r[2]) for r in c.execute('SELECT platform_id, status, missed FROM jobs')}
+
+    def test_two_clean_rounds_without_a_job_close_it(self):
+        first = self.round([self.item('A'), self.item('B'), self.item('C', title='Go 后端工程师')])
+        self.assertEqual(first['freshness']['seen'], 3)
+        self.round([self.item('A')])
+        self.assertEqual(self.listing()['B'], ('open', 1))
+        self.round([self.item('A')], status='fetch_error')  # an erroring round says nothing
+        self.round([self.item('A')], truncated=True)  # nor does a truncated one
+        self.assertEqual(self.listing()['B'], ('open', 1))
+        last = self.round([self.item('A')])
+        self.assertEqual(last['freshness']['closed'], 1)
+        listing = self.listing()
+        self.assertEqual(listing['B'], ('closed', 2))
+        self.assertEqual(listing['A'], ('open', 0))
+        self.assertEqual(listing['C'], ('open', 0))  # this round's terms do not match its title
+        self.assertEqual([g['status'] for g in self.store.search_jobs('AI 产品经理', fresh=30)['groups']], ['open'])
+        self.round([self.item('A'), self.item('B')])
+        self.assertEqual(self.listing()['B'], ('open', 0))  # it came back
+
+    def test_other_sources_do_not_count(self):
+        self.round([self.item('A'), self.item('B')])
+        self.round([], source='feishu:other.example.cn')
+        self.round([], source='feishu:other.example.cn')
+        self.assertEqual(self.listing()['B'], ('open', 0))
 
 
 class WebSearch(unittest.TestCase):

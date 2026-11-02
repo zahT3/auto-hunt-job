@@ -76,10 +76,10 @@ class SearchRun:
                         cfg = dict(cfg, discovery_sources=companies.select(search_terms(cfg), cfg.get('sweep_max_companies', 300), extra,
                                                                            families=self.chosen_families()))
                     def known(item):
-                        # The identity import_job uses for discovered jobs, which always carry platform_id.
-                        if not item.get('platform_id'): return False
+                        identity = index.discovered_identity(item)
+                        if not identity: return False
                         with self.tx() as c:
-                            return c.execute('SELECT 1 FROM jobs WHERE identity=?', (item.get('channel', 'import') + ':' + str(item['platform_id']),)).fetchone() is not None
+                            return index.find(c, identity) is not None
                     result = discover(cfg, profile=build_profile(candidate, confirmed_only=True),
                                       should_continue=self.is_running, browser_profile_root=self.root / 'browser-search',
                                       on_source=source_progress, known=known)
@@ -116,6 +116,10 @@ class SearchRun:
                         run['applicable'] += int(not j['package'].get('blockers') and not synthetic_profile(candidate) and cfg['targets_confirmed'] and j['channel']=='anker' and not any(x.get('status') == 'not_met' for x in j['match'].get('hard', [])))
                 except Exception as e:
                     run['failures'].append(str(e))
+            if run['kind'] == 'real_discovery':
+                # Every job the sources returned counts as seen, also those past this round's import cap.
+                with self.tx() as c:
+                    run['freshness'] = index.observe(c, items, run.get('sources', []), run.get('queries', []))
             try:
                 run.update(self.classify_run())
             except Exception as e:
