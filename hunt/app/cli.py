@@ -24,7 +24,7 @@ FORWARD = {
 }
 
 
-KIND_LABELS = dict(resume_redacted='脱敏简历', resume_full='完整简历', job_text='岗位原文')
+KIND_LABELS = dict(resume_redacted='脱敏简历', resume_full='完整简历', job_text='岗位原文', search_query='搜索需求')
 
 
 def choose_kinds():
@@ -41,7 +41,8 @@ def choose_kinds():
             return [list(KIND_LABELS)[n] for n in picked]
     for n, item in enumerate(items, 1): print('%d. %s' % (n, item))
     typed = input('选择要同意发送的内容，填编号，可用逗号分隔：').replace('，', ',').split(',')
-    if not all(x.strip() in ('1', '2', '3') for x in typed): raise Error('编号须是 1、2、3，未做任何更改')
+    numbers = [str(n) for n in range(1, len(items) + 1)]
+    if not all(x.strip() in numbers for x in typed): raise Error('编号须是 %s，未做任何更改' % '、'.join(numbers))
     return [list(KIND_LABELS)[int(x) - 1] for x in typed]
 
 
@@ -124,6 +125,13 @@ def parser():
                 agent[-1].add_argument('--limit', type=int, default=100, help='最多导出条数，1–1000，默认 100')
     agent.append(commands.add_parser('summary', help='agent 模式：各方向概况'))
     agent[-1].add_argument('--direction', metavar='ID', help='只看这个方向')
+    agent.append(commands.add_parser('jd_extract', help='岗位要求结构化（年限、学历、技能、加分项、地点、远程），模型结果按 JD 摘要缓存'))
+    agent[-1].add_argument('--job', action='append', metavar='ID', help='岗位 id，可重复；不填时取前 --limit 个岗位')
+    agent[-1].add_argument('--limit', type=int, default=50, help='不填 --job 时最多处理的岗位数，1–1000，默认 50')
+    agent.append(commands.add_parser('job_match', help='单个岗位的要求逐条对照已确认事实；不打分'))
+    agent[-1].add_argument('job', metavar='JOB_ID')
+    agent.append(commands.add_parser('nl_query', help='把一段找工作需求转成搜索参数，只返回参数，不执行搜索'))
+    agent[-1].add_argument('text', metavar='TEXT')
     for command in agent:
         command.add_argument('--data', type=Path, default=DEFAULT_DATA, help='与网页相同的本地数据目录')
         command.add_argument('--json', action='store_true', help='保留参数；本组命令总是输出 JSON')
@@ -160,8 +168,7 @@ def chosen(store):
 
 
 def agent_command(store, args):
-    from ..ai import classify, orient
-    from ..profile import directions
+    from ..ai import classify, jd, orient
     if args.command == 'profile':
         return agent_profile(store)
     if args.command == 'directions' and args.sub == 'set':
@@ -179,13 +186,20 @@ def agent_command(store, args):
                                direction=j.get('direction')) for j in jobs[:args.limit]])
     if args.command == 'classify':
         return dict(schema_version=1, imported=store.classify_many(read_json(args.file), 'agent'))
+    if args.command == 'jd_extract':
+        return store.jd_extract(dict(job_ids=args.job, limit=args.limit) if args.job else dict(limit=args.limit))
+    if args.command == 'job_match':
+        return store.job_match(dict(job_id=args.job))
+    if args.command == 'nl_query':
+        return store.nl_query(dict(text=args.text))
     dirs = chosen(store)
     if args.direction is not None and args.direction not in [d['id'] for d in dirs]: raise Error('--direction 须是当前所选方向之一')
     state = store.state()
     facts = orient.confirmed_facts(state['candidate'])
     _, other = classify.report(dirs, state['jobs'])
+    structures = jd.cached(store.root, state['jobs'])  # model structures already paid for; the rest are read by rules
     return dict(schema_version=1, other_count=other,
-                directions=[dict(id=d['id'], name=d['name'], **classify.summarize(d['id'], state['jobs'], facts))
+                directions=[dict(id=d['id'], name=d['name'], **classify.summarize(d['id'], state['jobs'], facts, structures))
                             for d in dirs if args.direction in (None, d['id'])])
 
 
@@ -310,7 +324,7 @@ def main(argv=None):
             print(json.dumps(dict(schema_version=1, directions=rows), ensure_ascii=False, indent=2))
             return 0
         store = Store(args.data)
-        if args.command in ('profile', 'directions', 'jobs', 'classify', 'summary'):
+        if args.command in ('profile', 'directions', 'jobs', 'classify', 'summary', 'jd_extract', 'job_match', 'nl_query'):
             print(json.dumps(agent_command(store, args), ensure_ascii=False, indent=2))
             return 0
         # Only the existing runner owns recovery and its OS lock. These local

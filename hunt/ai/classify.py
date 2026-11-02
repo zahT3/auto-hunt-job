@@ -10,8 +10,8 @@ may answer only with the batch's job ids mapped to a chosen direction id or null
 (extra or missing ids, unknown directions, non-JSON) drops that batch back to the rule result with
 one error. Reaching the spend cap is not an error: the remaining jobs keep their rule result.
 
-summarize() is rules only: it counts requirement phrases in the requirement section of each job
-text and compares them with confirmed facts. No model writes this part.
+summarize() counts requirement phrases from each job's structure (jd.py: a cached model result, else the rules)
+and compares them with confirmed facts. It never calls a model itself.
 """
 import hashlib
 import json
@@ -20,7 +20,7 @@ import unicodedata
 from collections import Counter
 
 from ..profile import directions
-from . import llm
+from . import jd, llm
 from ..net import network
 
 THRESHOLD = 0.5
@@ -153,70 +153,26 @@ def report(dirs, jobs):
 
 # ---- summaries ----
 
-SECTION_START = re.compile(r'(任职要求|任职资格|岗位要求|职位要求|任职条件|应聘要求|我们希望你|requirements?|qualifications?|what you.{0,20}bring)\s*[:：]?', re.I)
-SECTION_END = re.compile(r'\n\s*(岗位职责|工作职责|职位描述|工作内容|福利待遇|薪资福利|福利|我们提供|工作地点|公司介绍|关于我们|加分项|responsibilit\w*|benefits|what we offer|about us)\s*[:：]?', re.I)
-YEARS = (re.compile(r'(\d{1,2})\s*年\s*(?:以上|及以上)'), re.compile(r'至少\s*(\d{1,2})\s*年'),
-         re.compile(r'(\d{1,2})\s*\+?\s*years?', re.I))
-FACT_YEARS = re.compile(r'(\d{1,2})\s*(?:年|\+?\s*years?)', re.I)
-FIXED = [('博士', ('博士', 'phd', 'doctorate')), ('硕士', ('硕士', '研究生', 'master')), ('本科', ('本科', '学士', 'bachelor')),
-         ('大专', ('大专', '专科', 'associate degree')), ('英语六级', ('英语六级', 'cet-6', 'cet6')), ('英语四级', ('英语四级', 'cet-4', 'cet4')),
-         ('沟通能力', ('沟通能力', '沟通协调', 'communication')), ('团队协作', ('团队协作', '团队合作', 'teamwork')),
-         ('学习能力', ('学习能力',)), ('抗压能力', ('抗压', '承压')), ('责任心', ('责任心', '责任感')), ('逻辑思维', ('逻辑思维', '逻辑分析'))]
-KNOWN = {w.lower(): w for w in (
-    'Python Java Go Golang Rust Ruby PHP Swift Kotlin Scala Perl Lua Shell Bash Linux Unix Docker Kubernetes Redis Kafka '
-    'Spark Hadoop Hive Flink Elasticsearch Nginx Git Excel Word PowerPoint Tableau Figma Sketch Photoshop Illustrator '
-    'React Vue Angular Node Django Flask Spring Pandas PyTorch TensorFlow Unity Unreal Android Jira Salesforce Oracle '
-    'MongoDB PostgreSQL Postgres Matlab Stata').split()}
-TOKEN = re.compile(r'(?<![A-Za-z0-9])[A-Za-z][A-Za-z0-9+#]*(?:\.[A-Za-z0-9]+)?')
-NOT_TERMS = {'cet', 'cet4', 'cet6', 'phd'}  # already counted as 英语四级/六级 and 博士
-
-
-# Readers prepend org metadata ('BG: WXG', '类别: 产品', '部门: 抖音电商'); its codes are not requirements.
-# '经验:' lines stay: a years requirement is real.
-META_LINE = re.compile(r'^\s*(?:BG|类别|部门|职位类别|所属部门)\s*[:：].*$', re.M)
-
-
-def _section(text):
-    text = META_LINE.sub('', unicodedata.normalize('NFKC', str(text or '')))
-    start = SECTION_START.search(text)
-    if not start:
-        return text
-    rest = text[start.end():]
-    end = SECTION_END.search(rest)
-    return rest[:end.start()] if end else rest
-
-
-def _phrases(text):
-    """Requirement phrases in first-seen order, each once."""
-    found, low = [], text.lower()
-    for rx in YEARS:
-        found += [(m.start(), '%d年以上' % int(m.group(1))) for m in rx.finditer(text)]
-    for name, words in FIXED:
-        spots = [low.find(w) for w in words if w in low]
-        if spots:
-            found.append((min(spots), name))
-    for m in TOKEN.finditer(text):
-        word = m.group(0)
-        canon = KNOWN.get(word.lower())
-        looks_technical = any(c.isupper() for c in word[1:]) or any(c in word for c in '0123456789+#')
-        if word.lower() not in NOT_TERMS and (canon or looks_technical):
-            found.append((m.start(), canon or word))
-    return list(dict.fromkeys(p for _, p in sorted(found, key=lambda x: x[0])))
-
-
 def _covered(phrase, fact_phrases, fact_years):
-    m = re.fullmatch(r'(\d+)年以上', phrase)
+    m = re.fullmatch(r'(\d+)(?:-\d+)?年(?:以上)?', phrase)
     if m:
         return any(y >= int(m.group(1)) for y in fact_years)
     return phrase in fact_phrases
 
 
-def summarize(direction_id, jobs, facts):
-    """Counts by source, frequent requirement phrases, facts that meet them and frequent phrases no fact covers."""
+def summarize(direction_id, jobs, facts, structures=None):
+    """Counts by source, frequent requirement phrases, facts that meet them and frequent phrases no fact covers.
+
+    Requirements come from each job's structure (jd.py): `structures` maps job id to a cached model structure; any
+    other job is read by the rules. Nothing is sent from here.
+    """
+    structures = structures or {}
     mine = [j for j in jobs if isinstance(j, dict) and (j.get('direction') or {}).get('id') == direction_id]
-    counts, order = Counter(), {}
+    counts, order, by = Counter(), {}, Counter()
     for job in mine:
-        for p in _phrases(_section(job.get('jd'))):
+        structure = structures.get(job.get('id')) or jd.rules(job)
+        by[structure['by']] += 1
+        for p in jd.requirement_phrases(structure):
             counts[p] += 1
             order.setdefault(p, len(order))
     top = sorted(counts.items(), key=lambda kv: (-kv[1], order[kv[0]]))[:TOP]
@@ -226,11 +182,11 @@ def summarize(direction_id, jobs, facts):
         if not (isinstance(fact, dict) and isinstance(fact.get('text'), str) and isinstance(fact.get('id'), str)):
             continue
         text = unicodedata.normalize('NFKC', fact['text'])
-        own, years = set(_phrases(text)), [int(y) for y in FACT_YEARS.findall(text)]
+        own, years = set(jd.phrases(text)), [int(y) for y in jd.FACT_YEARS.findall(text)]
         fact_phrases |= own
         fact_years += years
         if any(_covered(p, own, years) for p in phrases):
             matched.append(fact['id'])
     missing = [p for p, c in top if 2 * c >= len(mine) and not _covered(p, fact_phrases, fact_years)]
     return dict(count=len(mine), by_source=dict(Counter(j.get('channel') for j in mine)), top_requirements=top,
-                matched_facts=matched, missing=missing)
+                matched_facts=matched, missing=missing, structured_by=dict(ai=by['ai'], rules=by['rules']))

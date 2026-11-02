@@ -1,11 +1,11 @@
 """Orientation (questions, answers, chosen directions) and job classification on a Store."""
 import json
 
-from . import classify, llm, orient
+from . import classify, jd, llm, orient
 from ..profile import directions
 from ..net import network
 from ..base import Error, now
-from ..profile.profile import build_profile
+from ..profile.profile import build_profile, source_facts
 
 
 class OrientActions:
@@ -18,17 +18,19 @@ class OrientActions:
     def _orient_inputs(self):
         with self.tx() as c:
             candidate, consent, current = self.meta(c, 'candidate'), self.meta(c, 'ai_consent'), self.meta(c, 'orientation')
+            jobs = [json.loads(r[0]) for r in c.execute('SELECT data FROM jobs ORDER BY rowid')]
         settings = llm.load_settings(self.root)
         key = llm.load_key(self.root, llm.host(settings))  # None for a key entered for another host
         meter = llm.Meter(settings['budget_cny'], settings['price_in'], settings['price_out'])
         return dict(candidate=candidate, consent=consent, current=current, settings=settings, key=key, meter=meter,
                     facts=orient.confirmed_facts(candidate), names=orient.candidate_names(candidate),
-                    transport=self.llm_transport or network.fetch)
+                    transport=self.llm_transport or network.fetch, jobs=jobs, structures=jd.cached(self.root, jobs),
+                    pending=[f['id'] for f in source_facts(candidate) if f['status'] == 'unconfirmed'])
 
     def _orient_save(self, change, spent):
         with self.tx() as c:
             o = self.meta(c, 'orientation') or dict(questions=[], answers={}, directions=[], conditions=orient.clean_conditions({}),
-                                                    terms=[], by='rules', notes=[], spent_cny=0.0)
+                                                    terms=[], by='rules', notes=[], spent_cny=0.0, not_recommended=[], next_actions=[])
             o.update(change, spent_cny=round(float(o.get('spent_cny', 0)) + spent, 6), updated_at=now())
             self.setmeta(c, 'orientation', o)
             return o
@@ -57,9 +59,10 @@ class OrientActions:
             if q['kind'] == 'text' and not isinstance(value, str): raise Error('文字题须用文字回答')
         profile = build_profile(a['candidate'], confirmed_only=True)
         found = orient.propose(profile, answers, a['facts'], a['names'], list(asked.values()), a['settings'], a['key'], a['consent'],
-                               a['meter'], a['transport'])
+                               a['meter'], a['transport'], jobs=a['jobs'], structures=a['structures'], pending=a['pending'])
         return self._orient_save(dict(answers=answers, directions=found['directions'], conditions=found['conditions'], terms=found['terms'],
-                                      by=found['by'], notes=found['notes']), a['meter'].spent)
+                                      by=found['by'], notes=found['notes'], not_recommended=found['not_recommended'],
+                                      next_actions=found['next_actions']), a['meter'].spent)
 
     def directions_set(self, payload):
         source = payload.get('source', 'user')
@@ -70,7 +73,12 @@ class OrientActions:
             conditions = orient.clean_conditions(payload['conditions']) if 'conditions' in payload else None
         except ValueError as e: raise Error(str(e)) from None
         for row in rows: row['source'] = source
-        change = dict(directions=rows, terms=terms, by=source, notes=[])
+        # Hand-picked directions get the rule points and actions; the previous not_recommended list no longer applies.
+        a = self._orient_inputs()
+        orient.advise(rows, a['jobs'], a['structures'], a['facts'])
+        current = a['current'] or {}
+        menu = orient.action_menu(rows, current.get('questions') or [], current.get('answers') or {}, a['pending'], a['jobs'])
+        change = dict(directions=rows, terms=terms, by=source, notes=[], not_recommended=[], next_actions=orient.pick_actions(menu))
         if conditions is not None: change['conditions'] = conditions
         return self._orient_save(change, 0.0)
 

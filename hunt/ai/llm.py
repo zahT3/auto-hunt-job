@@ -15,7 +15,7 @@ from ..net import network
 
 DEFAULTS = dict(base_url='https://api.deepseek.com', model='deepseek-v4-flash',
                 price_in=1.0, price_out=2.0, budget_cny=5.0)  # CNY per million tokens; budget per run
-KINDS = ('resume_redacted', 'resume_full', 'job_text')
+KINDS = ('resume_redacted', 'resume_full', 'job_text', 'search_query')
 SETTINGS_FILE, SECRETS_FILE = 'ai_settings.json', 'secrets.json'
 MODEL = re.compile(r'[A-Za-z0-9._:/\-]{1,100}')
 # Reasoning models (deepseek-v4-flash among them) count their hidden thinking as completion tokens: a call that leaves

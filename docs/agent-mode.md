@@ -36,3 +36,84 @@
 4. 把判断写成 `[{"job_id": ..., "direction_id": ... 或 null, "reason": "一句话"}]` 存进临时文件，运行 `python -m hunt classify import 该文件`。如果报错，按错误信息改正后重试。
 5. 运行 `python -m hunt summary`，用中文简要告诉我：每个方向有多少岗位、最常见的要求、我的事实对得上哪些、缺哪些。
 ```
+
+## 岗位要求结构化、匹配解释和自然语言搜索条件
+
+这三个命令只读，不写岗位、不跑搜索、不投递。网页里对应的动作名相同（`POST /api/action`，`{"action": "jd_extract", ...}`），返回的状态里多一个 `result` 字段，内容和命令输出一样。
+
+| 命令 | 动作参数 | 作用 |
+|---|---|---|
+| `python -m hunt jd_extract [--job ID ...] [--limit N]` | `job_ids`（1–1000 个）或 `limit`（默认 50） | 抽取年限、学历、硬技能、软技能、加分项、工作地点、是否接受远程 |
+| `python -m hunt job_match JOB_ID` | `job_id` | 把一个岗位的要求逐条对照已确认事实 |
+| `python -m hunt nl_query "深圳或远程，3 年左右，AI 产品"` | `text`（不超过 300 字） | 把一段话转成搜索参数，只返回参数 |
+
+### jd_extract
+
+每一项都带 `evidence`：岗位标题、地点或正文里原样出现的一段文字（不超过 120 字）。原文里找不到依据的项不输出：单值项（`years`、`education`、`remote`）直接没有这个键，列表项是空数组。
+
+```json
+{"schema_version": 1,
+ "jobs": [{"job_id": "...", "title": "...", "company": "...",
+           "structure": {"digest": "32 位十六进制", "by": "ai 或 rules",
+                         "years": {"value": {"min": 3, "max": 5}, "evidence": "3-5年 Python 开发经验"},
+                         "education": {"value": "本科", "evidence": "..."},
+                         "remote": {"value": true, "evidence": "支持远程办公"},
+                         "hard_skills": [{"value": "Python", "evidence": "..."}],
+                         "soft_skills": [{"value": "沟通能力", "evidence": "..."}],
+                         "bonus": [{"value": "有大模型应用经验", "evidence": "..."}],
+                         "location": [{"value": "深圳", "evidence": "工作地点：深圳·南山"}]}}],
+ "report": {"total": 6, "cached": 0, "by_ai": 2, "by_rules": 4, "capped": 4,
+            "batches": [{"batch": 1, "jobs": 2, "by": "ai", "reason": null},
+                        {"batch": 2, "jobs": 2, "by": "rules", "reason": "budget"}],
+            "errors": [], "note": "已用 AI 抽取 2 个岗位……；已达本轮模型花费上限，剩余 4 个岗位按规则抽取", "spent_cny": 2.0}}
+```
+
+- `education` 只取 `大专`、`本科`、`硕士`、`博士`。写着"优先""加分"的要求进 `bonus`，不进硬技能或学历。
+- 有"岗位原文"同意（`job_text`）、当前主机的 key、预算没用完时才调用模型，每批 5 个岗位。否则走规则，`by` 是 `rules`，`note` 写明原因。
+- 模型的回答逐项检查：不是 JSON、多出或缺少岗位 id，整批改用规则；某个岗位有未定义的字段、条目多出键、值的类型不对，或值里有邮箱、链接、长数字，这个岗位改用规则。原文里找不到的条目单独去掉，`note` 里记数量。
+- `batches[].by` 是 `ai`、`rules` 或 `mixed`（同批里有岗位退回规则）；`reason` 是 `budget` 或 `bad_output`。`by_ai` 含缓存命中的条数。
+- 模型结果按 JD 摘要缓存在数据目录的 `ai_cache.sqlite3`，同一份 JD 只调一次模型；规则结果不缓存。`summary` 命令的高频要求也读这份结构（有缓存用缓存，没有就按规则），每个方向多一个 `structured_by: {"ai": n, "rules": m}`。
+
+### job_match
+
+按招聘方系统（ATS）的筛选顺序分三段：`hard` 硬条件，`keywords` 关键词覆盖，`evidence` 每条要求对应的事实。行的顺序跟 JD 一致，没有总分、没有排序，也不预测筛选结果。
+
+```json
+{"schema_version": 1, "job_id": "...", "title": "...", "company": "...", "structure_by": "rules",
+ "structure": { "...": "同 jd_extract" },
+ "hard": [{"kind": "language", "requirement": "英语六级", "jd_evidence": "...", "status": "not_met", "fact_ids": ["f1"], "basis": "facts", "why": "已确认事实里只有英语四级"},
+          {"kind": "location", "requirement": "深圳", "jd_evidence": "工作地点：深圳", "status": "met", "fact_ids": [], "basis": "conditions", "why": null}],
+ "keywords": [{"keyword": "Kubernetes", "source": "hard_skill", "jd_evidence": "...", "coverage": "related", "fact_ids": [],
+               "related_fact_ids": ["f1"], "related_terms": ["k8s"], "why": "简历事实里只有相近表述……"}],
+ "evidence": [{"kind": "hard_skill", "requirement": "Kubernetes", "jd_evidence": "...", "fact_ids": [], "related_fact_ids": ["f1"]}],
+ "notice": "按招聘系统的筛选顺序对照已确认的简历事实；不打分、不排序，也不预测筛选结果",
+ "extract_note": "..."}
+```
+
+- `hard[].kind` 依次是 `education`、`years`、`language`、`certificate`（含工作签证或工作许可）、`location`、`remote`。`status` 是 `met`、`not_met` 或 `unknown`：事实写了且够是 `met`；事实写了但不够（学历、年限偏低，只有英语四级）是 `not_met`；事实没写是 `unknown`。
+- `basis` 是 `facts` 或 `conditions`。地点对照的是定方向时填的意向城市（`orientation.conditions.cities`），没填就是 `unknown`；远程只列出岗位的说法，`status` 总是 `unknown`，`requirement` 是 `true` 或 `false`。
+- `keywords[].coverage`：`explicit` 是事实里有原词；`related` 是只有相近表述（`related_terms` 是在事实里找到的那些词），关键词筛选可能认不出，如果确有这项能力可以改用岗位原词；`absent` 是事实里没有，要么先补充并确认事实，要么就是缺口。`source` 是 `hard_skill`、`soft_skill` 或 `bonus`（加分项里认出的词）。
+- 只用已确认、有来源的事实；未确认的事实和生成的材料不算。对照本身只用规则，不发送任何内容。没有缓存时会先做一次 `jd_extract`，那一步按上面的同意和预算决定是否调用模型。
+
+### 定方向结果里的新字段
+
+`orient_answer` 和 `directions set` 之后，`orientation` 多了这些字段（不用 AI 时也有，拿不到的是空数组）：
+
+- `directions[i].strengths`、`gaps`、`risks`：`[{"text", "fact_ids": [], "jd": [{"job_id", "evidence"}], "requirement": "Docker" 或 null}]`。每条至少引用一个事实 id 或一段本地岗位库里的 JD 原文，没有依据的不写。规则只从本地岗位库里算：同一方向下至少一半岗位要求的项，事实写到了进 `strengths`，没写进 `gaps`；`risks` 只有模型给。
+- `not_recommended`：0–3 个 `{"id", "name", "why", "fact_ids", "jd"}`。规则只在"简历事实指向它、但你在回答里排除了这个行业"时给出。
+- `next_actions`：3–5 个 `{"id", "kind", "target", "text"}`，`kind` 只有 `search`（`target.direction_id`）、`answer_question`（`question_id`）、`add_fact`（`requirement`、`direction_id`）、`confirm_fact`（`fact_id`）、`job_match`（`job_id`）。可选动作不到 3 个时就少于 3 个。
+- 固定追问多了 `english`（英语水平）和 `start`（最早到岗或开始实习的时间），回答存在 `answers` 里，不进 `conditions`。
+
+### nl_query
+
+```json
+{"schema_version": 1, "text": "深圳或远程，3 年左右，AI 产品",
+ "params": {"q": "AI 产品", "city": ["深圳", "远程"], "direction": "ai-product-manager", "fresh": null},
+ "by": "rules", "unmapped": [{"text": "3 年左右", "why": "搜索参数里没有经验年限；可在单岗匹配里对照"}],
+ "notes": ["未使用 AI（未同意向当前模型服务发送搜索需求），按规则转换", "方向：AI 产品经理"],
+ "executed": false, "spent_cny": 0.0, "confirm": "这些参数还没有执行；确认或修改后再交给搜索"}
+```
+
+- `params` 恰好四个键：`q`（不超过 100 字，不含链接、邮箱、长数字）、`city`（最多 10 个，接受远程时含 `远程`）、`direction`（方向表 id 或 `null`）、`fresh`（只看最近多少天，1–365 或 `null`）。
+- 命令只返回参数，`executed` 永远是 `false`。给用户看、让用户改，确认后再交给搜索。参数名按路线图的 `search(q, city, direction, source, fresh)` 写，搜索接口定下来以后再对齐。
+- 用模型需要新的同意类别"搜索需求"（`search_query`）：`python -m hunt ai consent --kind search_query`。模型的回答必须恰好是这四个键且值合法，否则按规则转换。
