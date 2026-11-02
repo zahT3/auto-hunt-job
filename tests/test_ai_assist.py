@@ -11,6 +11,7 @@ from hunt.ai import jd, llm, match, nlquery
 from hunt.app import cli
 from hunt.app.store import Store
 from hunt.base import Error
+from hunt.ai.orient import MIN_ACTIONS
 
 KEY = 'test-key-0123456789abcd'
 RESUME_MARK = '张伟13812345678'
@@ -254,52 +255,169 @@ class InjectionTests(Case):
 
 
 class MatchTests(Case):
-    def explain(self, jd_text, facts):
-        return match.explain(jd.rules(job('a', jd_text)), facts)
+    STRICT = ('任职要求：\n1. 本科及以上学历，3-5年 Go 开发经验，英语六级；\n2. 熟练使用 Kubernetes 和 Docker，持有 PMP 证书，'
+              '需有工作签证；\n3. 良好的沟通能力。\n加分项：\n有大模型应用经验')
 
-    def test_rows_map_to_confirmed_fact_ids_or_missing_or_unknown(self):
-        out = self.explain(BACKEND, [dict(id='f2', text='4 年 Python 后端开发，维护 SQL 报表。'), dict(id='f3', text='本科，计算机科学与技术。')])
-        rows = {(r['kind'], r['requirement']): r for r in out['rows']}
-        self.assertEqual(rows[('years', '3-5年')]['fact_ids'], ['f2'])
-        self.assertEqual(rows[('education', '本科')]['fact_ids'], ['f3'])
-        self.assertEqual(rows[('hard_skill', 'Python')]['status'], 'matched')
-        self.assertEqual(rows[('hard_skill', 'Docker')]['status'], 'missing')
-        self.assertEqual(rows[('soft_skill', '沟通能力')]['status'], 'unknown')
-        self.assertEqual(rows[('remote', True)]['status'], 'unknown')
-        self.assertEqual(sum(out['counts'].values()), len(out['rows']))
-        for r in out['rows']:
-            self.assertIn(r['evidence'], jd.document(job('a', BACKEND)))
+    def explain(self, jd_text, facts, conditions=None, location=None):
+        return match.explain(jd.rules(job('a', jd_text, location=location)), facts, conditions)
 
-    def test_facts_that_do_not_state_years_or_degree_give_unknown_and_lower_ones_missing(self):
-        unknown = self.explain(BACKEND, [dict(id='f1', text='做过后端')])
-        lower = self.explain(BACKEND, [dict(id='f1', text='2 年后端，大专')])
-        status = lambda out, kind: next(r['status'] for r in out['rows'] if r['kind'] == kind)
-        self.assertEqual((status(unknown, 'years'), status(unknown, 'education')), ('unknown', 'unknown'))
-        self.assertEqual((status(lower, 'years'), status(lower, 'education')), ('missing', 'missing'))
+    def test_three_stages_in_screening_order(self):
+        facts = [dict(id='f1', text='4年 Golang 后端，用 k8s 部署，英语四级'), dict(id='f2', text='本科，负责跨部门沟通协调')]
+        out = self.explain(self.STRICT, facts, dict(cities=['北京']), location='深圳')
+        self.assertEqual(set(out), {'hard', 'keywords', 'evidence', 'notice'})
+        hard = {(r['kind'], r['requirement']): r for r in out['hard']}
+        self.assertEqual([r['kind'] for r in out['hard']], ['education', 'years', 'language', 'certificate', 'certificate', 'location'])
+        self.assertEqual((hard[('education', '本科')]['status'], hard[('education', '本科')]['fact_ids']), ('met', ['f2']))
+        self.assertEqual((hard[('years', '3-5年')]['status'], hard[('years', '3-5年')]['fact_ids']), ('met', ['f1']))
+        self.assertEqual((hard[('language', '英语六级')]['status'], hard[('language', '英语六级')]['fact_ids']), ('not_met', ['f1']))
+        self.assertEqual(hard[('certificate', 'PMP')]['status'], 'unknown')
+        self.assertEqual(hard[('certificate', '工作签证或工作许可')]['status'], 'unknown')
+        self.assertEqual((hard[('location', '深圳')]['status'], hard[('location', '深圳')]['basis']), ('not_met', 'conditions'))
+        for r in out['hard']:
+            self.assertIn(r['jd_evidence'], jd.document(job('a', self.STRICT, location='深圳')))
+        kw = {k['keyword']: k for k in out['keywords']}
+        self.assertEqual(list(kw), ['Go', 'Kubernetes', 'Docker', '沟通能力', '大模型'])  # JD order, no ranking
+        self.assertEqual((kw['Go']['coverage'], kw['Go']['related_terms'], kw['Go']['related_fact_ids']), ('related', ['Golang'], ['f1']))
+        self.assertEqual((kw['Kubernetes']['coverage'], kw['Kubernetes']['related_terms']), ('related', ['k8s']))
+        self.assertEqual(kw['Docker']['coverage'], 'absent')
+        self.assertEqual(kw['沟通能力']['coverage'], 'related')
+        self.assertEqual((kw['大模型']['coverage'], kw['大模型']['source']), ('absent', 'bonus'))
+        evidence = {e['requirement']: e for e in out['evidence']}
+        self.assertEqual(evidence['本科']['fact_ids'], ['f2'])
+        self.assertEqual(evidence['Go']['related_fact_ids'], ['f1'])
+        self.assertNotIn('深圳', evidence)  # location rests on conditions, not facts
+
+    def test_explicit_keyword_and_missing_conditions(self):
+        out = self.explain(BACKEND, [dict(id='f2', text='4 年 Python 后端开发，维护 SQL 报表。')], location='深圳')
+        kw = {k['keyword']: k for k in out['keywords']}
+        self.assertEqual((kw['Python']['coverage'], kw['Python']['fact_ids'], kw['Python']['related_terms']), ('explicit', ['f2'], []))
+        hard = {r['kind']: r for r in out['hard']}
+        self.assertEqual(hard['education']['status'], 'unknown')
+        self.assertEqual((hard['location']['status'], hard['location']['why']), ('unknown', '你还没有填写意向城市'))
+        self.assertEqual(hard['remote']['status'], 'unknown')
 
     def test_word_boundaries_and_calendar_years(self):
         out = self.explain(ENGLISH, [dict(id='f1', text='2019年加入 Google，做 MySQL 运维')])
-        rows = {r['requirement']: r for r in out['rows']}
-        self.assertEqual(rows['Go']['status'], 'missing')    # not 'Google'
-        self.assertEqual(rows['5年以上']['status'], 'unknown')  # '2019年' is not 19 years
+        self.assertEqual({k['keyword']: k['coverage'] for k in out['keywords']}['Go'], 'absent')  # not 'Google'
+        self.assertEqual({r['kind']: r['status'] for r in out['hard']}['years'], 'unknown')       # '2019年' is not 19 years
 
-    def test_no_score_or_probability_anywhere(self):
-        out = self.explain(BACKEND, [dict(id='f2', text='Python')])
-        keys = set(out) | {k for r in out['rows'] for k in r}
-        self.assertEqual(keys, {'rows', 'counts', 'notice', 'kind', 'requirement', 'evidence', 'status', 'fact_ids', 'why'})
-        self.assertNotIn('%', json.dumps(out, ensure_ascii=False))
+    def test_no_total_ranking_or_prediction(self):
+        out = self.explain(self.STRICT, [dict(id='f2', text='Python')])
+        keys = set(out) | {k for stage in ('hard', 'keywords', 'evidence') for r in out[stage] for k in r}
+        for word in ('score', 'total', 'rank', 'probability', 'pass', 'reject'):
+            self.assertFalse(any(word in k for k in keys), word)
+        text = json.dumps(out, ensure_ascii=False)
+        for phrase in ('%', '刷掉', '通过率', '淘汰'):
+            self.assertNotIn(phrase, text)
 
-    def test_store_uses_confirmed_source_backed_facts_only(self):
+    def test_store_uses_confirmed_source_backed_facts_and_orientation_cities(self):
         store = Store(self.root)
         with store.tx() as c:
             store.setmeta(c, 'candidate', candidate())
-        j, _ = store.import_job(dict(title='后端', jd=BACKEND))
+            store.setmeta(c, 'orientation', dict(directions=[], conditions=dict(cities=['深圳'])))
+        j, _ = store.import_job(dict(title='后端', jd=BACKEND, location='深圳'))
         out = store.action(dict(action='job_match', job_id=j['id']))['result']
-        rows = {r['requirement']: r for r in out['rows']}
-        self.assertEqual(rows['Docker']['status'], 'missing')  # only an unconfirmed and a generated fact mention it
-        self.assertEqual(rows['Python']['fact_ids'], ['f2'])
+        kw = {k['keyword']: k for k in out['keywords']}
+        self.assertEqual(kw['Docker']['coverage'], 'absent')  # only an unconfirmed and a generated fact mention it
+        self.assertEqual(kw['Python']['fact_ids'], ['f2'])
+        self.assertEqual({r['kind']: r['status'] for r in out['hard']}['location'], 'met')
         self.assertEqual((out['structure_by'], out['job_id']), ('rules', j['id']))
-        self.assertNotIn('score', out)
+
+
+class OrientAdviceTests(Case):
+    """Strengths, gaps, risks, not_recommended and next_actions on the rule and model paths."""
+    def setUp(self):
+        super().setUp()
+        from hunt.ai import orient
+        self.orient = orient
+        self.store = Store(self.root)
+        cand = candidate()
+        cand['facts'].append(fact('f6', '在游戏公司做过 2 年服务端开发'))
+        with self.store.tx() as c:
+            self.store.setmeta(c, 'candidate', cand)
+        for n in range(3):
+            self.store.import_job(dict(title='后端开发工程师', jd=BACKEND + '\n编号 %d' % n, company='公司%d' % n))
+        self.store.action(dict(action='orient_questions'))
+
+    def answer(self, **answers):
+        self.store.action(dict(action='orient_answer', answers=answers))
+        return self.store.orientation()
+
+    def assert_points_cite_something(self, o):
+        for d in o['directions']:
+            for field in ('strengths', 'gaps', 'risks'):
+                for point in d[field]:
+                    self.assertTrue(point['fact_ids'] or point['jd'], (field, point))
+                    for quote in point['jd']:
+                        self.assertIn(quote['evidence'], jd.document(dict(self.store.state()['jobs'][0], jd=BACKEND)) + '\n编号')
+
+    def test_rule_path_fills_every_field(self):
+        family = __import__('hunt.profile.directions', fromlist=['get']).get('backend')['family']
+        o = self.answer(family=[family], exclude='游戏')
+        self.assertEqual(o['by'], 'rules')
+        backend = next(d for d in o['directions'] if d['id'] == 'backend')
+        self.assertEqual(backend['risks'], [])
+        self.assertIn('Python', [p['requirement'] for p in backend['strengths']])
+        self.assertIn('Docker', [g['requirement'] for g in backend['gaps']])
+        self.assertTrue(all(len(g['jd']) == 2 for g in backend['gaps']))
+        self.assert_points_cite_something(o)
+        self.assertIsInstance(o['not_recommended'], list)
+        self.assertEqual(len(o['next_actions']), 5)
+        kinds = {a['kind'] for a in o['next_actions']}
+        self.assertTrue(kinds <= {'search', 'answer_question', 'add_fact', 'confirm_fact', 'job_match'})
+        self.assertEqual(o['next_actions'][0], dict(id='search:' + o['directions'][0]['id'], kind='search',
+                                                    target=dict(direction_id=o['directions'][0]['id']),
+                                                    text='在方向「%s」下开始找岗位' % o['directions'][0]['name']))
+        self.assertEqual([a['kind'] for a in o['next_actions']], ['search', 'answer_question', 'add_fact', 'confirm_fact', 'job_match'])
+        self.assertIn('confirm:f4', [a['id'] for a in o['next_actions']])  # f4 is the unconfirmed fact
+
+    def test_excluded_industry_with_resume_evidence_is_not_recommended(self):
+        profile = dict(directions=[dict(id='game-dev', fact_ids=['f6'])])
+        with patch.object(self.orient.directions, 'evidence', return_value=['f6']), \
+                patch.object(self.orient.directions, 'suggest_from_profile', return_value=[]):
+            rows = self.orient._rule_not_recommended(profile, dict(exclude='游戏'), set())
+        self.assertEqual([(r['id'], r['fact_ids']) for r in rows], [('game-dev', ['f6'])])
+        self.assertIn('游戏', rows[0]['why'])
+        self.assertEqual(self.orient._rule_not_recommended(profile, dict(exclude='游戏'), {'game-dev'}), [])  # never one it picked
+        self.assertEqual(self.orient._rule_not_recommended(profile, {}, set()), [])
+
+    def test_model_points_must_cite_sent_facts(self):
+        self.store.action(dict(action='ai_settings', api_key=KEY))
+        self.store.action(dict(action='ai_consent', kinds=['resume_redacted']))
+        reply = dict(directions=[dict(id='backend', why='有后端经历', fact_ids=['f2'],
+                                      strengths=[dict(text='4 年 Python 后端', fact_ids=['f2']), dict(text='没有依据的夸奖', fact_ids=[])],
+                                      gaps=[dict(text='引用了未发送的事实', fact_ids=['f4'])],
+                                      risks=[dict(text='经历集中在游戏行业', fact_ids=['f6']), dict(text='联系 13812345678', fact_ids=['f2'])])],
+                     not_recommended=[dict(id='game-dev', why='你想离开游戏行业', fact_ids=['f6']), dict(id='backend', why='重复', fact_ids=['f2']),
+                                      dict(id='frontend', why='没有证据', fact_ids=[])],
+                     conditions={}, terms=['后端开发', 'Python'], next_actions=['answer:english', 'bogus', 'search:backend'])
+        self.store.llm_transport = FakeModel(reply)
+        o = self.answer()
+        body = json.loads(self.store.llm_transport.bodies[0])
+        self.assertIn('不迎合用户', body['messages'][0]['content'])
+        self.assertIn('不编造岗位', body['messages'][0]['content'])
+        sent = json.loads(body['messages'][1]['content'])
+        self.assertNotIn('岗位', json.dumps(sent['actions'], ensure_ascii=False).replace('找岗位', ''))  # no job text in the menu
+        self.assertEqual(o['by'], 'ai')
+        d = o['directions'][0]
+        self.assertEqual([p['text'] for p in d['strengths']][:1], ['4 年 Python 后端'])
+        self.assertNotIn('没有依据的夸奖', [p['text'] for p in d['strengths']])
+        self.assertTrue(all(g['jd'] for g in d['gaps']))  # only the JD-backed rule gaps survive
+        self.assertEqual([r['text'] for r in d['risks']], ['经历集中在游戏行业'])
+        known = {r['id'] for r in __import__('hunt.profile.directions', fromlist=['load']).load()}
+        self.assertEqual([n['id'] for n in o['not_recommended']], ['game-dev'] if 'game-dev' in known else [])
+        self.assertEqual([a['id'] for a in o['next_actions']][:2], ['answer:english', 'search:backend'])
+        self.assertTrue(MIN_ACTIONS <= len(o['next_actions']) <= 5)
+        self.assertTrue(any('没有引用' in n for n in o['notes']))
+        self.assert_points_cite_something(o)
+
+    def test_hand_set_directions_get_rule_points_and_actions(self):
+        self.store.action(dict(action='directions_set', directions=['backend']))
+        o = self.store.orientation()
+        self.assertEqual(o['not_recommended'], [])
+        self.assertIn('Docker', [g['requirement'] for g in o['directions'][0]['gaps']])
+        self.assertEqual(o['next_actions'][0]['id'], 'search:backend')
+        self.assertEqual(self.store.state()['orientation']['directions'][0]['risks'], [])
 
 
 class NlQueryTests(Case):

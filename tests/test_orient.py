@@ -80,7 +80,7 @@ class QuestionTests(OrientCase):
         o = self.store.orientation()
         self.assertEqual(model.bodies, [])
         self.assertEqual(o['by'], 'rules')
-        self.assertEqual([q['id'] for q in o['questions']], ['family', 'city', 'years', 'remote', 'exclude', 'switch'])
+        self.assertEqual([q['id'] for q in o['questions']], ['family', 'city', 'years', 'remote', 'exclude', 'switch', 'english', 'start'])
         self.assertEqual(o['questions'][0]['options'], orient.families())
         self.assertTrue(any('同意' in n for n in o['notes']))
         self.assertEqual(o['spent_cny'], 0)
@@ -128,7 +128,7 @@ class QuestionTests(OrientCase):
             self.store.action(dict(action='orient_questions'))
             o = self.store.orientation()
             self.assertEqual(o['by'], 'rules')
-            self.assertEqual(len(o['questions']), 6)
+            self.assertEqual(len(o['questions']), len(orient.fixed_questions()))
             self.assertTrue(o['notes'])
 
     def test_model_question_ids_cannot_reuse_fixed_ids(self):

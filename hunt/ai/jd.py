@@ -27,12 +27,12 @@ from . import llm
 from ..base import now
 from ..net import network
 
-VERSION = 1  # part of the digest: a change in prompt or schema re-extracts instead of reading stale cache rows
+VERSION = 2  # part of the digest: a change in prompt or schema re-extracts instead of reading stale cache rows
 CACHE_FILE, CACHE_SCHEMA = 'ai_cache.sqlite3', 1
 TITLE_CHARS, LOCATION_CHARS, JD_CHARS = 120, 60, 3000
 EVIDENCE_CHARS, VALUE_CHARS, BONUS_CHARS, MAX_ITEMS = 120, 40, 80, 30
 SINGLE = ('years', 'education', 'remote')
-LISTS = ('hard_skills', 'soft_skills', 'bonus', 'location')
+LISTS = ('hard_skills', 'soft_skills', 'languages', 'certificates', 'bonus', 'location')
 FIELDS = SINGLE + LISTS
 DEGREES = ('大专', '本科', '硕士', '博士')  # ascending
 NO_LOCATION = {'地点未知', '未知', '待确认'}  # placeholders the Store writes, not places
@@ -43,7 +43,8 @@ SYSTEM = ('你负责从招聘岗位里抽取任职要求。每个岗位在一个
           'years：{"value": {"min": 整数, "max": 整数或 null}, "evidence": 原文}（经验年限）\n'
           'education：{"value": "大专"、"本科"、"硕士"或"博士", "evidence": 原文}（最低学历）\n'
           'remote：{"value": true 或 false, "evidence": 原文}（是否接受远程）\n'
-          'hard_skills、soft_skills、bonus、location：[{"value": 文字, "evidence": 原文}]（硬技能、软技能、加分项、工作地点）\n'
+          'hard_skills、soft_skills、languages、certificates、bonus、location：[{"value": 文字, "evidence": 原文}]'
+          '（硬技能、软技能、语言要求、证书或签证/工作许可、加分项、工作地点）\n'
           'evidence 必须是该岗位里原样出现的一段文字，不超过 %d 字；value 不超过 %d 字（加分项 %d 字）。'
           '写着"优先""加分"的要求放进 bonus，不放进硬技能或学历。' % (EVIDENCE_CHARS, VALUE_CHARS, BONUS_CHARS))
 
@@ -65,7 +66,13 @@ YEAR_MIN = (re.compile(r'(?<!\d)(\d{1,2})\s*年\s*(?:以上|及以上)'), re.com
 FACT_YEARS = re.compile(r'(?<![\d.])(\d{1,2})\s*(?:年(?!级)|\+?\s*years?)', re.I)  # not the '19' of '2019年'
 DEGREE_WORDS = (('博士', ('博士', 'phd', 'doctorate')), ('硕士', ('硕士', '研究生', 'master')),
                 ('本科', ('本科', '学士', 'bachelor')), ('大专', ('大专', '专科', 'associate degree')))
-CERTS = (('英语六级', ('英语六级', 'cet-6', 'cet6')), ('英语四级', ('英语四级', 'cet-4', 'cet4')))
+LEVELS = (('英语六级', ('英语六级', 'cet-6', 'cet6')), ('英语四级', ('英语四级', 'cet-4', 'cet4')))
+LANGUAGES = (('英语', ('英语', 'english')), ('日语', ('日语', 'japanese')), ('韩语', ('韩语', 'korean')), ('粤语', ('粤语', 'cantonese')),
+             ('德语', ('德语', 'german')), ('法语', ('法语', 'french')), ('西班牙语', ('西班牙语', 'spanish')))
+CERTS = (('注册会计师', ('注册会计师', 'cpa')), ('ACCA', ('acca',)), ('CFA', ('cfa',)), ('FRM', ('frm',)), ('PMP', ('pmp',)),
+         ('法律职业资格', ('法律职业资格', '法考', '司法考试')), ('教师资格证', ('教师资格',)), ('中级会计职称', ('中级会计',)),
+         ('初级会计职称', ('初级会计',)), ('证券从业资格', ('证券从业',)), ('基金从业资格', ('基金从业',)), ('驾驶证', ('驾照', '驾驶证')),
+         ('工作签证或工作许可', ('工作签证', '工作许可', 'work permit', 'work visa', 'visa sponsorship', 'right to work')))
 SOFT = (('沟通能力', ('沟通能力', '沟通协调', 'communication')), ('团队协作', ('团队协作', '团队合作', 'teamwork')),
         ('学习能力', ('学习能力',)), ('抗压能力', ('抗压', '承压')), ('责任心', ('责任心', '责任感')), ('逻辑思维', ('逻辑思维', '逻辑分析')))
 CN_HARD = ('数据分析', '机器学习', '深度学习', '大模型', '自然语言处理', '计算机视觉', '需求分析', '产品设计', '原型设计', '用户研究',
@@ -76,7 +83,7 @@ KNOWN = {w.lower(): w for w in (
     'React Vue Angular Node Django Flask Spring Pandas PyTorch TensorFlow Unity Unreal Android Jira Salesforce Oracle '
     'MongoDB PostgreSQL Postgres Matlab Stata').split()}
 TOKEN = re.compile(r'(?<![A-Za-z0-9])[A-Za-z][A-Za-z0-9+#]*(?:\.[A-Za-z0-9]+)?')
-NOT_TERMS = {'cet', 'cet4', 'cet6', 'phd'}  # counted as 英语四级/六级 and 博士
+NOT_TERMS = {'cet', 'cet4', 'cet6', 'phd', 'cpa', 'acca', 'cfa', 'frm', 'pmp'}  # counted as languages, degrees or certificates
 CITIES = ('北京', '上海', '深圳', '广州', '杭州', '成都', '南京', '武汉', '西安', '苏州', '天津', '重庆', '长沙', '厦门', '合肥', '郑州',
           '青岛', '济南', '东莞', '佛山', '珠海', '宁波', '无锡', '福州', '大连', '沈阳', '昆明', '南昌', '香港', '澳门', '台北', '新加坡')
 CITY_EN = dict(beijing='北京', shanghai='上海', shenzhen='深圳', guangzhou='广州', hangzhou='杭州', chengdu='成都', nanjing='南京',
@@ -201,7 +208,12 @@ def _items(lines, find):
 
 
 def _hard(line):
-    return _words(line, CERTS) + [w for w in CN_HARD if w in line] + _tokens(line)
+    return [w for w in CN_HARD if w in line] + _tokens(line)
+
+
+def _languages(line):
+    levels = _words(line, LEVELS)  # '英语六级' already says English; a bare '英语' is added only without a level
+    return levels + [name for name in _words(line, LANGUAGES) if not (name == '英语' and levels)]
 
 
 def cities(text):
@@ -238,6 +250,7 @@ def rules(job):
         if found:
             out[name] = found
     out.update(hard_skills=_items(req, _hard), soft_skills=_items(req, lambda line: _words(line, SOFT)),
+               languages=_items(req, _languages), certificates=_items(req, lambda line: _words(line, CERTS)),
                bonus=[dict(value=BULLET.sub('', line.orig)[:BONUS_CHARS], evidence=_clip(line)) for line in bonus[:MAX_ITEMS]],
                location=_location(text))
     return out
@@ -250,7 +263,7 @@ def phrases(text):
     years = _years([text])
     if years:
         found.append(label('years', years['value']))
-    found += _words(text, DEGREE_WORDS) + _hard(text) + _words(text, SOFT)
+    found += _words(text, DEGREE_WORDS) + _languages(text) + _words(text, CERTS) + _hard(text) + _words(text, SOFT)
     return list(dict.fromkeys(found))
 
 
@@ -261,11 +274,18 @@ def label(field, value):
     return value
 
 
+def requirement_items(structure):
+    """(phrase, item) for years, education, languages, certificates, hard and soft skills; bonus, location and remote are not."""
+    out = [(label(f, structure[f]['value']), structure[f]) for f in ('years', 'education') if structure.get(f)]
+    out += [(i['value'], i) for f in ('languages', 'certificates', 'hard_skills', 'soft_skills') for i in structure.get(f) or []]
+    first = {}
+    for phrase, item in out:
+        first.setdefault(phrase, item)
+    return list(first.items())
+
+
 def requirement_phrases(structure):
-    """Years, education, hard and soft skills of one structure as phrases; bonus, location and remote are not requirements."""
-    out = [label(f, structure[f]['value']) for f in ('years', 'education') if structure.get(f)]
-    out += [i['value'] for f in ('hard_skills', 'soft_skills') for i in structure.get(f) or []]
-    return list(dict.fromkeys(out))
+    return [phrase for phrase, _ in requirement_items(structure)]
 
 
 # ---- model output ----

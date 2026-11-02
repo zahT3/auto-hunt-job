@@ -13,9 +13,10 @@ class AssistActions:
 
     def _assist_inputs(self):
         with self.tx() as c:
-            consent, candidate = self.meta(c, 'ai_consent'), self.meta(c, 'candidate')
+            consent, candidate, orientation = self.meta(c, 'ai_consent'), self.meta(c, 'candidate'), self.meta(c, 'orientation')
         settings = llm.load_settings(self.root)
         return dict(settings=settings, key=llm.load_key(self.root, llm.host(settings)), consent=consent, candidate=candidate,
+                    conditions=(orientation or {}).get('conditions'),
                     meter=llm.Meter(settings['budget_cny'], settings['price_in'], settings['price_out']),
                     transport=self.llm_transport or network.fetch)
 
@@ -39,7 +40,7 @@ class AssistActions:
                                             for j in jobs], report=report)
 
     def job_match(self, payload):
-        """payload: job_id. Reads (or extracts) the job's structure and lines it up with confirmed facts; no score."""
+        """payload: job_id. Reads (or extracts) the job's structure and screens it in ATS order against confirmed facts; no score."""
         if not isinstance(payload.get('job_id'), str):
             raise Error('请提供 job_id')
         job = self._jobs([payload['job_id']], 1)[0]
@@ -47,7 +48,7 @@ class AssistActions:
         found, report = jd.extract([job], self.root, a['settings'], a['key'], a['consent'], a['meter'], transport=a['transport'])
         structure = found[job['id']]
         return dict(schema_version=1, job_id=job['id'], title=job.get('title'), company=job.get('company'), structure_by=structure['by'],
-                    structure=structure, **match.explain(structure, orient.confirmed_facts(a['candidate'])), extract_note=report['note'])
+                    structure=structure, **match.explain(structure, orient.confirmed_facts(a['candidate']), a['conditions']), extract_note=report['note'])
 
     def nl_query(self, payload):
         """payload: text. Returns search parameters for the caller to confirm; never runs the search."""
