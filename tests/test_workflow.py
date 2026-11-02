@@ -149,7 +149,8 @@ class WorkflowTests(unittest.TestCase):
         draft=uploaded['candidate_draft']
         self.store.confirm_resume(dict(draft_id=draft['id'],confirmed_fact_ids=[f['id'] for f in draft['candidate']['facts']]))
         job=self.store.state()['jobs'][0]
-        self.assertIsNone(job['recommendation'])
+        # state() recomputes a missing recommendation against the new profile, so the old skill match must be gone.
+        self.assertEqual(job['recommendation']['skill_matches'], [])
         self.assertIsNone(job['match'])
         self.assertIsNone(job['approval'])
 

@@ -12,6 +12,20 @@ from ..base import Error, digest, dumps, now
 from ..profile.profile import synthetic_profile
 
 LOCKED = {'sending', 'unknown', 'submitted'}
+TRIAGE_VALUES = ('skipped', 'later', 'interested')
+SENT_STATUSES = ('sending', 'unknown', 'submitted', 'submission_unknown', 'verification_required')
+
+
+def bucket_of(job):
+    if job['status'] in SENT_STATUSES:
+        return 'sent'
+    if job['status'] == 'rejected' or job.get('triage') == 'skipped':
+        return 'skipped'
+    if job.get('package'):
+        return 'materials'
+    if job.get('triage') == 'interested':
+        return 'chosen'
+    return 'pending'
 
 
 class WorkbenchActions:
@@ -95,6 +109,40 @@ class WorkbenchActions:
             self.event(j, 'prepared', '生成本地证据草稿；不代表申请提交')
             self.save(c, j)
             return j
+
+    def triage(self, jid, value):
+        if value is not None and value not in TRIAGE_VALUES:
+            raise Error('选择无效')
+        with self.tx() as c:
+            j = self.job(c, jid)
+            if j['status'] in LOCKED or j['status'] == 'rejected':
+                raise Error('该岗位已锁定，不能改选择')
+            if j.get('triage') == 'interested' and value is None:
+                if j['status'] == 'approved' or j.get('approval'):
+                    raise Error('材料已批准，不能撤销；到进度页处理')
+                j.update(package=None, match=None, approval=None, status='new', prepare_error=None)
+            j.update(triage=value, triaged_at=now())
+            self.save(c, j)
+            want_prepare = value == 'interested' and not j.get('package')
+        if want_prepare:
+            self.prepare_pool.submit(self._prepare_quietly, jid)
+
+    def _prepare_quietly(self, jid):
+        with self.tx() as c:
+            if self.job(c, jid).get('triage') != 'interested':
+                return
+        error = None
+        try:
+            self.prepare(jid)
+        except Exception as e:
+            error = str(e) or e.__class__.__name__
+        with self.tx() as c:
+            j = self.job(c, jid)
+            j['prepare_error'] = error
+            if j.get('triage') != 'interested' and not error and j['status'] == 'review':
+                # The user undid the choice while prepare was running; drop what it wrote.
+                j.update(package=None, match=None, approval=None, status='new')
+            self.save(c, j)
 
     def review(self, payload):
         ids = payload.get('job_ids', [])

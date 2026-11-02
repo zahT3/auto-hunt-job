@@ -9,7 +9,9 @@ import secrets
 import sqlite3
 import threading
 import uuid
+from concurrent.futures import ThreadPoolExecutor
 from contextlib import contextmanager
+from datetime import datetime, timezone
 from pathlib import Path
 from urllib.parse import urlsplit, urlunsplit
 
@@ -22,7 +24,7 @@ from .search_run import SearchRun
 from ..base import Error, digest, dumps, now
 from ..profile import directions
 from ..profile.profile import build_profile, synthetic_profile
-from ..workbench.actions import LOCKED, WorkbenchActions
+from ..workbench.actions import LOCKED, WorkbenchActions, bucket_of
 
 
 def summary_only(raw):
@@ -43,6 +45,8 @@ class Store(WorkbenchActions, OrientActions, AiSettings, SearchRun, CandidateAct
         self.entry_lock = threading.Lock()
         self.entry_verifications = {}
         self.entry_signals = {}
+        # One worker: materials are prepared one at a time so a burst of choices cannot pile up on the SQLite writer.
+        self.prepare_pool = ThreadPoolExecutor(max_workers=1)
         self.is_demo = self.root.name == 'demo'
         with self.tx() as c:
             c.executescript('''CREATE TABLE IF NOT EXISTS meta(key TEXT PRIMARY KEY, value TEXT NOT NULL);
@@ -123,8 +127,31 @@ class Store(WorkbenchActions, OrientActions, AiSettings, SearchRun, CandidateAct
                 review = j.get('material_review') or {}
                 j['material_review_current'] = bool(review.get('snapshot') and
                     review.get('snapshot') == self._current_material_snapshot(candidate, config, j))
-            keyword = str(config.get('keyword') or '').strip().casefold()
-            jobs.sort(key=lambda j:(j['status'] in ('submitted','rejected'), any(r.get('status')=='not_met' for r in (j.get('match') or {}).get('hard',[])), -(j.get('recommendation') or {}).get('priority',0), bool(keyword) and keyword not in j['title'].casefold()))
+            profile = None
+            for j in jobs:
+                j.setdefault('triage', None); j.setdefault('triaged_at', None); j.setdefault('prepare_error', None)
+                if j.get('recommendation') is None:
+                    # Candidate updates clear recommendations; fill them here so the card can show a reason without a prepare.
+                    from ..profile.profile import recommend
+                    profile = profile or build_profile(candidate, confirmed_only=True)
+                    j['recommendation'] = recommend(candidate, j, config, profile=profile)
+                    self.save(c, j)
+                j['bucket'] = bucket_of(j)
+            jobs.sort(key=lambda j:(j['status'] in ('submitted','rejected'), any(r.get('status')=='not_met' for r in (j.get('match') or {}).get('hard',[])), -(j.get('recommendation') or {}).get('priority',0)))
+            later = sorted((j for j in jobs if j['bucket'] == 'pending' and j['triage'] == 'later'), key=lambda j: j.get('triaged_at') or '')
+            jobs = [j for j in jobs if not (j['bucket'] == 'pending' and j['triage'] == 'later')] + later
+            counts = {k: 0 for k in ('pending', 'chosen', 'materials', 'sent', 'skipped')}
+            today = datetime.now().astimezone().date()
+            counts['new_today'] = 0
+            for j in jobs:
+                counts[j['bucket']] += 1
+                try:
+                    stamp = datetime.fromisoformat(str(j.get('collected_at')))
+                    if stamp.tzinfo is None:
+                        stamp = stamp.replace(tzinfo=timezone.utc)
+                    counts['new_today'] += stamp.astimezone().date() == today
+                except ValueError:
+                    pass
             tasks = []
             if synthetic_profile(candidate):
                 tasks.append(dict(title='补充真实事实资料', reason='当前候选人为合成演示，禁止对外申请', action='candidate'))
@@ -142,7 +169,6 @@ class Store(WorkbenchActions, OrientActions, AiSettings, SearchRun, CandidateAct
                             continue
                     tasks.append(dict(title=j['title'], reason=reason, job_id=j['id']))
             runs = [json.loads(r[0]) for r in c.execute('SELECT data FROM runs ORDER BY rowid DESC LIMIT 30')]
-            from ..profile.profile import build_profile
             from ..search.sources.catalog import CATALOG
             orientation = self.meta(c, 'orientation')
             table = directions.load()
@@ -156,7 +182,7 @@ class Store(WorkbenchActions, OrientActions, AiSettings, SearchRun, CandidateAct
                         candidate_draft=self.meta(c, 'candidate_draft'), candidate_profile=build_profile(candidate, confirmed_only=True),
                         search_running=self.run_lock.locked() or bool(self.search_thread and self.search_thread.is_alive()),
                         entry_verifications=entry_verifications,
-                        company_catalog=CATALOG, config=config, ai=self._ai(c), control=self.meta(c, 'control'), jobs=jobs, runs=runs,
+                        company_catalog=CATALOG, config=config, ai=self._ai(c), control=self.meta(c, 'control'), jobs=jobs, counts=counts, runs=runs,
                         tasks=tasks, interventions=[json.loads(r[0]) for r in c.execute('SELECT data FROM interventions ORDER BY rowid DESC')],
                         capabilities=[dict(channel='搜索', description='BOSS、猎聘与公司官网按已选来源检索；每轮结果显示实际覆盖与失败。'),
                                       dict(channel='候选人理解', description='本地规则提取与有来源的技能关联；不推断熟练度或录用概率。'),
@@ -298,6 +324,7 @@ ACTIONS = {
     'entry_cancel': lambda s, p: s.signal_entry_verification(p['job_id'], finish=False),
     'import': lambda s, p: s.import_and_prepare(p),
     'prepare': lambda s, p: s.prepare(p['job_id']),
+    'triage': lambda s, p: s.triage(p['job_id'], p.get('value')),
     'review_materials': lambda s, p: s.review_materials(p),
     'review': lambda s, p: s.review(p),
     'execute': lambda s, p: s.execute(p['job_id']),

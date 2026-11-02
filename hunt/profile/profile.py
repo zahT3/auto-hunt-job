@@ -191,13 +191,13 @@ def confirm_candidate(candidate, fact_ids, *, application_fact_ids=()):
     return result
 
 
-def recommend(candidate, job, config=None):
+def recommend(candidate, job, config=None, profile=None):
     """Explain local relevance using confirmed source mentions; not hiring odds.
 
     priority is only a stable sorting aid (0-10). Missing skills mean no matching
     resume mention, not that the candidate fails a mandatory job requirement.
     """
-    profile = build_profile(candidate, confirmed_only=True)
+    profile = profile or build_profile(candidate, confirmed_only=True)
     text = ' '.join(str(job.get(key) or '') for key in ('title', 'description', 'jd', 'requirements', 'requirements_text', 'raw_text'))
     job_skills = {name for name, pattern in _SKILLS.items() if re.search(pattern, text, re.I)}
     skill_matches = [dict(name=s['name'], fact_ids=s['fact_ids']) for s in profile['skills'] if s['name'] in job_skills]
