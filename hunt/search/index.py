@@ -12,7 +12,7 @@ import unicodedata
 from datetime import datetime, timedelta, timezone
 
 from ..base import Error, digest, dumps, now
-from .benchmark import normalize_company, normalize_title
+from .normalize import normalize_company, normalize_title
 from .query import matches
 
 SCHEMA_VERSION = 2

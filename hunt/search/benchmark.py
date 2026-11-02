@@ -2,32 +2,12 @@
 from datetime import datetime, timedelta, timezone
 import json
 from pathlib import Path
-import re
-import unicodedata
 from urllib.parse import urlsplit, urlunsplit
+
+from .normalize import normalize_company, normalize_title
 
 
 SHANGHAI = timezone(timedelta(hours=8))
-BRACKETS = re.compile(r'\([^()]*\)|\[[^\[\]]*\]|【[^【】]*】')
-
-
-def _text(text):
-    text = unicodedata.normalize('NFKC', str(text or '')).casefold()
-    while True:
-        stripped = BRACKETS.sub('', text)
-        if stripped == text:
-            return text
-        text = stripped
-
-
-def normalize_title(text):
-    return ''.join(c for c in _text(text) if not c.isspace() and
-                   not unicodedata.category(c).startswith('P') and c != '|')
-
-
-def normalize_company(text):
-    text = ''.join(c for c in _text(text) if not c.isspace())
-    return re.sub(r'(?:股份有限公司|有限公司|集团)+$', '', text)
 
 
 def _url(value):
