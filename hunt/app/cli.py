@@ -87,7 +87,7 @@ def parser():
     benchmark.add_argument('--json', action='store_true', help='输出结构化 JSON')
     find = commands.add_parser('search', help='查本机岗位库：全文检索标题和 JD，按跨来源的同一岗位分组')
     find.add_argument('q', nargs='*', metavar='WORD', help='检索词，多个词须同时出现；不填列出全部')
-    find.add_argument('--city', help='只看这个城市，例如 深圳')
+    find.add_argument('--city', action='append', help='只看这个城市，例如 深圳；可重复，任一城市命中即可，最多 10 个')
     find.add_argument('--direction', metavar='ID', help='只看归到这个方向 ID 的岗位')
     find.add_argument('--source', help='只看这个来源：渠道（如 liepin）或来源 ID（如 feishu:jobs.example.cn）')
     find.add_argument('--fresh', type=int, metavar='DAYS', help='只看最近 DAYS 天内搜到、仍在招的岗位')

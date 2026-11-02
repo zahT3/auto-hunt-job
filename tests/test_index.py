@@ -133,6 +133,28 @@ class Search(unittest.TestCase):
         with self.assertRaises(Error): self.store.search_jobs('', limit=0)
         with self.assertRaises(Error): self.store.search_jobs('', fresh=0)
 
+    def test_remote_is_a_place_and_a_version_2_library_rederives_it(self):
+        self.add(job(1, 'AI 产品经理', '甲', '深圳/远程'), job(2, 'AI 产品经理', '乙', 'Remote'), job(3, 'AI 产品经理', '丙', '深圳'))
+        self.assertEqual({g['company'] for g in self.store.search_jobs('', city=['远程'])['groups']}, {'甲', '乙'})
+        with self.store.tx() as c:  # as version 2 left it: 远程 was not a place yet
+            c.execute("UPDATE jobs SET city='深圳' WHERE id='job-1'"); c.execute("UPDATE jobs SET city='remote' WHERE id='job-2'")
+            c.execute("UPDATE meta SET value='2' WHERE key='schema_version'")
+        store = Store(self.store.root)
+        with store.tx() as c:
+            self.assertEqual(dict(c.execute('SELECT id, city FROM jobs')), {'job-1': '深圳/远程', 'job-2': '远程', 'job-3': '深圳'})
+            self.assertEqual(store.meta(c, 'schema_version'), 3)
+
+    def test_city_takes_a_list_and_any_city_matches(self):
+        self.add(job(1, 'AI 产品经理', '甲', '深圳'), job(2, 'AI 产品经理', '乙', '杭州'), job(3, 'AI 产品经理', '丙', '上海'),
+                 job(4, 'AI 产品经理', '丁', '北京/杭州'))
+        result = self.store.search_jobs('AI 产品经理', city=['深圳市', 'Hangzhou', '杭州', '大理', ' '])
+        self.assertEqual({g['company'] for g in result['groups']}, {'甲', '乙', '丁'})
+        self.assertEqual(result['query']['city'], ['深圳', '杭州', '大理'])  # an unlisted place stays as given
+        self.assertEqual(self.store.search_jobs('', city='深圳')['query']['city'], ['深圳'])
+        self.assertEqual(self.store.search_jobs('', city=[])['total_groups'], 4)  # an empty list does not filter
+        with self.assertRaisesRegex(Error, '最多 10 个'): self.store.search_jobs('', city=['城%d' % n for n in range(11)])
+        with self.assertRaises(Error): self.store.search_jobs('', city=[1])
+
     def test_fresh_keeps_open_jobs_seen_lately(self):
         self.add(job(1, 'AI 产品经理', '旧', '深圳'), at='2020-01-01T00:00:00.000000+00:00')
         self.add(job(2, 'AI 产品经理', '新', '深圳'), job(3, 'AI 产品经理', '下线', '深圳'))
@@ -229,6 +251,16 @@ class LibraryOf1500(unittest.TestCase):
                                                                    'first_seen', 'last_seen', 'status', 'url', 'application_url',
                                                                    'salary', 'location', 'matched'})
 
+    def test_cli_city_repeats(self):
+        out = io.StringIO()
+        with contextlib.redirect_stdout(out):
+            code = main(['search', 'AI 产品经理', '--city', '深圳', '--city', '成都', '--limit', '500', '--json', '--data', str(self.data)])
+        result = json.loads(out.getvalue())
+        self.assertEqual((code, result['query']['city']), (0, ['深圳', '成都']))
+        cities = [set(g['city'].split('/')) for g in result['groups']]
+        self.assertTrue(any('成都' in c for c in cities) and any('深圳' in c for c in cities))
+        self.assertTrue(all(c & {'深圳', '成都'} for c in cities))
+
     def test_cli_errors_are_json(self):
         out = io.StringIO()
         with contextlib.redirect_stdout(out):
@@ -315,6 +347,14 @@ class WebSearch(unittest.TestCase):
         self.assertEqual(self.get('/api/search?limit=x')[0], 400)
         self.assertEqual(self.get('/api/search?fresh=0')[0], 400)
         self.assertEqual(self.get('/api/search', host='evil.example')[0], 403)
+
+    def test_get_search_takes_repeated_city(self):
+        with self.store.tx() as c:
+            index.insert(c, job(2, 'AI 产品经理', '乙', '杭州'), 'feishu:p2')
+            index.insert(c, job(3, 'AI 产品经理', '丙', '上海'), 'feishu:p3')
+        status, body = self.get('/api/search?q=' + quote('产品经理') + '&city=' + quote('深圳') + '&city=' + quote('杭州') + '&city=')
+        self.assertEqual((status, {g['company'] for g in body['groups']}, body['query']['city']), (200, {'甲', '乙'}, ['深圳', '杭州']))
+        self.assertEqual(self.get('/api/search?' + '&'.join('city=c%d' % n for n in range(11)))[0], 400)
 
 
 if __name__ == '__main__':
