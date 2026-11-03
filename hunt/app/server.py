@@ -14,6 +14,12 @@ from ..search.sources import inbox
 STATIC = Path(__file__).resolve().parents[2] / 'static'
 
 
+class LocalServer(ThreadingHTTPServer):
+    # The page loads a few dozen ES modules in parallel; with the default listen backlog of 5 the kernel
+    # resets the overflow (ERR_CONNECTION_RESET) and the page fails to start.
+    request_queue_size = 64
+
+
 def make_server(store, port=8766):
     token = secrets.token_urlsafe(32)
     # Read once here: checking it per request would take the SQLite write lock before any authentication.
@@ -150,7 +156,7 @@ def make_server(store, port=8766):
                 return self.send(204,b'',extra=(('Access-Control-Allow-Origin',origin),('Vary','Origin'),('Access-Control-Allow-Methods','POST'),
                     ('Access-Control-Allow-Headers','Content-Type, X-Inbox-Token'),('Access-Control-Allow-Private-Network','true'),('Access-Control-Max-Age','600')))
             self.send(403,{'error':'不允许跨站访问'},extra=(('Vary','Origin'),))
-    return ThreadingHTTPServer(('127.0.0.1',port),Handler)
+    return LocalServer(('127.0.0.1',port),Handler)
 
 
 def periodic(store, stop):

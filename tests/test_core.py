@@ -499,6 +499,22 @@ class HttpTests(CoreCase):
                 self.assertEqual(self.request('GET', '/js/views/search.js', headers={'Origin': 'https://attacker.invalid'})[0], 403)
                 self.assertEqual(self.request('GET', '/app.js')[0], 404)  # the pre-module script route is gone
 
+    def test_listen_backlog_holds_a_page_worth_of_module_requests(self):
+        self.assertGreaterEqual(self.server.request_queue_size, 64)
+
+    def test_forty_simultaneous_module_requests_all_succeed(self):
+        barrier, results = threading.Barrier(40), []
+        def fetch():
+            barrier.wait()
+            try:
+                results.append(self.request('GET', '/js/main.js')[0])
+            except OSError as e:
+                results.append(repr(e))
+        threads = [threading.Thread(target=fetch) for _ in range(40)]
+        for t in threads: t.start()
+        for t in threads: t.join(10)
+        self.assertEqual(results, [200] * 40)
+
     def test_font_route_serves_only_woff2_files_inside_static_fonts(self):
         from hunt.app import server
         with tempfile.TemporaryDirectory() as tmp:
