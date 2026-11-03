@@ -298,7 +298,7 @@ export function orientBody() {
   const updated = o.updated_at ? `，${esc(clock(o.updated_at))} 更新` : "";
   const notes = items(o.notes);
   return (
-    `<div class="page"><header class="page-h"><h1>定方向</h1>` +
+    `<div class="page"><header class="page-h"><h1 id="page-title" tabindex="-1">定方向</h1>` +
     `<p>按 ${confirmed} 条已确认事实和你的回答给出${by}${updated}。采用后，搜索会用合并后的搜索词。</p>` +
     (orientForSearch && !chosenDirections().length
       ? '<p class="warnline" role="alert">还没有搜索方向。先定方向再开始搜索；也可以在设置里直接填写关键词。</p>'

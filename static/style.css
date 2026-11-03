@@ -1408,18 +1408,6 @@ mark.ev.on {
   font-size: var(--fs-s);
   margin-top: -6px;
 }
-.meter {
-  height: 6px;
-  background: var(--wash-2);
-  border-radius: 3px;
-  overflow: hidden;
-  margin-top: 6px;
-}
-.meter i {
-  display: block;
-  height: 100%;
-  background: var(--ink);
-}
 .consent {
   margin-top: 16px;
   border: 1px solid var(--rule);
@@ -1854,8 +1842,7 @@ mark.ev.on {
 }
 
 /* 页面补充：原型之外、实现里用到的几处 */
-.page .sub,
-.detail .sub-note {
+.page .sub {
   color: var(--ink-2);
   margin-top: var(--s1);
 }
@@ -1937,8 +1924,13 @@ mark.ev.on {
   font-size: var(--fs-s);
 }
 
+/* The old header's toggle was absolutely placed on phones; inside the workbench strip it stays in the flow. */
+.wb .wb-head .workspace-toggle {
+  position: static;
+}
+
 /* 冻结的工作台：旧功能只换皮不改行为。规则限定在 .wb 里，颜色映射到上面的令牌。 */
-.wb {
+#workbench-page {
   margin: 0;
   background: var(--paper);
   color: var(--ink);
@@ -2032,38 +2024,6 @@ mark.ev.on {
 .wb h4 {
   font-size: 14px;
   font-weight: 650;
-}
-.wb .app-header {
-  height: 84px;
-  padding: 0 38px;
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  border-bottom: 1px solid var(--rule);
-  gap: 24px;
-}
-.wb .brand {
-  display: flex;
-  align-items: center;
-  gap: 9px;
-  text-decoration: none;
-  color: var(--ink);
-  font-size: 16px;
-  font-weight: 650;
-  letter-spacing: -0.02em;
-}
-.wb .brand svg {
-  color: var(--ink);
-}
-.wb .local-tag {
-  color: var(--ink-2);
-  font-size: 10px;
-  font-weight: 500;
-  letter-spacing: 0.04em;
-  margin-left: 5px;
-  border: 1px solid var(--rule);
-  padding: 0 5px;
-  border-radius: 4px;
 }
 .wb .header-actions {
   display: flex;
@@ -2747,32 +2707,6 @@ mark.ev.on {
   color: var(--warn);
   font-size: 10px;
 }
-.wb .notice {
-  padding: 11px 38px;
-  background: var(--wash);
-  color: var(--warn);
-  font-size: 12px;
-  border-bottom: 1px solid var(--rule);
-}
-.wb .notice.error {
-  background: var(--wash);
-  color: var(--bad);
-  border-bottom-color: var(--rule);
-}
-.wb .toast {
-  position: fixed;
-  left: 50%;
-  bottom: 28px;
-  transform: translateX(-50%);
-  padding: 12px 22px;
-  background: var(--ink);
-  color: var(--paper);
-  box-shadow: 0 6px 24px rgba(27, 29, 32, 0.13);
-  border-radius: 6px;
-  font-size: 12px;
-  z-index: 50;
-  max-width: 90vw;
-}
 .wb .loading-lines {
   padding: 24px;
 }
@@ -2985,21 +2919,8 @@ mark.ev.on {
   .wb .detail-pane {
     padding-inline: 30px;
   }
-  .wb .app-header {
-    padding-inline: 26px;
-  }
 }
 @media (max-width: 700px) {
-  .wb .app-header {
-    height: auto;
-    min-height: 100px;
-    padding: 18px 20px;
-    flex-wrap: wrap;
-    gap: 15px;
-  }
-  .wb .brand {
-    font-size: 15px;
-  }
   .wb .header-actions {
     width: 100%;
     gap: 13px;
@@ -3102,9 +3023,6 @@ mark.ev.on {
   }
   .wb .fact-options {
     gap: 10px !important;
-  }
-  .wb .notice {
-    padding-inline: 22px;
   }
   .wb .detail-tabs {
     gap: 24px;
@@ -3453,12 +3371,6 @@ mark.ev.on {
   flex-direction: column;
   overflow: hidden;
 }
-.wb .app-header {
-  height: 68px;
-  min-height: 68px;
-  padding-inline: 28px;
-  flex-shrink: 0;
-}
 .wb .header-actions {
   gap: 12px;
 }
@@ -3473,9 +3385,6 @@ mark.ev.on {
 .wb .runner-status {
   font-size: 11px;
   min-width: 42px;
-}
-.wb .brand {
-  font-size: 15px;
 }
 .wb .intake-strip {
   width: 100%;
@@ -3999,9 +3908,6 @@ mark.ev.on {
 .wb textarea::placeholder {
   color: var(--ink-3);
 }
-.wb .notice {
-  flex-shrink: 0;
-}
 @media (min-width: 1500px) {
   .wb .workspace {
     grid-template-columns: 350px minmax(0, 1fr);
@@ -4047,7 +3953,6 @@ mark.ev.on {
   .wb .workspace-toggle {
     margin-right: 0;
   }
-  .wb .app-header,
   .wb .intake-strip,
   .wb .search-progress {
     padding-inline: 22px;
@@ -4057,17 +3962,6 @@ mark.ev.on {
   #workbench-page {
     height: auto;
     overflow: visible;
-  }
-  .wb .app-header {
-    height: auto;
-    min-height: 0;
-    padding: 17px 20px;
-    gap: 16px;
-    display: grid;
-    grid-template-columns: 1fr;
-  }
-  .wb .brand {
-    font-size: 14px;
   }
   .wb .header-actions {
     display: flex;
@@ -4307,13 +4201,6 @@ mark.ev.on {
     padding: 18px;
     font-size: 12px;
   }
-  .wb .toast {
-    width: max-content;
-    max-width: calc(100vw - 32px);
-    font-size: 11px;
-    padding: 10px 16px;
-    bottom: 18px;
-  }
 }
 .wb .queue-pane > * {
   flex-shrink: 0;
@@ -4424,152 +4311,6 @@ mark.ev.on {
   }
   .wb .local-review-actions .primary {
     align-self: flex-end;
-  }
-}
-.wb #orient-open {
-  max-width: 320px;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-.wb .orient-body {
-  overflow-wrap: anywhere;
-}
-.wb .orient-body > .muted {
-  margin-bottom: 20px;
-}
-.wb .orient-section {
-  border-top: 1px solid var(--rule);
-  padding: 20px 0 4px;
-  min-width: 0;
-}
-.wb .orient-section-head {
-  display: flex;
-  align-items: center;
-  flex-wrap: wrap;
-  gap: 6px 12px;
-  margin-bottom: 10px;
-}
-.wb .orient-section-head h3 {
-  font-size: 15px;
-  margin: 0;
-}
-.wb .orient-more > summary {
-  font-weight: 600;
-  font-size: 13px;
-  margin-bottom: 12px;
-}
-.wb .orient-directions {
-  margin: 0 0 16px;
-  padding-left: 20px;
-}
-.wb .orient-directions li {
-  margin-bottom: 14px;
-}
-.wb .orient-directions p {
-  margin: 2px 0 4px;
-  color: var(--ink-2);
-  font-size: 13px;
-}
-.wb .orient-directions .orient-direction-terms {
-  color: var(--ink);
-  font-size: 12px;
-}
-.wb .orient-directions details ul {
-  margin: 6px 0;
-  padding-left: 18px;
-  font-size: 12px;
-}
-.wb .orient-line {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 4px 12px;
-  font-size: 13px;
-  margin: 6px 0;
-}
-.wb .orient-line strong {
-  flex: 0 0 auto;
-}
-.wb .orient-line span {
-  min-width: 0;
-}
-.wb .orient-actions {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 10px 14px;
-  margin: 16px 0 8px;
-}
-.wb .orient-question {
-  display: block;
-  margin: 0 0 18px;
-  padding: 0;
-  border: 0;
-  min-width: 0;
-}
-.wb .orient-question legend {
-  padding: 0;
-  margin-bottom: 8px;
-  font-size: 13px;
-}
-.wb .orient-question input[type="text"] {
-  display: block;
-  width: 100%;
-  margin-top: 8px;
-}
-.wb .orient-options {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 4px 18px;
-}
-.wb .orient-options label.check-label {
-  font-size: 12px;
-  color: var(--ink);
-  margin: 0;
-}
-.wb .orient-options input[type="radio"] {
-  display: inline-block;
-  width: 14px;
-  height: 14px;
-  min-height: 0;
-  padding: 0;
-  margin: 3px 0 0;
-  border: 0;
-  accent-color: var(--ink);
-  flex-shrink: 0;
-}
-.wb label.orient-question {
-  color: var(--ink);
-  font-size: 13px;
-  font-weight: 600;
-}
-.wb label.orient-question input {
-  font-weight: 400;
-}
-.wb .orient-table {
-  margin: 12px 0 18px;
-}
-.wb .orient-family {
-  border-bottom: 1px solid var(--rule);
-  padding: 8px 0;
-}
-.wb .orient-family summary {
-  font-size: 13px;
-}
-.wb .orient-family .orient-options {
-  padding: 8px 0 4px;
-}
-.wb .orient-terms-field textarea {
-  display: block;
-  width: 100%;
-  margin-top: 6px;
-}
-@media (max-width: 700px) {
-  .wb #orient-open {
-    max-width: 100%;
-  }
-  .wb .orient-actions button {
-    min-height: 36px;
   }
 }
 .wb .triage-counts {

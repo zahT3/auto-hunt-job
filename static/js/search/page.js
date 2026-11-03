@@ -226,7 +226,7 @@ function renderParts() {
 
 function mount() {
   $("#view").innerHTML =
-    `<h1 class="vh">搜索岗位</h1><div class="search"><div class="search-left">` +
+    `<h1 class="vh" id="page-title" tabindex="-1">搜索岗位</h1><div class="search"><div class="search-left">` +
     `<form class="qbox" role="search" data-form="q">` +
     `<div class="qfield"><input id="q" type="search" value="${esc(searchQuery.q)}" placeholder="岗位、公司或技能，例如 Go 支付…" aria-label="搜索岗位" autocomplete="off">${kbd("/")}</div>` +
     `<div class="filters">${filterOptions(searchQuery, shownGroups()).map(filterHtml).join("")}</div>` +
@@ -250,6 +250,13 @@ export function selectGroup(id, { focus = false } = {}) {
 }
 
 let typingTimer = null;
+
+function openSelected() {
+  const jobId = leadJobId(groupById(selectedGroup) || {});
+  if (!jobId) return;
+  setReturnTarget(`#g-${CSS.escape(selectedGroup)}`);
+  go("job/" + encodeURIComponent(jobId));
+}
 
 registerPage("search", {
   title: "搜索",
@@ -275,12 +282,7 @@ registerPage("search", {
     const next = rows[Math.max(0, Math.min(rows.length - 1, i + step))];
     if (next) selectGroup(next.dataset.id, { focus: true });
   },
-  open() {
-    const jobId = leadJobId(groupById(selectedGroup) || {});
-    if (!jobId) return;
-    setReturnTarget(`#g-${CSS.escape(selectedGroup)}`);
-    go("job/" + encodeURIComponent(jobId));
-  },
+  open: openSelected,
   escape(target) {
     if (target?.id !== "q") return false;
     target.blur();
@@ -329,7 +331,10 @@ document.addEventListener("click", (e) => {
     return;
   }
   const row = e.target.closest(".group[data-id]");
-  if (row && !e.target.closest("a, summary, button, .kv"))
+  if (row && !e.target.closest("a, summary, button, .kv")) {
     selectGroup(row.dataset.id, { focus: true });
+    // Phones have no preview pane: tapping a group opens its detail.
+    if (matchMedia("(max-width: 760px)").matches) openSelected();
+  }
   for (const d of $$("details.filter[open]")) if (!d.contains(e.target)) d.open = false;
 });

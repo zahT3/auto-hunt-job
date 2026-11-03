@@ -537,7 +537,7 @@ test('the job header names unconfirmed facts it left out, and the structure quot
  const h=harness();h.state({candidate:{facts:[{id:'f1',status:'confirmed',text:'x',source:{}},{id:'f7',status:'unconfirmed',text:'y',source:{}}]},jobs:[{id:'j',title:'T<x>',company:'C',jd:''}]});
  const html=h.run(`jobPageHtml(state.jobs[0],null,${JSON.stringify(MATCH)})`);
  assert.match(html,/只用了 1 条已确认的事实。f7 还没确认，没有拿来对照。/);assert.match(html,/data-open-candidate>去确认/);
- assert.match(html,/<h1>T&lt;x&gt;<\/h1>/);assert.match(html,/返回搜索结果（Esc）/);assert.match(html,/这一组还没有抓到 JD 原文/);
+ assert.match(html,/<h1 id="page-title" tabindex="-1">T&lt;x&gt;<\/h1>/);assert.match(html,/返回搜索结果（Esc）/);assert.match(html,/这一组还没有抓到 JD 原文/);
  assert.match(html,/<dt>年限<\/dt><dd>3–不限 年<span class="src">「3 年以上 &lt;Go&gt; 开发经验」<\/span>/);assert.match(html,/<dt>学历<\/dt><dd><span class="none">原文没提<\/span>/);
  assert.match(html,/在工作台打开这个岗位/);assert.doesNotMatch(html,/发布/);
  const none=h.run(`jobPageHtml(state.jobs[0],null,null)`);assert.match(none,/还没做匹配解释/);assert.match(none,/data-act="job-match"/);
@@ -613,6 +613,24 @@ test('the frozen workbench stays reachable from settings, the job page and the p
  const index=fs.readFileSync(path.join(__dirname,'../static/index.html'),'utf8');
  assert.match(index,/<div class="wb" id="workbench-page" hidden>/);
  for(const id of ['review-dialog','candidate-dialog','resume-dialog','import-dialog','config-form','control-button','stop-button'])assert.ok(index.includes(`id="${id}"`),id);
+});
+
+test('every text colour pair in the tokens reaches 4.5:1 in light and dark (DESIGN.md §2)',()=>{
+ const css=fs.readFileSync(path.join(__dirname,'../static/style.css'),'utf8');
+ const vars=block=>Object.fromEntries([...block.matchAll(/--([a-z0-9-]+):\s*(#[0-9a-fA-F]{6})/g)].map(m=>[m[1],m[2]]));
+ const light=vars(css.slice(css.indexOf(':root {'),css.indexOf('}',css.indexOf(':root {'))));
+ const darkAt=css.indexOf('@media (prefers-color-scheme: dark)');
+ const dark={...light,...vars(css.slice(darkAt,css.indexOf('}',css.indexOf(':root {',darkAt))))};
+ const lum=h=>{const c=[1,3,5].map(i=>parseInt(h.slice(i,i+2),16)/255).map(v=>v<=0.03928?v/12.92:((v+0.055)/1.055)**2.4);return 0.2126*c[0]+0.7152*c[1]+0.0722*c[2];};
+ const ratio=(a,b)=>{const [x,y]=[lum(a),lum(b)].sort((p,q)=>q-p);return (x+0.05)/(y+0.05);};
+ // Foreground on background as the pages and the reskinned workbench use them.
+ const pairs=[['ink','paper'],['ink-2','paper'],['ink-3','paper'],['ink-2','wash'],['ink-3','wash-2'],['ok','paper'],['warn','paper'],['bad','paper'],
+  ['pen','paper'],['pen','wash'],['on-marker','marker'],['paper','ink'],['ok','wash'],['warn','wash'],['bad','wash'],['ink','wash'],['ink-2','wash-2']];
+ for(const [name,t] of [['light',light],['dark',dark]])for(const [fg,bg] of pairs){
+  assert.ok(t[fg]&&t[bg],`${name}: --${fg} / --${bg} missing`);
+  assert.ok(ratio(t[fg],t[bg])>=4.5,`${name}: --${fg} on --${bg} is ${ratio(t[fg],t[bg]).toFixed(2)}:1`);
+ }
+ assert.equal(light['on-marker'],dark['on-marker']);
 });
 
 const BOOKMARKLETS=['boss-zhipin','liepin','liepin-list','lagou','mokahr','universal'];

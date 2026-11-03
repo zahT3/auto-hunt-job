@@ -148,7 +148,7 @@ function workbenchSection() {
 
 export function settingsHtml() {
   return (
-    `<div class="page"><header class="page-h"><h1>设置</h1><p>都保存在本机。</p></header>` +
+    `<div class="page"><header class="page-h"><h1 id="page-title" tabindex="-1">设置</h1><p>都保存在本机。</p></header>` +
     `<div class="set"><nav aria-label="设置分区">` +
     [
       ["s-ai", "AI 服务"],

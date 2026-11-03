@@ -91,7 +91,7 @@ export function triageHtml() {
     triageSel = list[Math.min(selIndex, list.length - 1)]?.id || null;
   const label = TABS.find(([k]) => k === triageTab)[1];
   return (
-    `<div class="page"><header class="page-h"><h1>分拣</h1>` +
+    `<div class="page"><header class="page-h"><h1 id="page-title" tabindex="-1">分拣</h1>` +
     `<p>每个岗位分到 感兴趣、稍后、跳过。计数是总数，不是未读数。选"感兴趣"后会开始准备材料，材料要你审核后才会用。</p></header>` +
     `<div class="split" role="tablist" aria-label="分组">` +
     TABS.map(

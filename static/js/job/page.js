@@ -264,7 +264,7 @@ export function jobPageHtml(job, g, m) {
   return (
     `<article class="detail">` +
     `<a class="back" href="#/search" data-act="back">返回搜索结果（Esc）</a>` +
-    `<header class="d-head"><div><h1>${esc(job.title || "岗位名称待确认")}</h1>` +
+    `<header class="d-head"><div><h1 id="page-title" tabindex="-1">${esc(job.title || "岗位名称待确认")}</h1>` +
     `<p class="sub">${esc(job.company || "公司待确认")}，${esc(job.location || g?.city || "地点未知")}，${esc(salary)}</p>` +
     (f
       ? `<p class="fresh">${stateWord(f.tone, f.label)}<span class="d">${esc(f.detail)}</span></p>`
@@ -320,7 +320,7 @@ export function renderJob(id) {
   if (!job) {
     replaceContent(
       "#view",
-      `<div class="page empty"><h1>找不到这个岗位</h1><p>本机岗位库里没有 ${esc(id || "")}。</p><a href="#/search">返回搜索</a></div>`,
+      `<div class="page empty"><h1 id="page-title" tabindex="-1">找不到这个岗位</h1><p>本机岗位库里没有 ${esc(id || "")}。</p><a href="#/search">返回搜索</a></div>`,
     );
     return;
   }
