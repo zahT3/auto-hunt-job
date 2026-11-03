@@ -71,6 +71,12 @@ def make_server(store, port=8766):
                 if path.endswith('.js') and base in file.parents and file.is_file():
                     return self.send(200,file.read_bytes(),'text/javascript; charset=utf-8')
                 return self.send(404,{'error':'不存在的路由'})
+            if path.startswith('/fonts/'):
+                # Bundled interface fonts: only .woff2 files that resolve inside static/fonts.
+                base=(STATIC/'fonts').resolve(); file=(STATIC/path[1:]).resolve()
+                if path.endswith('.woff2') and base in file.parents and file.is_file():
+                    return self.send(200,file.read_bytes(),'font/woff2')
+                return self.send(404,{'error':'不存在的路由'})
             assets={'/':'index.html','/index.html':'index.html','/styles.css':'styles.css','/style.css':'style.css'}
             if path in assets:
                 file=STATIC/assets[path]

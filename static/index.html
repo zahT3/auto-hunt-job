@@ -2,11 +2,13 @@
 <html lang="zh-CN">
 <head>
 <meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
-<meta name="color-scheme" content="light"><title>auto-hunt-job · 求职工作台</title>
+<meta name="color-scheme" content="light dark"><title>auto-hunt-job · 求职工作台</title>
+<link rel="preload" href="/fonts/inter.woff2" as="font" type="font/woff2" crossorigin>
 <link rel="stylesheet" href="/style.css">
 <script type="module" src="/js/main.js"></script>
 </head>
 <body>
+<div class="wb">
 <header class="app-header">
   <a class="brand" href="/" aria-label="auto-hunt-job 首页"><svg width="24" height="24" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M5 18V6h6a6 6 0 0 1 0 12H5Z" stroke="currentColor" stroke-width="1.7"/><path d="m10 9 3 3-3 3" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/></svg><span>auto-hunt-job</span><span class="local-tag">本地</span></a>
   <div class="header-actions"><button class="subtle workspace-toggle" id="workspace-toggle" aria-expanded="false" aria-controls="task-pane" type="button">设置与待办 <span id="pending-count" class="count"></span></button><a class="subtle" href="/bookmarklets">岗位书签</a><span id="runner-status" class="runner-status"><i></i>正在连接</span><button class="subtle" id="control-button" type="button">暂停</button><button class="subtle" id="stop-button" type="button">停止</button><button class="primary" id="run-button" type="button">开始找岗位<svg width="15" height="15" viewBox="0 0 16 16" fill="none" aria-hidden="true"><path d="m6 3 5 5-5 5" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg></button></div>
@@ -78,4 +80,5 @@
   <details id="external-review" class="external-review" hidden><summary>另行授权对外操作</summary><fieldset id="external-review-controls" disabled><legend>本次允许的对外操作</legend><p class="small-note">下列授权绑定具体岗位和最终快照，与本地复核分开保存。</p><label class="check-label"><input type="checkbox" name="permission" value="input">向下列招聘平台填写字段（可能自动保存）</label><label class="check-label"><input type="checkbox" name="permission" value="upload">上传下列最终简历文件</label><label class="check-label"><input type="checkbox" name="permission" value="submit">正式提交下列申请</label><div class="form-pair"><label>授权有效期 / 小时<input name="expires_hours" type="number" min="1" max="72" value="24"></label><label>最多执行申请数<input name="limit" type="number" min="1" value="1"></label></div><label>浏览器执行计划 SHA-256<input name="browser_plan_hash" pattern="[a-fA-F0-9]{64}" placeholder="64 位十六进制；绑定具体操作计划" autocomplete="off"></label><div id="external-review-gaps"></div><p class="small-note">不包含发消息或向外部模型传输资料。平台登录、未知必填题与声明将暂停并交由你处理；批准后仍须通过执行前检查。</p><label class="check-label review-confirm"><input id="review-confirm" type="checkbox">我已核对接收方、字段、文件、事实来源和披露范围</label><button class="secondary" id="approve-batch" type="submit" disabled>批准列出的对外操作</button></fieldset></details>
   <div class="dialog-actions"><button type="button" id="reject-batch" class="danger-button">不申请这一批</button><button type="button" class="secondary" data-close>关闭</button></div></form></dialog>
 <div id="toast" class="toast" role="status" hidden></div>
+</div>
 </body></html>

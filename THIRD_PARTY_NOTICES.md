@@ -1,6 +1,6 @@
 # 依赖与设计参考
 
-本项目自身代码采用 MIT。以下依赖通过包管理器安装，不把第三方源码或字体重新打包进源码发布包；各依赖的许可证以所安装版本自带文本为准。
+本项目自身代码采用 MIT。以下依赖通过包管理器安装，不把第三方源码重新打包进源码发布包；各依赖的许可证以所安装版本自带文本为准。网页界面随包分发两个字体子集，见下文「随网页界面分发的字体」。
 
 | 依赖 | 用途 | 上游 |
 | --- | --- | --- |
@@ -28,6 +28,17 @@ PDF 字体使用用户本机已安装的字体或 `HUNT_PDF_FONT` 指定文件�
 - [SearXNG Search API](https://docs.searxng.org/dev/search_api.html)
 
 本轮白屏诊断还查阅 [boss-zhipin-scraper](https://github.com/eatmoreduck/boss-zhipin-scraper) 的 MIT 实现及 Issue，以及 [boss-agent](https://github.com/Douyh123/boss-agent) 的浏览器实现与 Issue。未复制其代码、注入脚本或运行第三方程序；实际采用的独立改动见 [调查](docs/boss-white-screen.md)。
+
+## 随网页界面分发的字体
+
+`static/fonts/` 里的两个文件是子集化后的修改版，按 SIL Open Font License 1.1 分发，许可证原文放在同一目录。运行时只从本机加载。
+
+| 文件 | 来源字体 | 版权 | 内容 | 许可证 |
+| --- | --- | --- | --- | --- |
+| `inter.woff2` | Inter（google/fonts `ofl/inter/Inter[opsz,wght].ttf`） | The Inter Project Authors | 基本拉丁、拉丁补充、常用标点和符号；wght 300–700，保留 opsz | `static/fonts/OFL-inter.txt` |
+| `sans-ui.woff2` | Noto Sans SC（google/fonts `ofl/notosanssc/NotoSansSC[wght].ttf`） | Adobe，保留字体名 "Source" | 界面代码里出现的汉字和 ASCII；wght 400–700 | `static/fonts/OFL-notosanssc.txt` |
+
+下载日期 2026-11-02。子集由 `prototypes/_tools/subset_fonts.py`（fontTools）生成。按 OFL 的保留字体名规定，修改版的文件名和 CSS 字体族名（`AH Inter`、`AH Sans`）都不使用 "Source"。
 
 ## 移植代码
 

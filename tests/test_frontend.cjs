@@ -357,13 +357,14 @@ test('orient is keyboard operable: native controls, labelled fields, and focus m
 });
 test('orient styles fit a 390px screen: no fixed width beyond it, wrapping rows, long words broken',()=>{
  const css=fs.readFileSync(path.join(__dirname,'../static/style.css'),'utf8');
- const orient=css.slice(css.indexOf('/* 定方向 dialog */'));
+ // The dialog's rules sit in the frozen-workbench section, scoped under .wb; they run from #orient-open to the end.
+ const orient=css.slice(css.indexOf('.wb #orient-open'));
  assert.ok(orient.length>100);
  for(const m of orient.matchAll(/(?:^|[\s;{])(width|min-width|flex-basis)\s*:\s*(\d+)px/g))assert.ok(Number(m[2])<=358,m[0]);
  assert.match(orient,/\.orient-body\s*\{[^}]*overflow-wrap:\s*anywhere/);
  for(const rule of ['.orient-actions','.orient-options','.orient-line','.orient-section-head'])assert.match(orient,new RegExp(rule.replace('.','\\.')+'\\s*\\{[^}]*flex-wrap:\\s*wrap'),rule);
  // The dialog itself is bounded by the viewport (existing rule the orient dialog relies on).
- assert.match(css,/dialog\{[^}]*max-width:calc\(100vw - 32px\)/);
+ assert.match(css,/\.wb dialog \{[^}]*max-width: calc\(100vw - 32px\)/);
 });
 test('the real ES modules link and render one state through main.js',async()=>{
  const {node,document}=fakeDocument();

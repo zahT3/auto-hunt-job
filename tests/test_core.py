@@ -499,6 +499,28 @@ class HttpTests(CoreCase):
                 self.assertEqual(self.request('GET', '/js/views/search.js', headers={'Origin': 'https://attacker.invalid'})[0], 403)
                 self.assertEqual(self.request('GET', '/app.js')[0], 404)  # the pre-module script route is gone
 
+    def test_font_route_serves_only_woff2_files_inside_static_fonts(self):
+        from hunt.app import server
+        with tempfile.TemporaryDirectory() as tmp:
+            static = Path(tmp) / 'static'
+            (static / 'fonts').mkdir(parents=True)
+            (static / 'fonts' / 'inter.woff2').write_bytes(b'wOF2-font')
+            (static / 'fonts' / 'OFL-inter.txt').write_text('licence\n')
+            (static / 'outside.woff2').write_bytes(b'wOF2-outside')
+            (static / 'fonts' / 'link.woff2').symlink_to(static / 'outside.woff2')
+            with patch.object(server, 'STATIC', static):
+                connection = http.client.HTTPConnection('127.0.0.1', self.port, timeout=5)
+                try:
+                    connection.request('GET', '/fonts/inter.woff2')
+                    response = connection.getresponse()
+                    self.assertEqual((response.status, response.getheader('Content-Type'), response.read()),
+                                     (200, 'font/woff2', b'wOF2-font'))
+                finally:
+                    connection.close()
+                for path in ('/fonts/OFL-inter.txt', '/fonts/../outside.woff2', '/fonts/link.woff2', '/fonts/missing.woff2', '/fonts/'):
+                    self.assertEqual(self.request('GET', path)[0], 404, path)
+                self.assertEqual(self.request('GET', '/fonts/inter.woff2', headers={'Host': 'attacker.invalid'})[0], 403)
+
     def test_export_route_and_traversal(self):
         job = self.prepared()
         prefix = '/api/file/' + job['package']['id'] + '/'
