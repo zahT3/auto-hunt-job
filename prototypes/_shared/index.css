@@ -1,0 +1,21 @@
+/* 原型入口页，只用系统字体。 */
+:root { color-scheme: light dark; --bg: #f4f5f6; --fg: #1b1d20; --muted: #50565e; --card: #fff; --rule: #e2e4e7; }
+@media (prefers-color-scheme: dark) { :root { --bg: #151618; --fg: #e2e4e7; --muted: #a8adb3; --card: #1e2023; --rule: #2e3134; } }
+* { box-sizing: border-box; }
+html { scrollbar-gutter: stable; }
+body { margin: 0; background: var(--bg); color: var(--fg); font: 15px/1.7 -apple-system, BlinkMacSystemFont, "PingFang SC", "Microsoft YaHei", sans-serif; text-autospace: normal; line-break: strict; }
+main { max-width: 1320px; margin: 0 auto; padding: 40px 24px 64px; }
+h1 { font-size: 26px; margin: 0; }
+.lede { color: var(--muted); margin: 6px 0 0; }
+code { font-size: 14px; }
+.dirs { list-style: none; padding: 0; margin: 28px 0 0; display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 20px; }
+.dirs li { background: var(--card); border: 1px solid var(--rule); border-radius: 6px; overflow: hidden; }
+.dirs img { display: block; width: 100%; height: auto; border-bottom: 1px solid var(--rule); }
+.dirs h2 { font-size: 18px; margin: 14px 16px 0; display: flex; gap: 10px; align-items: baseline; }
+.dirs h2 a { color: inherit; }
+.rec { font-size: 12px; font-weight: 400; border: 1px solid currentColor; padding: 0 6px; border-radius: 3px; }
+.dirs p { margin: 6px 16px 0; color: var(--muted); }
+.links { display: flex; flex-wrap: wrap; gap: 4px 14px; padding-bottom: 16px; font-size: 14px; }
+.links a { color: inherit; display: inline-block; padding: 4px 0; }
+a:focus-visible { outline: 2px solid currentColor; outline-offset: 2px; }
+@media (max-width: 900px) { .dirs { grid-template-columns: 1fr; } }

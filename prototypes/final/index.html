@@ -1,0 +1,39 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data:">
+<title>auto-hunt-job（合并原型）</title>
+<link rel="icon" href="data:,">
+<link rel="preload" href="../_shared/fonts/inter.woff2" as="font" type="font/woff2" crossorigin>
+<link rel="stylesheet" href="style.css">
+<script src="../_shared/fontmode.js"></script>
+</head>
+<body>
+<a class="skip" href="#view">跳到主要内容</a>
+<header class="top">
+  <div class="brand"><span class="logo" aria-hidden="true"></span>auto-hunt-job<span class="synth" title="界面里的公司、岗位和事实都是虚构的">合成数据</span></div>
+  <nav class="nav" aria-label="主导航">
+    <a href="#/search" data-page="search">搜索</a>
+    <a href="#/triage" data-page="triage">分拣 <span class="n" data-count="pending"></span></a>
+    <a href="#/orient" data-page="orient">定方向</a>
+    <a href="#/settings" data-page="settings">设置</a>
+  </nav>
+  <p class="run" id="run"></p>
+  <button class="btn btn-primary" type="button" id="run-btn">开始搜索</button>
+</header>
+<main id="view" tabindex="-1"></main>
+<div class="bar" id="bar" hidden></div>
+<div class="toast" id="toast" role="status" aria-live="polite"></div>
+<dialog class="palette" id="palette" aria-label="全部操作">
+  <form method="dialog">
+    <input id="palette-q" type="text" placeholder="输入操作名称…" autocomplete="off" aria-label="搜索操作">
+    <ul id="palette-list"></ul>
+  </form>
+</dialog>
+<script src="data.js"></script>
+<script src="../_shared/tip.js"></script>
+<script src="app.js"></script>
+</body>
+</html>
