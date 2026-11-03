@@ -15,7 +15,7 @@ dist/
 00_工作日志.md
 COLD_START_PROMPT.md
 PRODUCT.md
-DESIGN.md
+/DESIGN.md
 .impeccable/
 docs/internal/
 examples/resume.synthetic.pdf
