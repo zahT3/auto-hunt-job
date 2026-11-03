@@ -482,6 +482,44 @@ test('the preview quotes the JD in the serif excerpt and admits when there is no
  assert.match(h.run(`peekHtml(${JSON.stringify(GROUP)})`),/1 符合，0 不符合，1 不知道.*<span class="hl">1<\/span> \/ 2 有原词，0 相近.*1 \/ 2 有事实/);
 });
 
+const MATCH={hard:[{kind:'language',requirement:'英语六级',jd_evidence:'英语六级优先',status:'unknown',fact_ids:['f7'],why:'f7 还没确认'},
+  {kind:'years',requirement:'3年以上',jd_evidence:'3 年以上 <Go> 开发经验',status:'not_met',fact_ids:['f1'],why:'事实里只有 2 年'}],
+ keywords:[{keyword:'<Go>',jd_evidence:'3 年以上 <Go> 开发经验',coverage:'explicit',fact_ids:['f1'],related_fact_ids:[],why:'有原词'},
+  {keyword:'Kubernetes',jd_evidence:'了解 Kubernetes',coverage:'related',fact_ids:[],related_fact_ids:['f2'],why:'只有 k8s'},
+  {keyword:'Kafka',jd_evidence:'熟悉 Kafka',coverage:'absent',fact_ids:[],related_fact_ids:[],why:'事实里没有'}],
+ evidence:[{kind:'hard_skill',requirement:'Kafka',jd_evidence:'熟悉 Kafka',fact_ids:[],related_fact_ids:[]}],
+ structure:{years:{value:{min:3,max:null},evidence:'3 年以上 <Go> 开发经验'},hard_skills:[{value:'<Go>',evidence:'<Go>'}],soft_skills:[],languages:[],certificates:[],bonus:[],location:[]},
+ structure_by:'rules',notice:'不打分<b>',extract_note:'按规则抽取'};
+test('the three ATS steps keep 不知道 apart from 不符合, count rows and escape every model string',()=>{
+ const h=harness();h.state({candidate:{facts:[{id:'f1',text:'Go 两年',status:'confirmed',source:{reference:'简历'}},{id:'f7',text:'六级',status:'unconfirmed',source:{reference:'简历'}}]}});
+ const html=h.run(`verdictHtml(${JSON.stringify(MATCH)})`);
+ assert.match(html,/语言：英语六级.*<span class="mark unknown">不知道<\/span>/);assert.match(html,/年限：3年以上.*<span class="mark bad">不符合<\/span>/);
+ assert.match(html,/<p class="score">0 \/ 2<\/p>/);assert.match(html,/<p class="score">1 \/ 3<\/p>/);assert.match(html,/<p class="score">0 \/ 1<\/p>/);
+ assert.match(html,/<li data-c="explicit"[^>]*><span>&lt;Go&gt;<\/span>/);assert.match(html,/<li data-c="related"[^>]*>.*相近说法/);
+ assert.match(html,/class="fact pending"[^>]*>f7</);assert.match(html,/定位原文/);
+ assert.doesNotMatch(html,/<Go>|<b>/);assert.match(html,/不打分&lt;b&gt;/);
+});
+test('JD marks never nest, escape the text and put each note beside its paragraph',()=>{
+ const h=harness();h.state({candidate:{facts:[]}});
+ const html=h.run(`jdHtml({jd:'任职要求\\n3 年以上 <Go> 开发经验，熟悉 Kafka。\\n英语六级优先'},${JSON.stringify(MATCH)})`);
+ assert.match(html,/<h3 class="jd-h">任职要求<\/h3>/);
+ assert.match(html,/<mark class="ev ev-kw-explicit" data-m="3 年以上 &lt;Go&gt; 开发经验">3 年以上 &lt;Go&gt; 开发经验<\/mark>/);
+ assert.match(html,/<mark class="ev ev-kw-absent" data-m="熟悉 Kafka">熟悉 Kafka<\/mark>/);
+ assert.doesNotMatch(html,/<mark[^>]*>[^<]*<mark/);assert.doesNotMatch(html,/<Go>/);
+ const paras=html.split('<div class="para');
+ assert.match(paras[1],/年限：不符合。事实里只有 2 年/);assert.match(paras[1],/Kafka：没有事实/);assert.doesNotMatch(paras[1],/英语六级/);
+ assert.match(paras[2],/语言：不知道。f7 还没确认/);
+});
+test('the job header names unconfirmed facts it left out, and the structure quotes its evidence escaped',()=>{
+ const h=harness();h.state({candidate:{facts:[{id:'f1',status:'confirmed',text:'x',source:{}},{id:'f7',status:'unconfirmed',text:'y',source:{}}]},jobs:[{id:'j',title:'T<x>',company:'C',jd:''}]});
+ const html=h.run(`jobPageHtml(state.jobs[0],null,${JSON.stringify(MATCH)})`);
+ assert.match(html,/只用了 1 条已确认的事实。f7 还没确认，没有拿来对照。/);assert.match(html,/data-open-candidate>去确认/);
+ assert.match(html,/<h1>T&lt;x&gt;<\/h1>/);assert.match(html,/返回搜索结果（Esc）/);assert.match(html,/这一组还没有抓到 JD 原文/);
+ assert.match(html,/<dt>年限<\/dt><dd>3–不限 年<span class="src">「3 年以上 &lt;Go&gt; 开发经验」<\/span>/);assert.match(html,/<dt>学历<\/dt><dd><span class="none">原文没提<\/span>/);
+ assert.match(html,/在工作台打开这个岗位/);assert.doesNotMatch(html,/发布/);
+ const none=h.run(`jobPageHtml(state.jobs[0],null,null)`);assert.match(none,/还没做匹配解释/);assert.match(none,/data-act="job-match"/);
+});
+
 const BOOKMARKLETS=['boss-zhipin','liepin','liepin-list','lagou','mokahr','universal'];
 const BM_DIR=path.join(__dirname,'../static/bookmarklets');
 // Mirrors hunt/bookmarklets.py assemble(): the shared delivery prelude replaces each script's "// @deliver" line.

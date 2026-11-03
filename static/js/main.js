@@ -5,6 +5,7 @@ import { busy } from "./shared/state.js";
 import "./workbench/index.js";
 import "./orient/view.js";
 import "./search/page.js";
+import "./job/page.js";
 import { startShell } from "./shell/index.js";
 import { registerPage } from "./shell/router.js";
 
