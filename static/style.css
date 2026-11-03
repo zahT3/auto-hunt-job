@@ -1853,6 +1853,90 @@ mark.ev.on {
   display: none !important;
 }
 
+/* 页面补充：原型之外、实现里用到的几处 */
+.page .sub,
+.detail .sub-note {
+  color: var(--ink-2);
+  margin-top: var(--s1);
+}
+.warnline {
+  color: var(--warn);
+  margin-top: var(--s2);
+}
+.warnline::before {
+  content: "！";
+  font-family: var(--hand);
+  margin-right: var(--s1);
+}
+.field {
+  display: grid;
+  gap: 6px;
+  margin-top: var(--s4);
+  color: var(--ink-2);
+}
+.field textarea,
+.field input[type="text"],
+.field input[type="number"],
+.field input[type="url"] {
+  border: 1px solid var(--rule-2);
+  border-radius: var(--r2);
+  padding: 6px 10px;
+  background: var(--paper);
+  color: var(--ink);
+  font: inherit;
+  width: 100%;
+}
+.orient-table {
+  margin-top: var(--s3);
+}
+.orient-family {
+  border-bottom: 1px solid var(--rule);
+  padding: var(--s2) 0;
+}
+.orient-family summary {
+  cursor: pointer;
+  min-height: 28px;
+}
+.orient-family .count {
+  color: var(--ink-3);
+}
+.orient-family .opts,
+#orient-pick-form .opts {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: var(--s2);
+}
+#orient-pick-form .opts label {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  border: 1px solid var(--rule-2);
+  border-radius: var(--r2);
+  padding: 4px 10px;
+  cursor: pointer;
+}
+#orient-pick-form .opts label:has(input:checked) {
+  background: var(--marker);
+  border-color: var(--marker);
+  color: var(--on-marker);
+}
+.orient-question input[type="text"] {
+  display: block;
+  width: 100%;
+  margin-top: var(--s2);
+  height: 34px;
+  border: 1px solid var(--rule-2);
+  border-radius: var(--r2);
+  padding: 0 10px;
+  background: var(--paper);
+}
+.sec-note {
+  color: var(--ink-2);
+  margin-top: var(--s4);
+  font-size: var(--fs-s);
+}
+
 /* 冻结的工作台：旧功能只换皮不改行为。规则限定在 .wb 里，颜色映射到上面的令牌。 */
 .wb {
   margin: 0;

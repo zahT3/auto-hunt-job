@@ -1,6 +1,6 @@
 // Search targets and channels, the task list, and the run controls in the header.
 import { canSearch } from "../orient/model.js";
-import { openOrient } from "../orient/view.js";
+import { openOrient } from "../orient/page.js";
 import { action } from "../shared/api.js";
 import {
   $,

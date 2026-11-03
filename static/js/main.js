@@ -3,7 +3,7 @@
 import { loadState } from "./shared/api.js";
 import { busy } from "./shared/state.js";
 import "./workbench/index.js";
-import "./orient/view.js";
+import "./orient/page.js";
 import "./search/page.js";
 import "./job/page.js";
 import { startShell } from "./shell/index.js";

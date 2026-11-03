@@ -118,6 +118,9 @@ test('application entry is a manual link and cannot imply verified form or autom
   assert.match(html,/人工操作/);assert.match(html,/表单尚需核验/);assert.match(html,/acme.example/);assert.doesNotMatch(html,/data-execute|已核验提交/);
   assert.equal(h.run(`applicationRoute({application_url:'javascript:alert(1)'})`),'');
 });
+test('a job with neither an application URL nor an entry check renders without an entry section instead of throwing',()=>{
+ const h=harness();assert.equal(h.run(`applicationRoute({id:'j',title:'x'})`),'');
+});
 test('blank page is reported as a source failure instead of an empty result',()=>{
   const h=harness();const html=h.run(`renderSourceRows({sources:[{kind:'boss',status:'blank_page',error:'about:blank',fetched:0,pages:0}]})`);
   assert.match(html,/页面退回空白/);assert.match(html,/badge warn/);assert.doesNotMatch(html,/未找到结果/);
@@ -275,7 +278,7 @@ const ORIENT_PROPOSAL={by:'ai',questions_by:'ai',notes:[ORIENT_XSS],answers:{},
  directions:[{id:'backend',name:ORIENT_XSS,why:'<script>why</script>',fact_ids:['f1','gone<i>'],source:'ai'}],
  terms:['<b>term</b>'],conditions:{cities:[ORIENT_XSS],years:null,remote:true,exclude_industries:[]}};
 
-test('orient view escapes every server and model string, including table ids in attributes',()=>{
+test('orient page escapes every server and model string, including table ids in attributes',()=>{
  const h=harness();orientState(h,ORIENT_PROPOSAL);
  const steps=h.run('orientBody()');
  h.run("orientMode='pick'");const pick=h.run('orientBody()');
@@ -283,49 +286,50 @@ test('orient view escapes every server and model string, including table ids in 
   assert.doesNotMatch(html,/<img|<script|<b>|<i>|onerror=alert\(1\)>/);
  }
  assert.match(steps,/&lt;img src=x onerror=alert\(1\)&gt;/);assert.match(steps,/&lt;script&gt;why&lt;\/script&gt;/);
- assert.match(steps,/&lt;script&gt;alert\(1\)&lt;\/script&gt;/);assert.match(steps,/事实 gone&lt;i&gt;（已不在资料中）/);
+ assert.match(steps,/&lt;script&gt;alert\(1\)&lt;\/script&gt;/);assert.match(steps,/data-tip="gone&lt;i&gt;：这条事实已不在资料里">gone&lt;i&gt;<\/span>/);
  assert.match(pick,/value="x&quot;&gt;&lt;script&gt;"/);assert.match(pick,/&lt;b&gt;家族&lt;\/b&gt;/);
 });
 test('each direction shows its own search terms and names the ones the merged list leaves out',()=>{
  const h=harness();orientState(h,{by:'ai',directions:[{id:'backend',name:'后端开发',terms:['后端','<b>Go</b>']},{id:'da',name:'数据分析师',terms:[]}],terms:['后端','数据分析']});
  const html=h.run('directionsSection()');
- assert.match(html,/后端开发<\/strong><p>未写理由<\/p><p class="orient-direction-terms">搜索词：后端<span class="small-note">；未进合并词表，本轮不搜：&lt;b&gt;Go&lt;\/b&gt;<\/span><\/p>/);
- assert.equal((html.match(/orient-direction-terms/g)||[]).length,1);
- assert.match(html,/<strong>合并后的搜索词<\/strong><span>后端 · 数据分析<\/span>/);
- orientState(h,{by:'ai',directions:[{id:'backend',name:'后端开发'}],terms:['后端']});
- assert.match(h.run('directionsSection()'),/<strong>搜索词<\/strong>/);
+ assert.match(html,/<td data-dir="后端开发"><span class="term" [^>]*>后端<\/span><span class="term off" [^>]*data-tip="本轮不搜：合并后只保留 8 个词">&lt;b&gt;Go&lt;\/b&gt;（本轮不搜）<\/span><\/td>/);
+ assert.match(html,/<td data-dir="数据分析师"><span class="st st-muted">这个方向没有单独的搜索词<\/span><\/td>/);
+ assert.match(html,/合并后的搜索词：后端 · 数据分析/);
 });
-test('orient view says whether AI was used, from the by and questions_by fields',()=>{
+test('orient page says whether AI was used, from the by and questions_by fields',()=>{
  const h=harness();orientState(h,ORIENT_PROPOSAL);
- assert.match(h.run('directionsSection()'),/建议方向.*使用了 AI/);
- orientState(h,{...ORIENT_PROPOSAL,by:'rules',questions_by:'rules'});
- assert.match(h.run('directionsSection()'),/建议方向.*未使用 AI · 本地规则/);assert.match(h.run('questionsSection()'),/未使用 AI · 本地规则/);
- assert.doesNotMatch(h.run('orientBody()'),/使用了 AI/);
- orientState(h,{...ORIENT_PROPOSAL,by:'user'});
- assert.match(h.run('directionsSection()'),/已选方向.*未使用 AI · 你手动选择/);
+ assert.match(h.run('directionsSection()'),/建议方向.*使用了 AI/);assert.match(h.run('directionsSection()'),/<span class="src">AI 建议<\/span>/);
+ assert.match(h.run('questionsSection()'),/使用了 AI/);assert.match(h.run('questionsSection()'),/<span class="ai">AI 追问<\/span>/);
+ orientState(h,{...ORIENT_PROPOSAL,by:'rules',questions_by:'rules',directions:[{...ORIENT_PROPOSAL.directions[0],source:'rules'}]});
+ assert.match(h.run('directionsSection()'),/未使用 AI · 本地规则/);assert.match(h.run('questionsSection()'),/未使用 AI · 本地规则/);
+ assert.doesNotMatch(h.run('orientBody()'),/使用了 AI|AI 追问|AI 建议/);
+ orientState(h,{...ORIENT_PROPOSAL,by:'user',directions:[{...ORIENT_PROPOSAL.directions[0],source:'user'}]});
+ assert.match(h.run('directionsSection()'),/未使用 AI · 你手动选择/);assert.match(h.run('directionsSection()'),/<span class="src">你选的<\/span>/);
 });
-test('without directions or keywords, 开始找岗位 opens 定方向 instead of searching',async()=>{
+test('without directions or keywords, 开始搜索 opens 定方向 instead of searching',async()=>{
  const h=harness();orientState(h,null);h.run(`globalThis.calls=[];action=async(name)=>{calls.push(name);return {};}`);
  await h.run('startSearch()');
- assert.equal(h.run('calls.length'),0);assert.equal(h.node('#orient-dialog').open,true);
- assert.match(h.node('#orient-body').innerHTML,/还没有搜索方向。先定方向/);
+ assert.equal(h.run('calls.length'),0);assert.equal(h.run('location.hash'),'#/orient');
+ h.run('renderOrient()');assert.match(h.node('#view').innerHTML,/还没有搜索方向。先定方向/);assert.match(h.node('#view').innerHTML,/跳过问题，直接选方向/);
  orientState(h,{directions:[{id:'backend',name:'后端开发'}],terms:['后端'],by:'rules'});h.run('renderOrient()');
- assert.doesNotMatch(h.node('#orient-body').innerHTML,/还没有搜索方向/);assert.match(h.node('#orient-body').innerHTML,/跳过问题，直接选方向/);
- orientState(h,{directions:[{id:'backend',name:'后端开发'}],terms:['后端'],by:'user'});h.node('#orient-dialog').open=false;
- await h.run('startSearch()');assert.deepEqual(Array.from(h.run('calls')),['run']);assert.equal(h.node('#orient-dialog').open,false);
+ assert.doesNotMatch(h.node('#view').innerHTML,/还没有搜索方向/);
+ h.run("location.hash='#/search'");orientState(h,{directions:[{id:'backend',name:'后端开发'}],terms:['后端'],by:'user'});
+ await h.run('startSearch()');assert.deepEqual(Array.from(h.run('calls')),['run']);assert.equal(h.run('location.hash'),'#/search');
 });
-test('answers keep multi-choice as lists, single choice as one string, and leave blanks out',async()=>{
+test('answers keep multi-choice as lists, single choice as one string, leave blanks out and resend the untouched ones',async()=>{
  const h=harness();
  orientState(h,{questions:[{id:'family',text:'你想找哪些行业的工作？（可多选）',kind:'choice',options:['技术研发','产品']},
-  {id:'years',text:'经验？',kind:'choice',options:['1-3 年','3-5 年']},{id:'city',text:'城市',kind:'text',options:[]},{id:'exclude',text:'排除',kind:'text',options:[]}],answers:{}});
+  {id:'years',text:'经验？',kind:'choice',options:['1-3 年','3-5 年']},{id:'city',text:'城市',kind:'text',options:[]},{id:'exclude',text:'排除',kind:'text',options:[]},
+  {id:'switch',text:'转方向？',kind:'choice',options:['是','否']}],answers:{switch:'否'}});
  const html=h.run('questionsSection()');
  assert.match(html,/type="checkbox" name="orient-q-0" value="技术研发"/);assert.match(html,/type="radio" name="orient-q-1" value="1-3 年"/);
- assert.match(html,/type="radio" name="orient-q-1" value="" checked>暂不回答/);
+ assert.match(html,/type="radio" name="orient-q-1" value="" checked> 暂不回答/);assert.doesNotMatch(html,/orient-q-4/);
+ assert.match(h.run('answersSection()'),/<dt>转方向<\/dt><dd>否<\/dd><dd><button type="button" class="linkish" data-orient-edit="switch"/);
  const fields={'orient-q-0':[{checked:true,value:'技术研发'},{checked:true,value:'产品'}],'orient-q-1':[{checked:false,value:'1-3 年'},{checked:true,value:'3-5 年'},{checked:false,value:''}],
   'orient-q-2':[{value:'  上海、杭州 '}],'orient-q-3':[{value:'  '}]};
  h.run(`globalThis.calls=[];action=async(name,payload)=>{calls.push({name,payload});return {};}`);
- await h.run(`submitAnswers({querySelectorAll:s=>(${JSON.stringify(fields)})[s.match(/"(.+)"/)[1]]})`);
- assert.deepEqual(JSON.parse(h.run('JSON.stringify(calls)')),[{name:'orient_answer',payload:{answers:{family:['技术研发','产品'],years:'3-5 年',city:'上海、杭州'}}}]);
+ await h.run(`submitAnswers({querySelectorAll:s=>(${JSON.stringify(fields)})[s.match(/"(.+)"/)[1]]||[]})`);
+ assert.deepEqual(JSON.parse(h.run('JSON.stringify(calls)')),[{name:'orient_answer',payload:{answers:{switch:'否',family:['技术研发','产品'],years:'3-5 年',city:'上海、杭州'}}}]);
 });
 test('saving picked directions keeps known reasons, sends terms only when given, and refuses more than four',async()=>{
  const h=harness();orientState(h,{directions:[{id:'backend',name:'后端开发',why:'有后端经历'}],terms:['后端'],by:'ai'});
@@ -342,31 +346,42 @@ test('saving picked directions keeps known reasons, sends terms only when given,
 });
 test('orient is keyboard operable: native controls, labelled fields, and focus moved to each new step',async()=>{
  const h=harness();orientState(h,null);
- h.run('openOrient()');assert.equal(h.node('#orient-dialog').open,true);assert.equal(h.node('#orient-questions-title').focused,true);
+ h.run("location.hash='#/orient';openOrient()");assert.equal(h.node('#view h1').focused,true);
  orientState(h,{questions:[{id:'city',text:'城市',kind:'text',options:[]},{id:'years',text:'经验',kind:'choice',options:['1-3 年']}],answers:{}});
  h.run("orientMode='steps'");const steps=h.run('orientBody()');
- assert.doesNotMatch(steps,/<(div|span|a)[^>]*data-orient/);
- assert.match(steps,/<label class="orient-question">1\. 城市<input type="text"/);assert.match(steps,/<fieldset class="orient-question"><legend>2\. 经验<\/legend>/);
- assert.match(steps,/<button type="submit"[^>]*>提交回答，给出方向<\/button>/);assert.match(steps,/<button type="button" class="text-button" data-orient-pick>/);
+ assert.doesNotMatch(steps,/<(div|span|a|li|td)[^>]*data-(orient|next)/);
+ assert.match(steps,/<label class="orient-question">城市<input type="text"/);assert.match(steps,/<fieldset><legend>经验<\/legend>/);
+ assert.match(steps,/<button type="submit"[^>]*>提交回答，重新给方向<\/button>/);assert.match(steps,/<button type="button" class="btn" data-orient-pick>/);
  h.run('showPick()');assert.equal(h.node('#orient-pick-title').focused,true);
- const pick=h.node('#orient-body').innerHTML;
- assert.match(pick,/<details class="orient-family"[^>]*><summary>/);assert.match(pick,/<label class="check-label"><input type="checkbox" name="direction"/);
- assert.match(pick,/<button type="button" class="text-button" data-orient-back>返回<\/button>/);
+ const pick=h.node('#view').innerHTML;
+ assert.match(pick,/<details class="orient-family"[^>]*><summary>/);assert.match(pick,/<label><input type="checkbox" name="direction"/);
+ assert.match(pick,/<button type="button" class="btn" data-orient-back>返回<\/button>/);
  h.run(`action=async()=>{state.orientation={directions:[{id:'backend',name:'后端开发'}],terms:['后端'],by:'rules'};return {};}`);
  await h.run(`submitAnswers({querySelectorAll:()=>[]})`);assert.equal(h.node('#orient-directions-title').focused,true);
- h.run('adopt()');assert.equal(h.node('#orient-dialog').open,false);assert.equal(h.node('#run-button').focused,true);
- assert.match(h.node('#toast').textContent,/已采用 1 个方向。点「开始找岗位」/);
+ h.run('adopt()');assert.equal(h.node('#run-button').focused,true);
+ assert.match(h.node('#toast').textContent,/已采用 1 个方向。点「开始搜索」/);
 });
-test('orient styles fit a 390px screen: no fixed width beyond it, wrapping rows, long words broken',()=>{
+test('next actions and 暂不建议 are buttons with their reasons, escaped',()=>{
+ const h=harness();orientState(h,{directions:[],terms:[],not_recommended:[{id:'sales',name:'<b>销售</b>',why:'你排除了<i>',fact_ids:['f1'],jd:[{job_id:'j',evidence:'<x>'}]}],
+  next_actions:[{id:'a1',kind:'search',target:{direction_id:'backend'},text:'搜<b>后端</b>'},{id:'a2',kind:'confirm_fact',target:{fact_id:'f1'},text:'确认 f1'}]});
+ const html=h.run('notRecommendedSection()+nextActionsSection()');
+ assert.match(html,/<b>&lt;b&gt;销售&lt;\/b&gt;<\/b><span>你排除了&lt;i&gt;/);assert.match(html,/JD 1 处/);assert.doesNotMatch(html,/<i>|<x>/);
+ assert.match(html,/<span>搜&lt;b&gt;后端&lt;\/b&gt;<\/span><button class="btn" type="button" data-next="a1">开始找岗位<\/button><span class="kind">搜索<\/span>/);
+ assert.match(html,/data-next="a2">去确认<\/button>/);
+ h.run(`state.orientation.next_actions=[]`);assert.match(h.run('nextActionsSection()'),/回答问题或选定方向后/);
+});
+test('page styles fit a 390px screen: no fixed width beyond it, and the two columns and the comparison stack',()=>{
  const css=fs.readFileSync(path.join(__dirname,'../static/style.css'),'utf8');
- // The dialog's rules sit in the frozen-workbench section, scoped under .wb; they run from #orient-open to the end.
- const orient=css.slice(css.indexOf('.wb #orient-open'));
- assert.ok(orient.length>100);
- for(const m of orient.matchAll(/(?:^|[\s;{])(width|min-width|flex-basis)\s*:\s*(\d+)px/g))assert.ok(Number(m[2])<=358,m[0]);
- assert.match(orient,/\.orient-body\s*\{[^}]*overflow-wrap:\s*anywhere/);
- for(const rule of ['.orient-actions','.orient-options','.orient-line','.orient-section-head'])assert.match(orient,new RegExp(rule.replace('.','\\.')+'\\s*\\{[^}]*flex-wrap:\\s*wrap'),rule);
- // The dialog itself is bounded by the viewport (existing rule the orient dialog relies on).
- assert.match(css,/\.wb dialog \{[^}]*max-width: calc\(100vw - 32px\)/);
+ const own=css.slice(0,css.indexOf('/* 冻结的工作台'));
+ for(const m of own.matchAll(/([^{}]+)\{([^}]*)\}/g)){
+  if(/@media \(min-width/.test(m[1]))continue;
+  for(const w of m[2].matchAll(/(?:^|[\s;])(width|min-width|flex-basis)\s*:\s*(\d+)px/g))assert.ok(Number(w[2])<=358||/\.(search|set|peek|d-head|with-margin|form|filter \.menu|tip)\b/.test(m[1]),m[1].trim()+' '+w[0]);
+ }
+ const phone=own.slice(own.indexOf('@media (max-width: 760px)'));
+ assert.match(phone,/\.cols2,\s*\.set \{[^}]*grid-template-columns: 1fr/);
+ assert.match(phone,/\.compare thead \{[^}]*display: none/);assert.match(phone,/\.compare td::before \{[^}]*content: attr\(data-dir\)/);
+ assert.match(phone,/\.d-head,\s*\.with-margin \{[^}]*display: block/);
+ assert.match(own,/dialog|\.palette \{[^}]*width: min\(560px, calc\(100vw - 32px\)\)/);
 });
 test('the real ES modules link and render one state through main.js',async()=>{
  const {node,document}=fakeDocument();
@@ -380,7 +395,8 @@ test('the real ES modules link and render one state through main.js',async()=>{
   await import(require('node:url').pathToFileURL(path.join(JS_DIR,'main.js')).href);
   await new Promise(resolve=>setImmediate(resolve));
   assert.equal(node('#queue-count').textContent,1);assert.match(node('#job-list').innerHTML,/Synthetic role/);
-  assert.equal(node('#orient-open').textContent,'方向：后端开发');assert.match(node('#orient-body').innerHTML,/建议方向/);
+  assert.equal(node('#workbench-page').hidden,false);assert.equal(node('#view').hidden,true);assert.equal(document.title,'工作台 · auto-hunt-job');
+  assert.equal(node('#notice').textContent,'');assert.equal(node('#run').textContent,'还没有运行过搜索。');assert.equal(node('#synth').hidden,true);
  }finally{
   for(const [key,desc] of Object.entries(saved))desc?Object.defineProperty(globalThis,key,desc):delete globalThis[key];
  }

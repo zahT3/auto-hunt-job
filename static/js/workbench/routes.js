@@ -39,7 +39,8 @@ export function applicationRoute(j) {
     check = r.entry_check,
     url = safeUrl(j.application_url),
     valid =
-      check?.url === j.application_url &&
+      !!check &&
+      check.url === j.application_url &&
       Date.now() - new Date(check.checked_at).getTime() >= 0 &&
       Date.now() - new Date(check.checked_at).getTime() < 86400000;
   const status = valid ? check.status : "unverified",
