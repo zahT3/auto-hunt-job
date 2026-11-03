@@ -575,6 +575,46 @@ test('the bottom bar marks the current choice with aria-pressed and disables a l
  assert.match(h.run(`barHtml({id:'j',title:'T',status:'submitted'},'job')`),/已锁定，不能改选择.*disabled/);
 });
 
+test('settings show only the key tail, send no empty key, and leave every consent kind unticked by default',()=>{
+ const h=harness();h.state({ai:{settings:{base_url:'https://api.example.com/v1',model:'m-1',budget_cny:5},key_hint:'3f9c',consent:null,consent_current:false},config:{sources:['anker']},runs:[]});
+ const html=h.run('settingsHtml()');
+ assert.match(html,/placeholder="已保存，尾号 3f9c。留空表示不改…"/);assert.doesNotMatch(html,/value="[^"]*3f9c/);
+ assert.equal((html.match(/name="kind" value="[a-z_]+" checked/g)||[]).length,0);
+ assert.match(html,/<span>完整简历<\/span><span class="n warn">不脱敏/);
+ assert.match(html,/还没有同意。勾选后，同意只对 api\.example\.com 的 m-1 有效/);
+ const form={elements:{base_url:{value:' https://api.example.com/v1 '},model:{value:'m-1'},budget_cny:{value:''},api_key:{value:'  '}}};
+ assert.deepEqual(JSON.parse(h.run(`JSON.stringify(aiPayload(${JSON.stringify(form)}))`)),{base_url:'https://api.example.com/v1',model:'m-1'});
+ const checked={querySelectorAll:()=>[{value:'job_text'},{value:'resume_redacted'}]};
+ h.run(`globalThis.checked={querySelectorAll:()=>[{value:'job_text'},{value:'resume_redacted'}]}`);
+ assert.deepEqual(JSON.parse(h.run('JSON.stringify(consentPayload(checked))')),{kinds:['job_text','resume_redacted'],host:'api.example.com',model:'m-1'});
+});
+test('a consent for another service is shown as no longer valid, not as granted',()=>{
+ const h=harness();h.state({ai:{settings:{base_url:'https://api.example.com',model:'m-2'},consent:{host:'old.example.com',model:'m-1',kinds:['job_text'],granted_at:'2026-10-30T13:14:00Z'},consent_current:false}});
+ const html=h.run('settingsHtml()');
+ assert.match(html,/原来的同意给的是 old\.example\.com 的 m-1，和现在的服务不一样，已不生效/);assert.doesNotMatch(html,/value="job_text" checked/);
+});
+test('each source says how its last run went in words and shapes, with the reason escaped',()=>{
+ const h=harness();h.state({config:{sources:['boss','liepin']},runs:[{finished_at:'2026-11-03T02:00:00Z',sources:[
+  {kind:'boss',status:'failed',error:'<script>x</script>'},{kind:'liepin',status:'needs_login'},{kind:'anker',status:'ok',truncated:true,returned:5},{kind:'lever',status:'ok',returned:2}]}]});
+ const html=h.run('settingsHtml()');
+ assert.match(html,/BOSS 直聘<\/td><td><span class="st st-bad">失败<\/span><span class="note">&lt;script&gt;x&lt;\/script&gt;<\/span>/);
+ assert.match(html,/猎聘<\/td><td><span class="st st-warn">需要登录<\/span>/);
+ assert.match(html,/安克官网<\/td><td><span class="st st-warn">结果被截断<\/span>.*<td class="num">5<\/td>/);
+ assert.match(html,/Lever<\/td><td><span class="st st-ok">成功<\/span><\/td><td class="num">2<\/td>/);
+ assert.match(html,/Ashby<\/td><td><span class="st st-muted">还没运行<\/span><\/td><td class="num">—<\/td>/);
+ assert.match(html,/data-source="boss" aria-label="启用 BOSS 直聘" checked/);assert.match(html,/data-source="anker" aria-label="启用 安克官网" >/);
+ assert.match(html,/那一轮不会把没取到的岗位标成"已不在列表"/);assert.doesNotMatch(html,/<script>/);
+});
+test('the frozen workbench stays reachable from settings, the job page and the palette',()=>{
+ const h=harness();h.state({});
+ const html=h.run('settingsHtml()');
+ for(const hook of ['data-open-resume','data-open-candidate','data-act="edit-targets"','data-open-import','href="#/workbench"','href="/bookmarklets"'])assert.ok(html.includes(hook),hook);
+ assert.match(h.run(`jobPageHtml({id:'j',title:'T',jd:''},null,null)`),/data-act="open-workbench" data-job="j">在工作台打开这个岗位/);
+ const index=fs.readFileSync(path.join(__dirname,'../static/index.html'),'utf8');
+ assert.match(index,/<div class="wb" id="workbench-page" hidden>/);
+ for(const id of ['review-dialog','candidate-dialog','resume-dialog','import-dialog','config-form','control-button','stop-button'])assert.ok(index.includes(`id="${id}"`),id);
+});
+
 const BOOKMARKLETS=['boss-zhipin','liepin','liepin-list','lagou','mokahr','universal'];
 const BM_DIR=path.join(__dirname,'../static/bookmarklets');
 // Mirrors hunt/bookmarklets.py assemble(): the shared delivery prelude replaces each script's "// @deliver" line.
