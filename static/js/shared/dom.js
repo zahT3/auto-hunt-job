@@ -58,11 +58,14 @@ export function replaceContent(selector, html) {
       (d) => d.dataset.disclosure || d.querySelector("summary")?.textContent,
     ),
   );
+  // Focus inside the replaced markup returns to the element with the same id.
+  const active = node.contains?.(document.activeElement) ? document.activeElement.id : "";
   node.innerHTML = html;
   node._renderedHtml = html;
   Array.from(node.querySelectorAll?.("details") || []).forEach((d) => {
     if (open.has(d.dataset.disclosure || d.querySelector("summary")?.textContent)) d.open = true;
   });
+  if (active) node.querySelector(`#${CSS.escape(active)}`)?.focus({ preventScroll: true });
 }
 
 export function openDialog(id) {

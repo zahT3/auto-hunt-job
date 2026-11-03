@@ -6,7 +6,8 @@ const fs=require('node:fs');
 const vm=require('node:vm');
 const path=require('node:path');
 const JS_DIR=path.join(__dirname,'../static/js');
-const IMPORT=/^import\s+(?:[\s\S]*?\s+from\s+)?"([^"]+)";$/gm;
+// A named import may span lines inside its braces; a side-effect import ("import './x.js';") has no from.
+const IMPORT=/^import\s+(?:(?:\{[^}]*\}|[^"\n;{])+?\s+from\s+)?"([^"]+)";$/gm;
 // The page loads static/js/main.js as an ES module. For this DOM-free harness the module graph is inlined into one
 // script, dependencies first, with import lines and export keywords removed, so each test gets a fresh copy and can
 // reach module-level functions and variables by name. A separate test imports the real modules.
@@ -38,12 +39,13 @@ function fakeDocument(){
     });
     return nodes.get(selector);
   }
-  const document={listeners:{},querySelector:s=>s==='dialog[open]'?null:node(s),querySelectorAll:s=>selections.get(s)||[],addEventListener(name,fn){(this.listeners[name]??=[]).push(fn);},hidden:false,activeElement:null};
+  const document={listeners:{},querySelector:s=>s==='dialog[open]'?null:node(s),querySelectorAll:s=>selections.get(s)||[],addEventListener(name,fn){(this.listeners[name]??=[]).push(fn);},hidden:false,activeElement:null,
+    created:[],createElement(tag){const el={tag,dataset:{},classList:{toggle(){}},setAttribute(name,value){this[name]=value;},append(){}};this.created.push(el);return el;}};
   return {node,selections,document};
 }
 function harness(){
   const {node,selections,document}=fakeDocument();
-  const context=vm.createContext({document,console,URL,crypto:require('node:crypto').webcrypto,structuredClone,setTimeout:()=>1,clearTimeout(){},matchMedia:()=>({matches:false}),fetch(){throw new Error('Unexpected network request');}});
+  const context=vm.createContext({document,location:{hash:''},console,URL,URLSearchParams,crypto:require('node:crypto').webcrypto,structuredClone,setTimeout:()=>1,clearTimeout(){},matchMedia:()=>({matches:false}),fetch(){throw new Error('Unexpected network request');}});
   vm.runInContext(app,context);
   return {node,selections,document,run:code=>vm.runInContext(code,context),state:value=>vm.runInContext('state='+JSON.stringify(value),context)};
 }
@@ -371,8 +373,8 @@ test('the real ES modules link and render one state through main.js',async()=>{
  const state={dataset:'app',control:'running',jobs:[{id:'j',title:'Synthetic role',company:'Co'}],config:{keywords:[]},candidate:{facts:[]},
   orientation:{directions:[{id:'backend',name:'后端开发'}],terms:['后端'],by:'rules'},direction_table:[]};
  const saved={};
- for(const key of ['document','matchMedia','setInterval','fetch','CSS'])saved[key]=Object.getOwnPropertyDescriptor(globalThis,key);
- Object.assign(globalThis,{document,matchMedia:()=>({matches:false}),setInterval:()=>1,CSS:{escape:s=>s},
+ for(const key of ['document','location','matchMedia','setInterval','fetch','CSS'])saved[key]=Object.getOwnPropertyDescriptor(globalThis,key);
+ Object.assign(globalThis,{document,location:{hash:'#/workbench'},matchMedia:()=>({matches:false}),setInterval:()=>1,CSS:{escape:s=>s},
   fetch:async url=>{assert.equal(url,'/api/state');return {ok:true,json:async()=>state};}});
  try{
   await import(require('node:url').pathToFileURL(path.join(JS_DIR,'main.js')).href);
@@ -431,6 +433,53 @@ test('prepare_error is escaped in the detail and flagged in the queue row',()=>{
  const detail=h.node('#detail-pane').innerHTML;
  assert.match(detail,/材料准备失败：&lt;img src=x onerror=alert\(1\)&gt;/);assert.doesNotMatch(detail,/<img|正在后台准备材料/);
  assert.match(h.node('#job-list').innerHTML,/<span class="badge warn">准备失败<\/span>/);
+});
+
+const NOW=Date.parse('2026-11-03T04:00:00Z');
+test('search params leave out empty filters, repeat city, and drop fresh for the held-back count',()=>{
+ const h=harness();
+ assert.equal(h.run(`searchParams({q:'  Go 支付 ',city:'上海',direction:'backend',source:'feishu',fresh:7})`),'q=Go+%E6%94%AF%E4%BB%98&city=%E4%B8%8A%E6%B5%B7&direction=backend&source=feishu&fresh=7&limit=100');
+ assert.equal(h.run(`searchParams({q:'',city:null,direction:null,source:null,fresh:7},{withFresh:false})`),'limit=100');
+});
+test('freshness only says first seen, last seen and still in the list, never 发布 or 在招',()=>{
+ const h=harness();const f=g=>JSON.parse(h.run(`JSON.stringify(freshness(${JSON.stringify(g)},${NOW}))`));
+ assert.deepEqual(f({status:'open',first_seen:'2026-11-02T01:00:00Z',last_seen:'2026-11-03T01:00:00Z'}),{tone:'fresh',label:'新搜到',detail:'昨天首次搜到，今天还搜得到'});
+ assert.deepEqual(f({status:'open',first_seen:'2026-09-18T01:00:00Z',last_seen:'2026-11-02T01:00:00Z'}),{tone:'ok',label:'仍在列表',detail:'9 月 18 日首次搜到，昨天最近一次搜到'});
+ assert.deepEqual(f({status:'open',first_seen:'2026-10-28T01:00:00Z',last_seen:'2026-10-31T01:00:00Z'}),{tone:'warn',label:'近几天没搜到',detail:'6 天前首次搜到，3 天前最近一次搜到'});
+ assert.deepEqual(f({status:'closed',first_seen:'2026-10-01T01:00:00Z',last_seen:'2026-10-17T01:00:00Z'}),{tone:'off',label:'已不在列表',detail:'最近一次搜到是 10 月 17 日，之后连续两轮没再出现'});
+ assert.equal(f({status:'open',first_seen:null,last_seen:null}).label,'搜到时间不明');
+ const src=fs.readFileSync(path.join(JS_DIR,'shared/time.js'),'utf8')+fs.readFileSync(path.join(JS_DIR,'search/page.js'),'utf8');
+ // The two allowed uses: the library note (不等于招聘方仍在招) and a date a source itself gave (X 写的发布日期).
+ const said=src.replace(/\/\/.*$/gm,'').replace(/不等于招聘方仍在招/g,'').replace(/写的发布日期/g,'');
+ assert.doesNotMatch(said,/发布|在招/);
+});
+const GROUP={group:'g1',title:'<img src=x onerror=1>工程师',company:'A&B',city:'上海',status:'closed',direction:'backend',first_seen:'2026-10-01T01:00:00Z',last_seen:'2026-10-17T01:00:00Z',
+ sources:[{job_id:'j"1',source:'<b>',status:'closed',first_seen:'2026-10-01T01:00:00Z',last_seen:'2026-10-17T01:00:00Z',matched:true,salary:'<i>30k</i>',location:'上海'},
+  {job_id:'j2',source:'feishu',status:'open',first_seen:'2026-10-01T01:00:00Z',last_seen:'2026-10-17T01:00:00Z',matched:false,salary:null,posted_at:'2026-10-27'}]};
+test('a result group escapes every library string and greys out a closed group',()=>{
+ const h=harness();h.state({jobs:[{id:'j"1',title:'x',triage:'interested'}]});
+ const html=h.run(`groupHtml(${JSON.stringify(GROUP)})`);
+ assert.doesNotMatch(html,/<img|<b>|<i>/);
+ assert.match(html,/&lt;img src=x onerror=1&gt;工程师/);assert.match(html,/A&amp;B/);assert.match(html,/&lt;i&gt;30k&lt;\/i&gt;/);
+ assert.match(html,/class="group closed"/);assert.match(html,/href="#\/job\/j%22%221"|href="#\/job\/j%221"/);
+ assert.match(html,/<span class="st st-off">已不在列表<\/span>/);assert.match(html,/这条记录没命中检索词/);
+ assert.match(html,/飞书招聘写的发布日期：10 月 27 日/);assert.match(html,/<span class="tri-tag" data-v="interested">感兴趣<\/span>/);
+});
+test('the sentence spells out the filters, counts records and groups, and offers the held-back groups',()=>{
+ const h=harness();h.state({orientation:{directions:[{id:'backend',name:'后端开发'}]}});
+ h.run(`searchQuery.q='<script>';searchQuery.city='上海';searchQuery.direction='backend';searchQuery.fresh=7;searchData={total_groups:1,groups:[${JSON.stringify(GROUP)}]};heldBack=2`);
+ const s=h.run('sentenceHtml()');
+ assert.match(s,/^在 <b>上海<\/b> 找 <b>后端开发<\/b>，标题或 JD 含 <b>&lt;script&gt;<\/b>，看 <b>全部来源<\/b>，只看最近 7 天搜到过、仍在列表的：1 条记录合并成 1 组。/);
+ assert.match(s,/另有 2 组已不在列表或超出时间范围，<button type="button" data-act="show-all">一起显示<\/button>/);
+ h.run(`searchError='参数<错误>'`);assert.equal(h.run('sentenceHtml()'),'搜索没有完成：参数&lt;错误&gt;');
+});
+test('the preview quotes the JD in the serif excerpt and admits when there is no match explanation yet',()=>{
+ const h=harness();h.state({jobs:[{id:'j"1',title:'x',jd:'短行\n负责 <b>支付</b> 核心链路的服务开发与稳定性建设。\n第二段也足够长，会出现在摘录里。'}]});
+ const html=h.run(`peekHtml(${JSON.stringify(GROUP)})`);
+ assert.match(html,/<p class="excerpt"><span class="from">JD 摘录（&lt;b&gt;）<\/span>负责 &lt;b&gt;支付&lt;\/b&gt;/);assert.doesNotMatch(html,/短行/);
+ assert.match(html,/还没做匹配解释/);assert.match(html,/打开详情 <span class="kbd" aria-hidden="true">↵<\/span>/);
+ h.run(`rememberMatch('j"1',{hard:[{status:'met'},{status:'unknown'}],keywords:[{coverage:'explicit'},{coverage:'absent'}],evidence:[{fact_ids:['f1']},{fact_ids:[]}]})`);
+ assert.match(h.run(`peekHtml(${JSON.stringify(GROUP)})`),/1 符合，0 不符合，1 不知道.*<span class="hl">1<\/span> \/ 2 有原词，0 相近.*1 \/ 2 有事实/);
 });
 
 const BOOKMARKLETS=['boss-zhipin','liepin','liepin-list','lagou','mokahr','universal'];

@@ -61,3 +61,26 @@ export function triagePayload(jobId, value) {
 export function preparing(job) {
   return job.triage === "interested" && !job.package && !job.prepare_error;
 }
+
+// The triage page's tabs, by the representative job's own choice (DESIGN.md §10); applied jobs are left out.
+export const TABS = [
+  ["pending", "待选"],
+  ["interested", "感兴趣"],
+  ["later", "稍后"],
+  ["skipped", "跳过"],
+];
+
+export function tabOf(job) {
+  if (job.triage) return job.triage;
+  if (job.bucket === "sent") return null;
+  return job.bucket === "skipped" ? "skipped" : "pending";
+}
+
+export function tabCounts(jobs) {
+  const counts = Object.fromEntries(TABS.map(([key]) => [key, 0]));
+  for (const job of items(jobs)) {
+    const tab = tabOf(job);
+    if (tab in counts) counts[tab] += 1;
+  }
+  return counts;
+}

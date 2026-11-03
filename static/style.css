@@ -1484,27 +1484,43 @@ mark.ev.on {
   position: fixed;
   left: 50%;
   bottom: calc(var(--bar) + 16px);
-  transform: translate(-50%, 8px);
+  transform: translate(-50%, 0);
   background: var(--ink);
   color: var(--paper);
   padding: 8px 14px;
   border-radius: var(--r3);
   font-size: var(--fs-s);
-  opacity: 0;
-  pointer-events: none;
-  transition:
-    opacity 0.16s ease-out,
-    transform 0.2s ease-out;
   z-index: 30;
   display: flex;
   gap: 12px;
   align-items: center;
   max-width: calc(100vw - 32px);
+  animation: toast-in 0.2s ease-out;
 }
-.toast.on {
-  opacity: 1;
-  transform: translate(-50%, 0);
-  pointer-events: auto;
+@keyframes toast-in {
+  from {
+    opacity: 0;
+    transform: translate(-50%, 8px);
+  }
+}
+.notice {
+  margin: 0;
+  padding: var(--s2) 20px;
+  border-bottom: 1px solid var(--rule);
+  background: var(--wash);
+  font-size: var(--fs-s);
+}
+.notice.error {
+  color: var(--bad);
+}
+.wb-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--s2) var(--s4);
+  padding: var(--s3) 20px;
+  border-bottom: 1px solid var(--rule);
 }
 .toast button {
   background: none;

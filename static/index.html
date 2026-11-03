@@ -4,22 +4,37 @@
 <meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <meta name="color-scheme" content="light dark"><title>auto-hunt-job · 求职工作台</title>
 <link rel="preload" href="/fonts/inter.woff2" as="font" type="font/woff2" crossorigin>
+<link rel="icon" href="data:,">
 <link rel="stylesheet" href="/style.css">
 <script type="module" src="/js/main.js"></script>
 </head>
 <body>
-<div class="wb">
-<header class="app-header">
-  <a class="brand" href="/" aria-label="auto-hunt-job 首页"><svg width="24" height="24" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M5 18V6h6a6 6 0 0 1 0 12H5Z" stroke="currentColor" stroke-width="1.7"/><path d="m10 9 3 3-3 3" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/></svg><span>auto-hunt-job</span><span class="local-tag">本地</span></a>
-  <div class="header-actions"><button class="subtle workspace-toggle" id="workspace-toggle" aria-expanded="false" aria-controls="task-pane" type="button">设置与待办 <span id="pending-count" class="count"></span></button><a class="subtle" href="/bookmarklets">岗位书签</a><span id="runner-status" class="runner-status"><i></i>正在连接</span><button class="subtle" id="control-button" type="button">暂停</button><button class="subtle" id="stop-button" type="button">停止</button><button class="primary" id="run-button" type="button">开始找岗位<svg width="15" height="15" viewBox="0 0 16 16" fill="none" aria-hidden="true"><path d="m6 3 5 5-5 5" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg></button></div>
+<a class="skip" href="#view">跳到主要内容</a>
+<header class="top">
+  <div class="brand"><span class="logo" aria-hidden="true"></span>auto-hunt-job<span class="synth" id="synth" title="界面里的候选人和岗位是合成的，禁止对外申请" hidden>合成数据</span></div>
+  <nav class="nav" aria-label="主导航">
+    <a href="#/search" data-page="search">搜索</a>
+    <a href="#/triage" data-page="triage">分拣 <span class="n" data-count="pending"></span></a>
+    <a href="#/orient" data-page="orient">定方向</a>
+    <a href="#/settings" data-page="settings">设置</a>
+  </nav>
+  <p class="run" id="run"></p>
+  <button class="btn btn-primary" type="button" id="run-button">开始搜索</button>
 </header>
 <div id="notice" class="notice" role="status" aria-live="polite" hidden></div>
+<main id="view" tabindex="-1"></main>
+<div class="wb" id="workbench-page" hidden>
+<div class="wb-head section-top">
+  <p class="small-note">冻结的工作台：审核、材料包、执行和入口核验沿用原来的做法。</p>
+  <div class="header-actions"><button class="subtle workspace-toggle" id="workspace-toggle" aria-expanded="false" aria-controls="task-pane" type="button">设置与待办 <span id="pending-count" class="count"></span></button><a class="subtle" href="/bookmarklets">岗位书签</a><span id="runner-status" class="runner-status"><i></i>正在连接</span><button class="subtle" id="control-button" type="button">暂停</button><button class="subtle" id="stop-button" type="button">停止</button></div>
+</div>
+
 <section class="intake-strip" aria-label="简历与搜索准备">
   <div class="profile-line"><span id="profile-kind" class="badge neutral">候选资料</span><p id="profile-status">上传简历，确认事实后开始搜索</p><button class="text-button" type="button" data-open-target id="target-summary">设置搜索方向</button></div>
   <div class="intake-actions"><button type="button" class="secondary" id="orient-open" aria-haspopup="dialog">定方向</button><button type="button" class="secondary" id="resume-open">上传简历</button><button type="button" class="text-button" id="resume-review" hidden>复核待确认资料</button></div>
 </section>
 <section id="search-progress" class="search-progress" aria-live="polite" hidden></section>
-<main class="workspace" id="workspace">
+<div class="workspace" id="workspace">
 <section class="queue-pane" aria-labelledby="queue-title">
   <div class="section-top"><h1 id="queue-title">机会 <span id="queue-count" class="count">0</span></h1><button class="icon-button" id="import-button" aria-label="导入岗位" title="导入岗位"><svg width="18" height="18" viewBox="0 0 20 20" fill="none" aria-hidden="true"><path d="M10 4v12M4 10h12" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg></button></div>
   <p class="pane-note" id="queue-subtitle" hidden></p><label class="queue-search"><span class="sr-only">搜索岗位或公司</span><input id="queue-search" type="search" placeholder="搜索岗位或公司" autocomplete="off"></label>
@@ -61,7 +76,17 @@
   <details class="settings-section"><summary>渠道覆盖与运行记录</summary><div id="capabilities"></div><div id="run-history"></div></details>
   <div class="privacy-note"><svg width="14" height="14" viewBox="0 0 16 16" fill="none" aria-hidden="true"><rect x="3.5" y="7" width="9" height="6" rx="1.5" stroke="currentColor"/><path d="M5.5 7V5a2.5 2.5 0 0 1 5 0v2" stroke="currentColor"/></svg><span>资料保存在本机。对外操作以具体授权为准。</span></div>
 </aside>
-</main>
+</div>
+</div>
+<div class="bar" id="bar" hidden></div>
+<div id="toast" class="toast" role="status" aria-live="polite" hidden></div>
+<dialog class="palette" id="palette" aria-label="全部操作">
+  <form method="dialog">
+    <input id="palette-q" type="text" placeholder="输入操作名称…" autocomplete="off" aria-label="搜索操作">
+    <ul id="palette-list"></ul>
+  </form>
+</dialog>
+<div class="wb">
 <dialog id="resume-dialog" aria-labelledby="resume-title"><div class="dialog-body wide"><div class="dialog-heading"><h2 id="resume-title">上传并复核简历</h2><button type="button" class="close-button" data-close aria-label="关闭">×</button></div>
   <p class="muted">文件保存在本机，由本地解析器提取。确认事实用于搜索，不等于允许向招聘平台披露或投递。</p>
   <form id="resume-upload-form"><label class="resume-file-label">选择 PDF、DOCX、TXT 或 MD 简历<input id="resume-file" name="file" type="file" accept=".pdf,.docx,.txt,.md,application/pdf,application/vnd.openxmlformats-officedocument.wordprocessingml.document,text/plain,text/markdown" required></label><p class="small-note">最大 10 MiB。扫描件或图片型 PDF 可能无法提取；请改用带文字的 PDF 或 DOCX。</p><label class="check-label spaced-top"><input name="synthetic" type="checkbox" checked>这是合成候选人资料，仅用于开发验收</label><button type="submit" class="secondary" id="resume-upload-button">读取并理解简历</button></form>
@@ -79,6 +104,5 @@
   <div class="local-review-actions"><label class="check-label"><input id="material-review-confirm" type="checkbox">我已核对这批材料、事实来源与现有缺口</label><button class="primary" id="save-material-review" type="button" disabled>保存本地复核</button></div>
   <details id="external-review" class="external-review" hidden><summary>另行授权对外操作</summary><fieldset id="external-review-controls" disabled><legend>本次允许的对外操作</legend><p class="small-note">下列授权绑定具体岗位和最终快照，与本地复核分开保存。</p><label class="check-label"><input type="checkbox" name="permission" value="input">向下列招聘平台填写字段（可能自动保存）</label><label class="check-label"><input type="checkbox" name="permission" value="upload">上传下列最终简历文件</label><label class="check-label"><input type="checkbox" name="permission" value="submit">正式提交下列申请</label><div class="form-pair"><label>授权有效期 / 小时<input name="expires_hours" type="number" min="1" max="72" value="24"></label><label>最多执行申请数<input name="limit" type="number" min="1" value="1"></label></div><label>浏览器执行计划 SHA-256<input name="browser_plan_hash" pattern="[a-fA-F0-9]{64}" placeholder="64 位十六进制；绑定具体操作计划" autocomplete="off"></label><div id="external-review-gaps"></div><p class="small-note">不包含发消息或向外部模型传输资料。平台登录、未知必填题与声明将暂停并交由你处理；批准后仍须通过执行前检查。</p><label class="check-label review-confirm"><input id="review-confirm" type="checkbox">我已核对接收方、字段、文件、事实来源和披露范围</label><button class="secondary" id="approve-batch" type="submit" disabled>批准列出的对外操作</button></fieldset></details>
   <div class="dialog-actions"><button type="button" id="reject-batch" class="danger-button">不申请这一批</button><button type="button" class="secondary" data-close>关闭</button></div></form></dialog>
-<div id="toast" class="toast" role="status" hidden></div>
 </div>
 </body></html>

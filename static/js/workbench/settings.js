@@ -33,7 +33,7 @@ export function refreshRunButton(label) {
           : "运行演示"
         : configDirty
           ? "保存并搜索"
-          : "开始找岗位";
+          : "开始搜索";
 }
 
 export function renderTasks() {

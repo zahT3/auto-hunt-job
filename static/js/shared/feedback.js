@@ -21,11 +21,20 @@ export function notice(message, error = false) {
   $("#notice").hidden = false;
 }
 
-export function toast(message) {
-  $("#toast").textContent = message;
-  $("#toast").hidden = false;
+// With {undo: true} the toast carries 撤销（U）; the shell listens for its data-act.
+export function toast(message, { undo = false } = {}) {
+  const box = $("#toast");
+  box.textContent = message;
+  if (undo) {
+    const button = document.createElement("button");
+    button.type = "button";
+    button.dataset.act = "undo";
+    button.textContent = "撤销（U）";
+    box.append(button);
+  }
+  box.hidden = false;
   clearTimeout(noticeTimer);
-  noticeTimer = setTimeout(() => ($("#toast").hidden = true), 4500);
+  noticeTimer = setTimeout(() => (box.hidden = true), 5000);
 }
 
 export function clearFeedback(dialog) {
