@@ -23,7 +23,14 @@ function moduleSources(entry){
   visit(entry);
   return order;
 }
-const app='"use strict";\n'+moduleSources(path.join(JS_DIR,'main.js'))
+const sources=moduleSources(path.join(JS_DIR,'main.js'));
+// Inlined, two modules' top-level names would collide (a later function silently replaces an earlier one).
+{
+ const names=sources.flatMap(src=>[...src.matchAll(/^(?:export )?(?:async )?(?:function|const|let|class) ([A-Za-z0-9_$]+)/gm)].map(m=>m[1]));
+ const dup=names.filter((n,i)=>names.indexOf(n)!==i);
+ if(dup.length)throw new Error('top-level names used by two modules: '+[...new Set(dup)].join(', '));
+}
+const app='"use strict";\n'+sources
   .map(src=>src.replace(IMPORT,'').replace(/^export (?=(?:async )?function|const |let )/gm,''))
   .join('\n')
   .replace(/^start\(\);$/m,'');
@@ -34,18 +41,18 @@ function fakeDocument(){
       innerHTML:'',textContent:'',hidden:false,disabled:false,checked:false,open:false,
       elements:new Proxy({}, {get:(target,key)=>target[key]??(target[key]={value:'',checked:false})}),
       classList:{toggle(){}},listeners:{},addEventListener(name,fn){this.listeners[name]=fn;},
-      querySelector(){return null;},reset(){},showModal(){this.open=true;},close(){this.open=false;},
+      querySelector(){return null;},append(){},reset(){},showModal(){this.open=true;},close(){this.open=false;},
       scrollIntoView(){},focus(){this.focused=true;},setAttribute(name,value){this[name]=value;},toggleAttribute(name,value){this[name]=value;}
     });
     return nodes.get(selector);
   }
-  const document={listeners:{},querySelector:s=>s==='dialog[open]'?null:node(s),querySelectorAll:s=>selections.get(s)||[],addEventListener(name,fn){(this.listeners[name]??=[]).push(fn);},hidden:false,activeElement:null,
+  const document={listeners:{},querySelector:s=>s==='dialog[open]'?null:node(s),querySelectorAll:s=>selections.get(s)||[],addEventListener(name,fn){(this.listeners[name]??=[]).push(fn);},hidden:false,activeElement:null,dispatchEvent(){},
     created:[],createElement(tag){const el={tag,dataset:{},classList:{toggle(){}},setAttribute(name,value){this[name]=value;},append(){}};this.created.push(el);return el;}};
   return {node,selections,document};
 }
 function harness(){
   const {node,selections,document}=fakeDocument();
-  const context=vm.createContext({document,location:{hash:''},console,URL,URLSearchParams,crypto:require('node:crypto').webcrypto,structuredClone,setTimeout:()=>1,clearTimeout(){},matchMedia:()=>({matches:false}),fetch(){throw new Error('Unexpected network request');}});
+  const context=vm.createContext({document,location:{hash:''},CustomEvent:class{constructor(type){this.type=type;}},CSS:{escape:s=>s},console,URL,URLSearchParams,crypto:require('node:crypto').webcrypto,structuredClone,setTimeout:()=>1,clearTimeout(){},matchMedia:()=>({matches:false}),fetch(){throw new Error('Unexpected network request');}});
   vm.runInContext(app,context);
   return {node,selections,document,run:code=>vm.runInContext(code,context),state:value=>vm.runInContext('state='+JSON.stringify(value),context)};
 }
@@ -534,6 +541,38 @@ test('the job header names unconfirmed facts it left out, and the structure quot
  assert.match(html,/<dt>年限<\/dt><dd>3–不限 年<span class="src">「3 年以上 &lt;Go&gt; 开发经验」<\/span>/);assert.match(html,/<dt>学历<\/dt><dd><span class="none">原文没提<\/span>/);
  assert.match(html,/在工作台打开这个岗位/);assert.doesNotMatch(html,/发布/);
  const none=h.run(`jobPageHtml(state.jobs[0],null,null)`);assert.match(none,/还没做匹配解释/);assert.match(none,/data-act="job-match"/);
+});
+
+test('triage tabs count by each job own choice, keep applied jobs out and escape the rows',()=>{
+ const h=harness();h.state({jobs:[{id:'a',title:'<b>A</b>',triage:null,bucket:'pending',status:'new',collected_at:'2026-10-30T01:00:00Z'},
+  {id:'b',title:'B',triage:'interested',bucket:'chosen',status:'new'},{id:'c',title:'C',triage:'later',bucket:'pending',status:'new'},
+  {id:'d',title:'D',triage:null,bucket:'skipped',status:'rejected'},{id:'e',title:'E',triage:'interested',bucket:'sent',status:'submitted'},{id:'f',title:'F',triage:null,bucket:'sent',status:'submitted'}]});
+ assert.deepEqual(JSON.parse(h.run('JSON.stringify(tabCounts(state.jobs))')),{pending:1,interested:2,later:1,skipped:1});
+ const html=h.run('triageHtml()');
+ assert.match(html,/data-bucket="pending" aria-selected="true" tabindex="0">待选<span class="c">1<\/span>/);
+ assert.match(html,/<p class="t">&lt;b&gt;A&lt;\/b&gt;<\/p>/);assert.doesNotMatch(html,/<b>A/);
+ assert.match(html,/本机收集于 10 月 30 日/);assert.doesNotMatch(html,/发布|在招/);
+ assert.match(html,/data-tri="interested">感兴趣 <span class="kbd" aria-hidden="true">1<\/span>/);
+ h.run("switchTab('interested')");const locked=h.node('#view').innerHTML;
+ const rowE=locked.split('<div class="titem"').find(r=>r.includes('data-tid="e"'));
+ assert.match(rowE,/已锁定，不能改选择/);assert.doesNotMatch(rowE,/data-tri=/);assert.match(locked.split('<div class="titem"').find(r=>r.includes('data-tid="b"')),/data-tri="later"/);
+ h.run("switchTab('later')");assert.match(h.node('#view').innerHTML,/这一组是空的|<p class="t">C<\/p>/);
+});
+test('1/2/3 toggle the choice through the triage action, again clears it, and U restores the previous one',async()=>{
+ const h=harness();h.state({jobs:[{id:'j',title:'T',triage:null,status:'new'},{id:'z',title:'Z',triage:null,status:'submitted'}]});
+ h.run(`globalThis.calls=[];action=async(name,payload)=>{calls.push({name,payload});state.jobs.find(j=>j.id===payload.job_id).triage=payload.value;return {};}`);
+ await h.run(`toggleTriage(jobById('j'),'later')`);await h.run(`toggleTriage(jobById('j'),'later')`);
+ await h.run('undoTriage()');await h.run('undoTriage()');await h.run('undoTriage()');
+ assert.deepEqual(JSON.parse(h.run('JSON.stringify(calls)')).map(c=>c.payload),[{job_id:'j',value:'later'},{job_id:'j',value:null},{job_id:'j',value:'later'},{job_id:'j',value:null}]);
+ assert.equal(h.node('#toast').textContent,'没有可以撤销的分拣');
+ assert.equal(await h.run(`toggleTriage(jobById('z'),'skipped')`),false);assert.equal(h.run('calls.length'),4);assert.match(h.node('#toast').textContent,/已锁定/);
+});
+test('the bottom bar marks the current choice with aria-pressed and disables a locked job',()=>{
+ const h=harness();
+ const html=h.run(`barHtml({id:'j',title:'<i>T</i>',company:'C',triage:'later',status:'new'},'search')`);
+ assert.match(html,/data-bar-triage="later" aria-pressed="true"/);assert.match(html,/data-bar-triage="interested" aria-pressed="false"/);
+ assert.match(html,/title="&lt;i&gt;T&lt;\/i&gt;，C"/);assert.match(html,/全部操作 <span class="kbd" aria-hidden="true">⌘K<\/span>/);
+ assert.match(h.run(`barHtml({id:'j',title:'T',status:'submitted'},'job')`),/已锁定，不能改选择.*disabled/);
 });
 
 const BOOKMARKLETS=['boss-zhipin','liepin','liepin-list','lagou','mokahr','universal'];

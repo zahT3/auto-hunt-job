@@ -6,6 +6,7 @@ import "./workbench/index.js";
 import "./orient/page.js";
 import "./search/page.js";
 import "./job/page.js";
+import "./triage/page.js";
 import { startShell } from "./shell/index.js";
 import { registerPage } from "./shell/router.js";
 
