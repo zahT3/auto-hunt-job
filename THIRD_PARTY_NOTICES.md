@@ -38,7 +38,7 @@ PDF 字体使用用户本机已安装的字体或 `HUNT_PDF_FONT` 指定文件�
 | `inter.woff2` | Inter（google/fonts `ofl/inter/Inter[opsz,wght].ttf`） | The Inter Project Authors | 基本拉丁、拉丁补充、常用标点和符号；wght 300–700，保留 opsz | `static/fonts/OFL-inter.txt` |
 | `sans-ui.woff2` | Noto Sans SC（google/fonts `ofl/notosanssc/NotoSansSC[wght].ttf`） | Adobe，保留字体名 "Source" | 界面代码里出现的汉字和 ASCII；wght 400–700 | `static/fonts/OFL-notosanssc.txt` |
 
-下载日期 2026-11-02。子集由 `prototypes/_tools/subset_fonts.py`（fontTools）生成。按 OFL 的保留字体名规定，修改版的文件名和 CSS 字体族名（`AH Inter`、`AH Sans`）都不使用 "Source"。
+下载日期 2026-11-02。子集由 `scripts/build_fonts.sh` 调用 `prototypes/_tools/subset_fonts.py`（fontTools）生成，字表取自 `static/` 里的界面文字。按 OFL 的保留字体名规定，修改版的文件名和 CSS 字体族名（`AH Inter`、`AH Sans`）都不使用 "Source"。
 
 ## 移植代码
 

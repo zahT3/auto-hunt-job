@@ -633,6 +633,63 @@ test('every text colour pair in the tokens reaches 4.5:1 in light and dark (DESI
  assert.equal(light['on-marker'],dark['on-marker']);
 });
 
+// The code points a WOFF2 font maps, read from its cmap (WOFF2 never transforms cmap, so no glyf decoding is needed).
+function woff2CodePoints(file){
+ const zlib=require('node:zlib');
+ const buf=fs.readFileSync(file);
+ assert.equal(buf.toString('latin1',0,4),'wOF2',file);
+ const numTables=buf.readUInt16BE(12),compressed=buf.readUInt32BE(20);
+ let at=48;
+ const base128=()=>{let v=0;for(let i=0;i<5;i++){const b=buf[at++];v=v*128+(b&0x7f);if(!(b&0x80))return v;}throw new Error('bad UIntBase128');};
+ const tables=[];
+ for(let i=0;i<numTables;i++){
+  const flags=buf[at++],known=flags&0x3f,version=flags>>6;
+  if(known===63)at+=4;
+  const orig=base128();
+  // glyf (10) and loca (11) are transformed at version 0; every other table only at a nonzero version.
+  const transformed=(known===10||known===11)?version===0:version!==0;
+  tables.push({known,length:transformed?base128():orig});
+ }
+ const data=zlib.brotliDecompressSync(buf.subarray(at,at+compressed));
+ let off=0,cmap=null;
+ for(const t of tables){if(t.known===0)cmap=data.subarray(off,off+t.length);off+=t.length;}
+ assert.ok(cmap,'no cmap in '+file);
+ const points=new Set();
+ const n=cmap.readUInt16BE(2);
+ for(let i=0;i<n;i++){
+  const sub=cmap.subarray(cmap.readUInt32BE(4+i*8+4)),format=sub.readUInt16BE(0);
+  if(format===12){
+   const groups=sub.readUInt32BE(12);
+   for(let g=0;g<groups;g++){const s=sub.readUInt32BE(16+g*12),e=sub.readUInt32BE(20+g*12);for(let c=s;c<=e;c++)points.add(c);}
+  }else if(format===4){
+   const segs=sub.readUInt16BE(6)/2;
+   for(let k=0;k<segs;k++){
+    const end=sub.readUInt16BE(14+k*2),start=sub.readUInt16BE(16+segs*2+k*2);
+    const delta=sub.readInt16BE(16+segs*4+k*2),rangeAt=16+segs*6+k*2,range=sub.readUInt16BE(rangeAt);
+    for(let c=start;c<=end&&c!==0xffff;c++){
+     const glyph=range===0?(c+delta)&0xffff:sub.readUInt16BE(rangeAt+range+(c-start)*2);
+     if(glyph)points.add(c);
+    }
+   }
+  }
+ }
+ return points;
+}
+test('every Chinese character in the shipped UI text is in the bundled interface subset, and the fonts stay under 1.5 MB',()=>{
+ const fontDir=path.join(__dirname,'../static/fonts');
+ const points=woff2CodePoints(path.join(fontDir,'sans-ui.woff2'));
+ assert.ok(points.has('搜'.codePointAt(0))&&points.has(0x41),'cmap parsed');
+ const files=[path.join(__dirname,'../static/index.html')];
+ const walk=dir=>{for(const e of fs.readdirSync(dir,{withFileTypes:true}))e.isDirectory()?walk(path.join(dir,e.name)):e.name.endsWith('.js')&&files.push(path.join(dir,e.name));};
+ walk(JS_DIR);
+ const missing=new Map();
+ for(const f of files)for(const ch of fs.readFileSync(f,'utf8').match(/[　-〿㐀-䶿一-鿿＀-￯]/gu)||[])
+  if(!points.has(ch.codePointAt(0)))missing.set(ch,path.relative(path.join(__dirname,'..'),f));
+ assert.equal(missing.size,0,'not in static/fonts/sans-ui.woff2 (run scripts/build_fonts.sh): '+[...missing].map(([c,f])=>c+' '+f).join('，'));
+ const total=fs.readdirSync(fontDir).filter(f=>f.endsWith('.woff2')).reduce((n,f)=>n+fs.statSync(path.join(fontDir,f)).size,0);
+ assert.ok(total<=1.5*1024*1024,'fonts are '+total+' bytes');
+});
+
 const BOOKMARKLETS=['boss-zhipin','liepin','liepin-list','lagou','mokahr','universal'];
 const BM_DIR=path.join(__dirname,'../static/bookmarklets');
 // Mirrors hunt/bookmarklets.py assemble(): the shared delivery prelude replaces each script's "// @deliver" line.
