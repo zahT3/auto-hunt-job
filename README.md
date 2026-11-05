@@ -1,14 +1,30 @@
 # auto-hunt-job
 
-少一些重复搜索，多一些合适的机会。
+English | [简体中文](README.zh-CN.md)
 
-一个本地运行的求职工作台：上传简历，核对候选事实，搜索多个招聘来源，查看岗位与经历的关联，集中审核后再决定是否申请。
+Less time re-running the same job searches, more time on the openings that fit.
 
-**当前为开发预览版。支持多渠道只读搜索，不承诺全网覆盖或自动投递成功。** 默认使用合成候选人，真实提交额度为 0。简历解析和画像在本地完成。不配模型服务也能用全部功能：方向由你选，岗位按规则归类。配了模型服务、并且你同意发送之后，才会用 AI 追问、定方向和归类。
+auto-hunt-job is a job-search tool that runs on your own computer. It collects postings from company career sites and public recruiting APIs into a local job library and searches them in full text. Each posting is explained against the résumé facts you have confirmed, in the order an applicant tracking system (ATS) screens candidates. Nothing is applied for or sent anywhere without your review.
 
-## 快速开始
+> **Developer preview.** Search is read-only and covers the sources listed below, not the whole web. It ships with a synthetic candidate, and the real-submission quota is 0. Résumé parsing and profiling run locally. Every feature works without a model service; AI is used only after you configure one and consent to what gets sent.
 
-Python 3.10+，macOS 或 Linux。当前本机验收环境为 macOS/Python 3.12；Linux 自动检查由仓库 CI 执行。
+The interface is in Chinese. The job sources are mainly Chinese employers and international companies hiring in China.
+
+![Search page: results grouped across sources on the left, a preview with the three screening steps on the right (synthetic data)](docs/images/search.png)
+
+## What it does
+
+- **Job search engine.** Reads postings from company career sites and public recruiting APIs and stores them in a local SQLite library with full-text search (FTS5). Each posting records when it was first and last seen. Postings that stop appearing are closed. The same posting found on several sources is grouped into one result.
+- **Direction finding.** Asks you a few questions, then proposes 1–4 job directions from a reference table of 163 directions in 20 families. Each direction lists strengths, gaps and risks backed by your confirmed facts or by evidence from job descriptions. It also gives the search terms it will use, directions not to prioritize, and things you can do today.
+- **Match explanation in ATS order.** Each posting is checked in three steps: hard requirements (education, years, language, location, remote), keyword coverage (whether your résumé uses the posting's exact words, only a near wording, or neither), and fact-by-fact evidence. There is no score and no prediction of the outcome.
+- **Triage.** One key per decision: interested `1`, later `2`, skip `3`, undo `U`. Choosing "interested" prepares local application materials in the background.
+- **Review before anything leaves your machine.** Materials, recipients and file snapshots are reviewed together. An approval is tied to one snapshot and expires when anything in it changes.
+
+![Job page: hard requirements, keyword coverage and evidence side by side, then the original text with margin notes (synthetic data)](docs/images/job-detail.png)
+
+## Quick start
+
+Python 3.10+ on macOS or Linux. Local acceptance runs on macOS with Python 3.12; CI covers Linux.
 
 ```sh
 git clone https://github.com/zahT3/auto-hunt-job.git
@@ -17,186 +33,95 @@ sh setup.sh
 .venv/bin/python -m hunt web
 ```
 
-打开 <http://127.0.0.1:8766/>。macOS 也可双击 `Start.command`。
+Open <http://127.0.0.1:8766/>. On macOS you can also double-click `Start.command`. To try it with synthetic data only, run `.venv/bin/python -m hunt web --demo`.
 
-Linux 生成中文 PDF 需要中文 TrueType 字体，例如安装 `fonts-wqy-zenhei`；也可将环境变量 `HUNT_PDF_FONT` 指向有使用权限的中文 TTF/TTC。字体不包含在项目中。
+Generating Chinese PDFs on Linux needs a Chinese TrueType font, for example `fonts-wqy-zenhei`. You can also point `HUNT_PDF_FONT` at a Chinese TTF/TTC you are licensed to use. No PDF font is bundled.
 
-## 从简历到岗位
+## From résumé to postings
 
-1. **上传简历**：点击「上传简历」，选择 PDF、DOCX、TXT 或 MD 文件，最大 10 MiB。使用合成样例时，保持「合成候选人」勾选。
-2. **核对事实**：核对提取出的原文及页码或段落，只勾选准确的事实。确认后只用于本地画像和匹配，默认仍为私密。
-3. **追问并确定方向**：工具先问你 3–6 个问题，再从全行业方向参考表（163 个方向、20 个大类）里提出 1–4 个求职方向。每个方向附带依据的事实和搜索词，你可以采纳、修改，或直接自己选。
-   - 没配模型服务，或者没同意发送时，问题和建议方向都由本地规则生成，结果里会写明「未使用 AI」。
-   - **网页上的追问与选方向界面在下一阶段做。** 目前有两种用法：
-     - 通过本地接口动作：`orient_questions` 取问题，`orient_answer` 提交回答，`directions_set` 直接选方向。先从 `GET /api/state` 取得 `csrf_token`，再带上请求头 `X-Local-Token` 调用 `POST /api/action`。
-     - 让你自己电脑上的 agent（Claude Code、Codex 等）用命令完成，见 [外部 agent 模式](docs/agent-mode.md)。
-4. **搜索**：点击「开始找岗位」。搜索词来自你确定的方向；没有方向也没有填关键词时，搜索会提示你先定方向，不会默认去搜 AI 或 Web3。搜索在后台执行，在请求数、页数和岗位数的上限内收集岗位、去重、准备本地记录。运行结果显示每个渠道的实际状态。
-5. **归类与方向概况**：导入的岗位会归到你选的方向。规则判断不了的，在你同意且有预算时交给模型判断。每个方向给出一份概况：
-   - 岗位数和来源分布；
-   - 高频要求；
-   - 你已确认的事实对得上哪些要求，缺哪些。
-   概况全部用规则生成，不经过模型。
-6. **审核**：查看相关技能、原文没提到的技能、硬条件和岗位原文。投递前要集中审核具体岗位和材料；搜索过程不会发消息，也不会申请。
+1. **Upload a résumé** (PDF, DOCX, TXT or MD, up to 10 MiB). Keep "synthetic candidate" checked when using the samples.
+2. **Confirm facts.** Each extracted fact shows its source page or paragraph; tick only the accurate ones. Confirmed facts are used for local profiling and matching and stay private by default.
+3. **Find directions** on the 定方向 page. Answer the questions or skip them, then adopt, edit or pick directions yourself. Without a model service or consent, the questions and suggestions come from local rules and are labelled 未使用 AI ("AI not used").
+4. **Search.** Search terms come from your directions. The search runs in the background within request, page and job limits. It reports the actual status of every source, showing empty, blocked and failed separately.
+5. **Read a posting.** The job page shows the three screening steps side by side, then the original text with margin notes that cite only confirmed facts.
+6. **Triage and review.** Sort postings with `1` / `2` / `3`. Searching never sends a message or an application.
 
-### 模型服务（可选）
+Scanned PDFs need OCR, which is not integrated yet; for mixed PDFs, the pages that could not be read are listed. The rules extract skills, education and explicitly stated total years. They do not infer seniority from project dates or treat a keyword hit as proficiency.
 
-- **设置**：默认参考 DeepSeek（`https://api.deepseek.com`，模型 `deepseek-v4-flash`），可以换成任何 OpenAI 兼容服务。价目默认按输入 1 元、输出 2 元每百万 token 估算，接入时请以官方价格为准。
-- **API key**：用 `python -m hunt ai key` 保存（输入时不显示），`python -m hunt ai show` 查看设置、key 的末 4 位和同意记录。
-  - key 只存在 `private/app/secrets.json`（权限 0600），并且只发给保存时的那个服务主机。
-  - 换了服务地址，就要重新输入 key。
-- **同意**：发送任何内容前都要先同意。可以选的内容有三类：脱敏简历、完整简历、岗位原文。默认建议只发脱敏简历。
-  - 同意记录绑定服务主机、模型名和内容类别；换主机或换模型后，旧的同意自动失效。
-  - 用 `python -m hunt ai consent` 给出同意。它先列出三类内容：用上下键（或 j/k）移动，空格勾选，回车确认，Esc 或 q 取消。不在终端里、或终端不支持时，改为输入编号。也可以用 `--kind resume_redacted --kind job_text` 直接指定。选好后会显示内容将发往的主机和模型，你输入 `yes` 才写入。
-  - 选了「完整简历」会额外提醒：完整简历不脱敏。还没保存这个主机的 key 时也会提醒：同意会记下，但在保存 key 之前不会发送任何内容。
-  - 在脚本里使用要加 `--yes`；不加 `--yes`、又不在终端里运行时，命令会拒绝，什么都不改。
-  - `python -m hunt ai revoke` 撤销全部同意。
-  - 网页上的设置与同意界面在下一阶段做；本地接口的 `ai_consent`、`ai_revoke` 动作也可以用。
-- **花费**：每轮默认上限 5 元，可设 0–100 元。每次调用前先按最坏情况估算：如果这次调用可能超出上限，就不调用；剩下的部分改用规则，并在结果里写明分界。
+## AI (optional)
 
-候选理解使用可解释的本地规则：提取技能提及、学历/经历线索及明确写出的整体工作年限。不会从项目时间推算资历，不把关键词命中当成熟练度，不输出录用概率。复杂排版、多语言缩写和隐含经验可能遗漏，应核对原文。
+- **Service.** Any OpenAI-compatible API. The default reference is DeepSeek (`https://api.deepseek.com`, model `deepseek-v4-flash`). Cost estimates default to ¥1 per million input tokens and ¥2 per million output tokens; check the provider's current prices.
+- **Key.** Save it on the settings page or with `python -m hunt ai key` (input is hidden). It is stored only in `private/app/secrets.json` (mode 0600) and sent only to the host it was saved for. Changing the host requires entering the key again.
+- **Consent.** Nothing is sent before you consent. There are four content kinds: redacted résumé, full résumé, job text and search query. Consent is bound to the host, the model and the content kind; changing the host or the model voids it. Grant it on the settings page or with `python -m hunt ai consent`, and revoke it with `python -m hunt ai revoke`.
+- **Budget.** ¥5 per run by default, configurable from 0 to 100. Each call's cost is estimated at its worst case first. A call that could exceed the budget is not made; the rest falls back to rules, and the result notes where the switch happened.
 
-文字 PDF 支持页码来源。扫描 PDF 会提示需要 OCR；混合 PDF 会明确列出未提取页。当前未集成 OCR，不能声称支持任意简历。DOCX 正文及表格按段落提取，页眉页脚等遗漏会有提示。
+## Sources and coverage
 
-## 搜索覆盖
-
-| 来源 | 接入方式 | 边界 |
+| Source | How | Limits |
 | --- | --- | --- |
-| 腾讯、阿里巴巴、美团 | 各公司招聘站的公开 JSON 接口 | 只读取公开岗位列表；接口改版会报告 `parse_error`，不会当成没有岗位 |
-| 字节跳动、飞书招聘租户（`*.jobs.feishu.cn`） | 飞书招聘公开接口 | 仅限这两类主机；限流或结构变化单独报告 |
-| Moka 招聘租户（`app.mokahr.com`、`hire-r1`） | Moka 公开招聘接口 | `app.mokahr.com` 的响应是加密的，需安装可选依赖：`.venv/bin/python -m pip install -r requirements-sources.txt`。未安装时这类租户报告 `not_configured`；`hire-r1` 明文，不受影响 |
-| BOSS 直聘、猎聘 | 公开页面解析；可选独立浏览器只读采集 | **新配置默认关闭**，需要在“搜索渠道”里手动勾选；已保存的配置如果原来勾选了它们，会继续保留。登录、验证码、站点结构与网络限制会影响结果，受阻单独报告。需要登录才能看的页面，用下面的书签采集 |
-| 安克官网 | 官方公开接口，预算内分页和详情 | 关键词发现不代表候选人胜任 |
-| Greenhouse、Lever、Ashby | 公司公开招聘 API | 仅扫描已配置的公司看板，不包含全部客户公司 |
-| 其他公司官网 | 同站有限遍历、JobPosting、识别明确关联的 ATS 看板 | 不提供结构化数据或需要专用接口的网站会报告解析受限 |
-| 需登录的平台页（BOSS、猎聘、拉勾等） | 你自己浏览时点浏览器书签，把当前页文字发到本机收件箱；猎聘搜索结果页的书签会自动翻到最后一页，发送每页的岗位摘要；在工作台点“岗位书签”或打开 `/bookmarklets` 安装 | 只发送你点击时看到的页面；浏览器可能要求允许访问本地网络；令牌可在安装页重置 |
-| 扩展网页搜索 | 可选自有 SearXNG HTTPS JSON 端点 | 未配置时仍可搜所选渠道；索引结果须回源提取岗位正文 |
+| Tencent, Alibaba, Meituan, Xiaohongshu, DiDi, JD, NetEase | Each company's public careers JSON API | Public listings only. An API change is reported as `parse_error`, not as "no jobs" |
+| ByteDance and Feishu recruiting tenants (`*.jobs.feishu.cn`) | Feishu recruiting public API | These hosts only. Rate limits and structure changes are reported separately |
+| Moka tenants (`app.mokahr.com`, `hire-r1`) | Moka public API | `app.mokahr.com` responses are encrypted and need `requirements-sources.txt`; without it these tenants report `not_configured` |
+| Beisen (`*.zhiye.com`), Dayee (`hotjob.cn`, `wintalent.cn`) | Public portal APIs | Tenants in the seed file |
+| Greenhouse, Lever, Ashby | Public job-board APIs | Configured boards only |
+| Other company career sites | Same-site crawl within budget, JobPosting data, linked ATS boards | Sites without structured data or with private APIs report limited parsing |
+| BOSS Zhipin, Liepin and other pages that need sign-in | Bookmarklets: click one while you browse, and the current page goes to the local inbox. Install them from 岗位书签 on the settings page, or open `/bookmarklets` | Only what you see when you click. Off by default as automated sources |
+| Web search | Optional self-hosted SearXNG JSON endpoint | Results are re-fetched from the source before use |
 
-**大范围搜索**：在配置里设置 `sweep: true` 后，一轮会按内置公司种子逐家扫描。种子共 96 家（来自 career-ops-china 的 31 家、内置目录 9 家、自选 56 家，其中 43 家是非科技行业雇主），其中 29 家带 `status` 标记，默认不扫（见下面的实测）；导入岗位时遇到的雇主也会记住并排在种子之后。默认上限：300 家公司、1500 个岗位、3000 次请求、600 秒、每家最多翻 20 页，只准备前 50 个本轮新导入的岗位；可用 `sweep_max_companies`、`sweep_max_jobs`、`sweep_requests`、`sweep_deadline_seconds`、`sweep_prepare`、`sweep_max_pages` 调整（上限 1000、5000、10000、3600 秒、200、50）。与搜索方向相关的来源（大平台的关键词搜索、标签与方向或搜索词相符的公司）先扫，份额只在它们之间分，两遍都跑完后才轮到其余公司；在相关来源内部，每家公司先按公平份额扫描；第一遍结束后，别家没用完的岗位和请求份额分给被份额或页数截断的公司，再扫一遍。入口核验放在所有公司扫完之后，只核验将要准备的岗位。到达截止时间后停止发起新请求，已取得的岗位保留并标为 `partial`。`python -m hunt companies --terms AI 产品经理` 可预览将扫描的公司。界面暂无该开关。
+A **sweep** (`sweep: true` in the config) scans a seed list of 124 employers (97 by default; the rest are marked as needing an adapter or dead), related sources first. Default limits are 300 companies, 1500 jobs, 3000 requests and 600 seconds; see [docs/usage.md](docs/usage.md#大范围搜索).
 
-**实测结果**（2026-10-26，关键词 `AI 产品经理`，53 家种子，当时还没有 `status` 标记）：用时 559.5 秒，取得 194 个岗位。9 家完整读到岗位，OKX 在 TLS 连接失败前读到 3 个；22 家官网通用读取器解析不了，需要专用适配（现标为 `needs_adapter`）；9 家招聘页返回 HTTP 404（现标为 `dead`）。这两类现在默认排除，仍保留在种子文件里。美团在这一轮遇到 TLS 连接失败，没有读到岗位。公司是逐家串行扫描的：按这一轮的速度，300 家公司在 10 分钟内扫不完，会在截止时间以 `partial` 结束。
+**Measured recall** (2026-11-02; direction "AI product manager"; rules-only classification; default sweep limits; two rounds into one library): the tool found **417 of 560** hand-checked postings from official sources (74.5%). Counting only postings classified into that direction, it found 376 of 560 (67.1%). The answer key was compiled six days earlier, so postings that closed since then count as misses. Kuaishou, Ctrip, miHoYo and Xiaomi have no reader yet (86 postings, 0 found). The method and every run so far are in [docs/benchmark.md](docs/benchmark.md).
 
-**找全程度基准**（2026-10-27，方向 `AI 产品经理`，只用规则归类，默认大范围搜索上限）：
-
-- **标准答案**：人工整理了 22 家公司的 560 个在招 AI 产品经理岗位。
-  - 每家都从官方招聘来源取产品岗清单，再按写明的规则逐条核对。
-  - 大公司宽搜结果上千条，只核对前 200 条。
-  - 另有 8 家读不到岗位，不计入：拼多多（官网 403）、百度（标题不写方向）、蚂蚁（页面空白）、商汤（限流）、B站（打不开）、科大讯飞（找不到社招列表）、第四范式（404）、硅基流动（只有邮箱投递）。
-  - 方法见 [基准说明](docs/benchmark.md)。
-- **结果**：一轮搜索用时 602 秒，导入 174 个岗位。
-  - 官网来源总召回 **97/560（17.3%）**；只算归到该方向的岗位，是 92/560（16.4%）。重复 0，已下线 0。
-  - 现在能读的 7 家种子：94/338（27.8%）。
-  - 种子网址不对、但官网其实在用 Moka/飞书的 6 家（Kimi、MiniMax、零一万物、阶跃星辰、智谱、旷视）：0/70。
-  - 只能人工读的 9 家（小红书、滴滴、快手、京东、网易、小米、携程、米哈游、小鹏）：3/152。
-  - **没有达到七成的目标。**
-- **当时的主要损失**：
-  - 字节跳动这一轮 DNS/TLS 连接失败，0/101。
-  - 腾讯、阿里、美团第一遍按公平份额各只取 24 条；第二遍要把余量分给被截断的公司，但还没开始就到了 600 秒截止。
-  - 15 家公司没有可用的读取方式，或种子网址错误。
-- **修复后重跑**（同一天，同一份标准答案）：做了两处改动。
-  - 6 家公司的种子网址改成真实的 Moka/飞书页面。
-  - 大范围搜索先给相关来源跑完两遍（大平台、标签与方向或搜索词相符的公司），份额只在这些来源之间分；无关公司排在后面，截止时间只会截掉它们。
-  - 结果：用时 620 秒，导入 835 个岗位。官网来源总召回 **282/560（50.4%）**；只算归到该方向的岗位，是 **258/560（46.1%）**。
-  - 分组看：能读的种子 222/338；改了网址的 6 家 34/70；只能人工读的 9 家 2/152。
-  - 阿里从 23 升到 93/97，字节从 0 升到 79/101，美团从 24 升到 48/58。
-  - **仍未达到七成。**
-  - 这一轮腾讯（0/53）和蔚来（0/23）失败：本机 DNS 返回 VPN 的假地址，工具改用 Cloudflare 公共 DNS，但连接时断时续。
-- **加备用公共 DNS 后再跑**（阿里、腾讯 DNSPod 排在 Cloudflare 之后）：
-  - 用时 371 秒，1500 个岗位上限用满。这一轮没有 DNS 失败。
-  - 官网来源总召回 **347/560（62.0%）**；只算归到该方向的岗位，是 **315/560（56.2%）**。
-  - 腾讯从 0 升到 46/53，字节升到 91/101。
-  - 当时的问题：腾讯、美团的关键词搜索返回很多不相关岗位，两家各占 437 个岗位名额，其中 AI 产品经理只有 50 多个。名额用完后，排在后面的公司（蔚来、小鹏等）一个都没扫到。
-- **修名额后再跑**：
-  - 改动：
-    - 大范围搜索里，大平台关键词搜索返回的结果要先在本地按标题匹配搜索词，不相关的不占名额。单家公司自己的招聘页照旧全收。
-    - 「大模型产品经理」这类不带空格的词，要「大模型」和「产品经理」两部分都匹配；以前任何带 AI 的标题都算命中。
-    - 小鹏、蔚来补上 AI 标签。
-  - 用时 613 秒，导入 808 个岗位，名额没有用满。腾讯留下 53 个、筛掉 759 个，美团留下 54 个、筛掉 1005 个。主要来源这一轮全部读到。
-  - 官网来源总召回 **375/560（67.0%）**；只算归到该方向的岗位，是 **338/560（60.4%）**。
-- **补上 4 家读取器后再跑**（2026-10-28，小红书、滴滴、京东、网易；小米的公开接口对程序返回 403，仍待适配）：
-  - 用时 636 秒，导入 874 个岗位。这一轮腾讯中途超时，网易中途断线，两家只读到一部分。
-  - 官网来源总召回 **426/560（76.1%）**，超过七成的目标；只算归到该方向的岗位，是 **382/560（68.2%）**。
-  - 新读取器：滴滴 14/14，网易 12/13，小红书 24/29，京东 1/7。
-  - 标准答案更正：京东 7 个岗位的标题原来带着整理时附加的部门名，已改成官网对外的标题。岗位还是这 7 个，总数仍是 560。
-- **剩下的差距**：
-  - 京东的关键词搜索按字面匹配，搜「AI 产品经理」（带空格）找不到「AI产品经理」，所以 7 个只找到 1 个。之后已改为同时搜去掉空格的词，单独实测京东找到 6/7（2026-10-28），总召回还没重跑。
-  - 规则归类漏掉了 44 个已找到的岗位（426 对 382），可以用 AI 归类对比看能补回多少。
-  - 快手、携程、米哈游、小米 4 家还没有读取器（标准答案里共 86 个岗位）。
-  - 网络时好时坏，失败的公司每轮不同，所以数字会有几个百分点的波动。
-  - 「重复」多是同名的不同岗位（例如字节多个「AI产品经理-抖音电商」）超出了标准答案前 200 条的范围。
-- **局限**：
-  - 标题判定会漏掉标题不写方向的岗位。
-  - 结果只是这一天的快照。
-  - 不含 BOSS、猎聘：平台采样要你本人用书签完成，步骤见基准说明。
-
-**岗位库上线后的召回**（2026-11-02，方向 `AI 产品经理`，只用规则归类，默认大范围搜索上限，同一份 10-27 的标准答案）：
-
-- 口径：官网来源的岗位，按公司规范名加规范标题或链接对上标准答案即算找回（`python -m hunt benchmark`）。连跑两轮写进同一个数据目录，统计的是两轮合计；第二轮只多出 2 个新岗位。
-- 官网来源总召回 **417/560（74.5%）**；只算归到该方向的岗位，是 **376/560（67.1%）**。
-- 第一轮用时 604 秒，到了截止时间（`partial`），导入 869 个岗位；97 个来源里 30 个正常跑完，2 个出错，65 个排在后面的来源到截止时间还没轮到。第二轮字节跳动、美团、京东、网易等 7 家连接失败，只导入 416 个。
-- 两轮都没有岗位被标成已下线：第二轮正常跑完的 25 个来源，第一轮的岗位全都又出现了。出错的来源不计入。
-- 主要缺口和 10-28 一样：快手、携程、米哈游、小米 4 家没有读取器（标准答案里 86 个，找回 0）；阶跃星辰 11/25；DeepSeek、Kimi 各 2/5。
-- 标准答案是 6 天前整理的，期间下线的岗位也算作没找回，所以这个数字偏低。
-
-默认公司看板是可替换的开发示例，不代表你的求职偏好或匹配推荐。“全网扫描”的实现思路是**来源注册表 + 平台适配 + 搜索索引发现 + 回源核对 + 去重**。每次运行都受预算限制，不能宣称覆盖整个互联网。
-
-可勾选 **本轮只查公司招聘来源** 暂时跳过 BOSS、猎聘和网页索引（这两个默认本来就没开）；在高级设置填写公司自己的招聘页，支持提取页面明确关联的 Greenhouse、Lever、Ashby 看板。岗位详情展示人工申请入口与关联来源。表单未核验时明确保留提示。
-
-新增国内 AI / Agent 与 Web3 官网目录：DeepSeek、Dify、Kimi、阶跃星辰、Cobo、OKX、HashKey 已实测读取岗位正文；MiniMax 社招已通过匿名浏览器接通；imToken 通过官网站点地图恢复岗位页和邮箱读取，但官网列表异常，是否仍在招待确认。支持逐岗只读入口核验，以及有官网同职位表单证据时修复接收地址；邮箱申请单独展示。Kimi、阶跃星辰、MiniMax 需开启可选公开页面渲染。Moka 支持独立窗口本人登录后只读核验。详见 [官网来源与入口规则](docs/official-sources.md)。
-
-BOSS 白屏调查、参考项目及官网替代路径见 [调查记录](docs/boss-white-screen.md)。源码研究、接口文档与实际限制见 [搜索方案](docs/search-research.md)。开发会话里的联网搜索工具不属于应用运行依赖。
-
-### 可选浏览器
+### Optional browsers
 
 ```sh
-.venv/bin/python -m pip install -r requirements-executor.txt
+.venv/bin/python -m pip install -r requirements-executor.txt   # Playwright, for rendering public pages
 .venv/bin/python -m playwright install chromium
+.venv/bin/python -m pip install -r requirements-platform.txt   # adds Patchright for the platform browser mode
 ```
 
-装了 Patchright（已写在 `requirements-executor.txt` 里）时，BOSS、猎聘的浏览器模式用它驱动。它和 Playwright 用同一个 Chromium。猎聘会检测 Chrome 调试接口的 Runtime 功能，一旦检测到就把页面清成 about:blank。Patchright 不开这个功能，同时让 `navigator.webdriver` 显示为 false。这可能违反平台条款，账号有被限制的风险，见 [SECURITY.md](SECURITY.md)。
+With Patchright installed, the BOSS and Liepin browser mode uses it, because Liepin blanks the page when it detects Chrome's debugging Runtime. Using it may break the platforms' terms and get your account restricted; see [SECURITY.md](SECURITY.md). Without Patchright, the mode falls back to Playwright. You sign in yourself in a separate window. Your everyday Chrome cookies are never reused, and CAPTCHAs are never solved automatically.
 
-猎聘浏览器模式默认逐个打开岗位详情页，2026-10-29 实测，第一轮打开 5 个详情页没事，半小时后第二轮打开 4 个就被要求验证。设置里勾选「猎聘只读搜索结果卡片」后，只打开搜索页，一页约 40 个岗位，按标题筛选，岗位只有标题、公司、地点和薪资，没有职位描述。
+## Command line and agents
 
-在独立窗口由本人完成登录，再在高级设置里将相应来源切到浏览器模式。登录命令及数据目录见 [使用与集成](docs/usage.md)。不会复用日常 Chrome Cookie，不自动解决验证码，不打招呼、不上传简历。动态页面可能仍受阻；如实保留失败原因。
-
-## 终端与网页
-
-两种入口共用本地资料。`python -m hunt --help` 查看全部命令；支持 `web`、`resume`、`confirm`、`configure`、`scan`、`prepare`、`status`、`verify`。首次导入默认合成资料，确认事实需要逐项指定 ID。完整例子见 [使用说明](docs/usage.md#统一终端入口)。
-
-界面以机会列表、判断依据和下一步为中心，支持手机列表/详情切换、键盘操作及减少动态效果。本地材料复核与对外授权分别处理；编辑搜索条件后先保存再运行。设计取舍与开源参考见 [界面说明](docs/interface-design.md)，本轮流程检查见 [v5 体验验收](docs/v5-ux-acceptance.md)。
-
-## 独立运行与数据
+The web page and the CLI share one local data directory. `python -m hunt --help` lists every command, including `search`, `scan`, `resume`, `confirm`, `directions`, `job_match`, `jd_extract` and `nl_query`. Commands print JSON, so an agent on your own computer (Claude Code, Codex and others) can drive the whole flow. The JSON shapes are in [docs/agent-mode.md](docs/agent-mode.md).
 
 ```sh
-# 离线合成夹具，与默认数据隔离
-.venv/bin/python run.py --demo --port 8767
-# 已配置来源的真实只读搜索，运行一轮退出
-.venv/bin/python run.py --once
-# 进程内定期搜索（电脑需保持唤醒）
-.venv/bin/python run.py --periodic
-# 独立数据目录
-.venv/bin/python run.py --data private/my-search --port 8768
+.venv/bin/python -m hunt search AI 产品经理 --city 深圳 --city 杭州 --json
 ```
 
-数据默认保存在 `private/app/`。原件、事实、岗位、材料、审批与执行记录均留在本机。备份时先退出运行器，再备份整个数据目录。暂停/停止阻止后续工作；已发出的网络请求可能需要到超时才结束。电脑睡眠或进程退出时不承诺继续运行。
+## Data and privacy
 
-上传不会自动更新活动候选人；核对后才激活。确认本地事实不等于允许对外披露。申请材料只采用已确认且允许申请披露的事实。已有申请批准绑定具体快照，资料、目标、岗位或文件变化会使批准失效。
+Data lives in `private/app/` by default. Originals, facts, jobs, materials, approvals and execution records all stay on your computer. Quit the runner before backing up the whole directory. Use `--data <dir>` for a separate directory and `--demo` for an isolated synthetic one.
 
-当前仅安克有受控执行器，并且正式线上提交与回执尚未验收；其他渠道目前只读。模拟页面上的填写/上传/回执测试不代表真实投递成功。结果未知时禁止自动重发。详见 [隐私与安全](SECURITY.md)。
+Uploading a résumé does not change the active candidate until you confirm facts, and confirming a fact does not allow disclosing it. Application materials use only facts that are both confirmed and allowed for applications. Only the Anker channel has a controlled executor, and its live submission and receipt have not yet passed acceptance; every other channel is read-only. An application with an unknown result is never resent automatically. See [SECURITY.md](SECURITY.md).
 
-## 验证
+## Project layout
+
+```
+hunt/net/        network access and SSRF protection
+hunt/search/     search engine: query, engine, job library index, sources
+hunt/ai/         model client and consent, directions, JD structure, match explanation
+hunt/profile/    résumé import, profile, redaction, direction table
+hunt/workbench/  materials, review, execution (frozen)
+hunt/app/        store, local server, CLI
+static/          native HTML/CSS/JS as ES modules; no framework, no external resources
+```
+
+Imports may only point downward (`app → workbench / ai / search / profile → net`), and `tests/test_dependencies.py` enforces this. Conventions for contributors and agents are in [AGENTS.md](AGENTS.md); the design spec is [docs/DESIGN.md](docs/DESIGN.md).
+
+## Development
 
 ```sh
 .venv/bin/python -m unittest discover -s tests -v
-for f in static/js/*.js static/js/*/*.js; do node --input-type=module --check < "$f"; done
 node --test tests/test_frontend.cjs
-# 生成纯合成 PDF/DOCX 样例
+for f in $(git ls-files 'static/js/*.js'); do node --input-type=module --check < "$f"; done
+.venv/bin/python scripts/build_release.py --check    # no personal paths or key-like content in tracked files
 .venv/bin/python examples/generate_synthetic_resume.py
-# 检查已跟踪文件中没有私人目录、个人路径或类似密钥的内容
-.venv/bin/python scripts/build_release.py --check
 ```
 
-浏览器测试需要安装可选依赖与 Chromium，缺少时明确跳过。真实来源验证与本地夹具测试分开记录，见 [本轮验收](docs/v4-acceptance.md)。
+Browser tests need the optional dependencies and Chromium. When those are missing, the tests are skipped and the run says so. Use only synthetic data in tests, screenshots and bug reports.
 
-## 开源
+## License
 
-[MIT](LICENSE)。欢迎贡献招聘渠道、简历解析、匹配解释与无障碍体验，见 [贡献指南](CONTRIBUTING.md) 与 [依赖及设计参考](THIRD_PARTY_NOTICES.md)。请只使用合成资料提交测试和复现问题。
+[MIT](LICENSE). Contributions to job sources, résumé parsing, match explanation and accessibility are welcome; see [CONTRIBUTING.md](CONTRIBUTING.md) and [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md).
