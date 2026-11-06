@@ -12,15 +12,17 @@ import unicodedata
 from datetime import datetime, timedelta, timezone
 
 from ..base import Error, digest, dumps, now
-from .normalize import normalize_company, normalize_title
+from .normalize import SALARY_UNITS, normalize_company, normalize_title, parse_amount, parse_salary
 from .query import matches
 
-SCHEMA_VERSION = 3
+SCHEMA_VERSION = 4
 # A job closes after this many consecutive clean rounds of its source without it.
 CLOSE_AFTER = 2
 # Source report statuses that mean the source read everything it was asked for; a truncated report never counts.
 CLEAN = ('ok', 'empty', 'filtered_empty')
-DERIVED = ('company', 'title', 'city', 'source', 'source_id', 'platform_id', 'direction', 'group_key', 'jd_digest')
+SALARY = ('salary_status', 'salary_low', 'salary_high', 'salary_unit', 'salary_months', 'salary_currency')
+DERIVED = ('company', 'title', 'city', 'source', 'source_id', 'platform_id', 'direction', 'group_key', 'jd_digest') + SALARY
+INTEGER = ('salary_low', 'salary_high', 'salary_months')
 UNKNOWN_COMPANY = ('', '待确认')
 MAX_LIMIT = 500
 MAX_CITIES = 10
@@ -71,9 +73,11 @@ def _derived(job):
     company, title = str(job.get('company') or '').strip(), str(job.get('title') or '').strip()
     city = '/'.join(cities(job.get('location'))) or None
     pid = job.get('platform_id')
+    pay = parse_salary(job.get('salary')) or {}
     return dict(company=company or None, title=title, city=city, source=job.get('channel'), source_id=found.get('source_id'),
                 platform_id=None if pid is None else str(pid), direction=direction.get('id'),
-                group_key=group_key(company, title, city), jd_digest=digest(job.get('jd')))
+                group_key=group_key(company, title, city), jd_digest=digest(job.get('jd')),
+                **{'salary_' + k: pay.get(k) for k in ('status', 'low', 'high', 'unit', 'months', 'currency')})
 
 
 def _seen_times(job):
@@ -97,11 +101,21 @@ def has_fts(c):
     return c.execute("SELECT 1 FROM sqlite_master WHERE name='jobs_fts'").fetchone() is not None
 
 
-def _to_v2(c):
+def _add_columns(c):
     have = {r[1] for r in c.execute('PRAGMA table_info(jobs)')}
-    for name, decl in (*((n, 'TEXT') for n in DERIVED), ('first_seen', 'TEXT'), ('last_seen', 'TEXT'),
+    for name, decl in (*((n, 'INTEGER' if n in INTEGER else 'TEXT') for n in DERIVED), ('first_seen', 'TEXT'), ('last_seen', 'TEXT'),
                        ('status', "TEXT NOT NULL DEFAULT 'open'"), ('missed', 'INTEGER NOT NULL DEFAULT 0')):
         if name not in have: c.execute('ALTER TABLE jobs ADD COLUMN %s %s' % (name, decl))
+
+
+def _rederive(c):
+    for rowid, data in c.execute('SELECT rowid, data FROM jobs').fetchall():
+        cols = _derived(json.loads(data))
+        c.execute('UPDATE jobs SET %s WHERE rowid=?' % ', '.join(k + '=?' for k in cols), (*cols.values(), rowid))
+
+
+def _to_v2(c):
+    _add_columns(c)
     c.execute('CREATE INDEX IF NOT EXISTS jobs_group ON jobs(group_key)')
     c.execute('CREATE INDEX IF NOT EXISTS jobs_source ON jobs(source_id, status)')
     c.execute('CREATE INDEX IF NOT EXISTS jobs_jd ON jobs(jd_digest)')
@@ -122,12 +136,16 @@ def _to_v2(c):
 
 def _to_v3(c):
     # '远程' became a place of its own (the AI search-condition step offers it as a city): re-derive every row's columns.
-    for rowid, data in c.execute('SELECT rowid, data FROM jobs').fetchall():
-        cols = _derived(json.loads(data))
-        c.execute('UPDATE jobs SET %s WHERE rowid=?' % ', '.join(k + '=?' for k in cols), (*cols.values(), rowid))
+    _rederive(c)
 
 
-STEPS = {2: _to_v2, 3: _to_v3}
+def _to_v4(c):
+    # Salary text split into amounts, unit and pay months.
+    _add_columns(c)
+    _rederive(c)
+
+
+STEPS = {2: _to_v2, 3: _to_v3, 4: _to_v4}
 
 
 def migrate(c):
@@ -224,9 +242,28 @@ def _like(term):
 
 ROW = ("j.rowid, j.id, j.company, j.title, j.city, j.source, j.source_id, j.platform_id, j.direction, j.group_key, j.first_seen, "
        "j.last_seen, j.status, json_extract(j.data, '$.url'), json_extract(j.data, '$.application_url'), "
-       "json_extract(j.data, '$.salary'), json_extract(j.data, '$.location')")
+       "json_extract(j.data, '$.salary'), json_extract(j.data, '$.location'), " + ', '.join('j.' + k for k in SALARY))
 FIELDS = ('rowid', 'job_id', 'company', 'title', 'city', 'source', 'source_id', 'platform_id', 'direction', 'group',
-          'first_seen', 'last_seen', 'status', 'url', 'application_url', 'salary', 'location')
+          'first_seen', 'last_seen', 'status', 'url', 'application_url', 'salary', 'location') + SALARY
+# What each source entry of a result shows; the salary columns go out together as salary_parsed.
+SHOWN = tuple(k for k in FIELDS if k not in ('rowid', 'group', 'company', 'title', 'city') + SALARY) + ('matched',)
+
+
+def _pay(row):
+    if not row['salary_status']: return None
+    return {k[len('salary_'):]: row[k] for k in SALARY}
+
+
+def _pay_filter(salary_min, salary_max, unit):
+    """(low, high, unit) bounds of a salary filter, or None when neither bound is given."""
+    try:
+        low, high = parse_amount(salary_min), parse_amount(salary_max)
+    except ValueError as e:
+        raise Error(str(e)) from None
+    if unit not in SALARY_UNITS: raise Error('salary_unit 须是 ' + '、'.join(SALARY_UNITS))
+    if low is None and high is None: return None
+    if low is not None and high is not None and low > high: raise Error('salary_min 不能大于 salary_max')
+    return low, high, unit
 
 
 def city_filter(city):
@@ -239,16 +276,22 @@ def city_filter(city):
     return list(dict.fromkeys((cities(n) or [n])[0] for n in names))
 
 
-def search(c, q='', city=None, direction=None, source=None, fresh=None, limit=50):
+def search(c, q='', city=None, direction=None, source=None, fresh=None, limit=50, salary_min=None, salary_max=None,
+           salary_unit='month', salary_known_only=False):
     """Jobs matching every word of q in the title or JD, grouped by group_key; each group lists all its sources.
 
     Words of 3+ characters use the trigram index; shorter ones ('AI', '产品') fall back to LIKE. city, one name or a list
     of up to MAX_CITIES, keeps jobs with any of them among their cities; source a channel ('liepin') or a source id ('feishu:...'), direction a classified direction id, and
-    fresh=N keeps open jobs seen in the last N days. Groups rank open first, then all words in the title, then newest."""
+    fresh=N keeps open jobs seen in the last N days. Groups rank open first, then all words in the title, then newest.
+
+    salary_min / salary_max (15000, '15k', '1.5万') keep jobs whose pay range in salary_unit overlaps them, in CNY; a
+    job paid per day or per year never matches a monthly filter (salary_other_unit counts those). Jobs with no salary,
+    面议 or text that does not parse stay in unless salary_known_only; salary_unknown counts them."""
     began = time.monotonic()
     if not isinstance(limit, int) or not 1 <= limit <= MAX_LIMIT: raise Error('limit 必须是 1 至 %d' % MAX_LIMIT)
     if fresh is not None and (not isinstance(fresh, int) or isinstance(fresh, bool) or not 1 <= fresh <= 3650):
         raise Error('fresh 必须是 1 至 3650 天')
+    pay = _pay_filter(salary_min, salary_max, salary_unit)
     words = query_terms(q)
     where, args = [], []
     fts = has_fts(c)
@@ -274,6 +317,18 @@ def search(c, q='', city=None, direction=None, source=None, fresh=None, limit=50
         args.append((datetime.now(timezone.utc) - timedelta(days=fresh)).isoformat(timespec='microseconds'))
     sql = 'SELECT %s FROM jobs j%s' % (ROW, ' WHERE ' + ' AND '.join(where) if where else '')
     hits = [dict(zip(FIELDS, r)) for r in c.execute(sql, args)]
+    other_unit = 0
+    if pay:
+        low, high, unit = pay
+        def paid(h):
+            nonlocal other_unit
+            if h['salary_status'] != 'ok': return not salary_known_only
+            if h['salary_unit'] != unit or h['salary_currency'] != 'CNY':
+                other_unit += 1
+                return False
+            return (low is None or h['salary_high'] is None or h['salary_high'] >= low) and \
+                   (high is None or h['salary_low'] is None or h['salary_low'] <= high)
+        hits = [h for h in hits if paid(h)]
     folded = [w.casefold() for w in words]
     keyed = {}
     for hit in hits:
@@ -303,13 +358,14 @@ def search(c, q='', city=None, direction=None, source=None, fresh=None, limit=50
                     status='open' if any(m['status'] == 'open' for m in members) else 'closed',
                     title_match=best['title_match'], direction=best['direction'],
                     first_seen=min(m['first_seen'] or '' for m in members), last_seen=max(m['last_seen'] or '' for m in members),
-                    sources=[{k: m[k] for k in FIELDS + ('matched',) if k not in ('rowid', 'group', 'company', 'title', 'city')}
-                             for m in members],
+                    sources=[dict({k: m[k] for k in SHOWN}, salary_parsed=_pay(m)) for m in members],
                     _rank=(best['status'] == 'open', best['title_match'], best['last_seen'] or '', best['rowid']))
     rows = sorted((shown(k, v) for k, v in groups.items()), key=lambda g: g['_rank'], reverse=True)
     for row in rows: del row['_rank']
     return dict(schema_version=1, query=dict(q=str(q or ''), words=words, city=places, direction=direction, source=source,
-                                             fresh=fresh, limit=limit),
+                                             fresh=fresh, limit=limit, salary_min=pay and pay[0], salary_max=pay and pay[1],
+                                             salary_unit=salary_unit, salary_known_only=bool(salary_known_only)),
                 total_groups=len(rows), total_jobs=len(hits), groups=rows[:limit], full_text=fts,
+                salary_unknown=sum(h['salary_status'] != 'ok' for h in hits), salary_other_unit=other_unit,
                 elapsed_ms=round((time.monotonic() - began) * 1000, 1),
                 note='只查本机岗位库；岗位在本机库里的状态，不等于招聘方是否仍在招。')

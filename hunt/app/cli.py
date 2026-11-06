@@ -92,6 +92,10 @@ def parser():
     find.add_argument('--source', help='只看这个来源：渠道（如 liepin）或来源 ID（如 feishu:jobs.example.cn）')
     find.add_argument('--fresh', type=int, metavar='DAYS', help='只看最近 DAYS 天内搜到、仍在招的岗位')
     find.add_argument('--limit', type=int, default=50, help='最多返回的组数，1–500，默认 50')
+    find.add_argument('--salary-min', metavar='AMOUNT', help='薪资下限，例如 15000、15k、1.5万；与岗位薪资区间有重叠就算')
+    find.add_argument('--salary-max', metavar='AMOUNT', help='薪资上限，写法同 --salary-min')
+    find.add_argument('--salary-unit', default='month', choices=['month', 'day', 'year', 'hour'], help='薪资单位，默认 month（月薪）')
+    find.add_argument('--salary-known-only', action='store_true', help='只留能解析出薪资的岗位；默认没写薪资或面议的也保留')
     status = commands.add_parser('status', help='查看候选资料、岗位 ID 和申请尝试数')
     resume = commands.add_parser('resume', help='本地导入 PDF/DOCX，生成待核对事实')
     resume.add_argument('path', type=Path, metavar='PATH')
@@ -347,7 +351,8 @@ def main(argv=None):
         # commands must never reinterpret an active process as a crashed send.
         if args.command == 'search':
             result = store.search_jobs(' '.join(args.q), city=args.city, direction=args.direction, source=args.source,
-                                       fresh=args.fresh, limit=args.limit)
+                                       fresh=args.fresh, limit=args.limit, salary_min=args.salary_min, salary_max=args.salary_max,
+                                       salary_unit=args.salary_unit, salary_known_only=args.salary_known_only)
         elif args.command == 'status':
             result = summary(store)
         elif args.command == 'resume':

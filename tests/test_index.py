@@ -142,7 +142,41 @@ class Search(unittest.TestCase):
         store = Store(self.store.root)
         with store.tx() as c:
             self.assertEqual(dict(c.execute('SELECT id, city FROM jobs')), {'job-1': '深圳/远程', 'job-2': '远程', 'job-3': '深圳'})
-            self.assertEqual(store.meta(c, 'schema_version'), 3)
+            self.assertEqual(store.meta(c, 'schema_version'), index.SCHEMA_VERSION)
+
+    def test_salary_range_overlap_keeps_unknown_pay_and_never_mixes_units(self):
+        rows = [('甲', '15-25K·14薪'), ('乙', '8-12k'), ('丙', '面议'), ('丁', None), ('戊', '200-300元/天'), ('己', '年薪30-50万'),
+                ('庚', '30k以上'), ('辛', '待遇优厚'), ('壬', 'USD 8000-9000 MONTH')]
+        self.add(*[dict(job(n, 'AI 产品经理', company, '深圳'), salary=pay) for n, (company, pay) in enumerate(rows)])
+        result = self.store.search_jobs('产品经理', salary_min='20k')
+        self.assertEqual({g['company'] for g in result['groups']}, {'甲', '丙', '丁', '庚', '辛'})
+        self.assertEqual((result['salary_unknown'], result['salary_other_unit']), (3, 3))  # 面议, none, unparsed; day, year, USD
+        self.assertEqual(result['query']['salary_min'], 20000)
+        known = self.store.search_jobs('产品经理', salary_min=20000, salary_max='2.2万', salary_known_only=True)
+        self.assertEqual({g['company'] for g in known['groups']}, {'甲'})  # 庚 starts at 30k
+        daily = self.store.search_jobs('产品经理', salary_min=250, salary_unit='day', salary_known_only=True)
+        self.assertEqual([g['company'] for g in daily['groups']], ['戊'])
+        first = next(g for g in result['groups'] if g['company'] == '甲')['sources'][0]
+        self.assertEqual((first['salary'], first['salary_parsed']),
+                         ('15-25K·14薪', dict(status='ok', low=15000, high=25000, unit='month', months=14, currency='CNY')))
+        self.assertIsNone(next(g for g in result['groups'] if g['company'] == '丁')['sources'][0]['salary_parsed'])
+        self.assertEqual(self.store.search_jobs('产品经理')['salary_other_unit'], 0)  # no filter, nothing dropped
+        for bad in (dict(salary_min='很多'), dict(salary_min=30000, salary_max=20000), dict(salary_min=1, salary_unit='week')):
+            with self.assertRaises(Error): self.store.search_jobs('', **bad)
+        out = io.StringIO()
+        with contextlib.redirect_stdout(out):
+            code = main(['search', '产品经理', '--salary-min', '20k', '--salary-known-only', '--json', '--data', str(self.store.root)])
+        self.assertEqual((code, {g['company'] for g in json.loads(out.getvalue())['groups']}), (0, {'甲', '庚'}))
+
+    def test_a_version_3_library_gets_salary_columns(self):
+        self.add(dict(job(1, 'AI 产品经理', '甲', '深圳'), salary='8-13k·13薪'))
+        with self.store.tx() as c:  # roll the row back to what version 3 stored
+            c.execute('UPDATE jobs SET salary_status=NULL, salary_low=NULL, salary_high=NULL, salary_unit=NULL, salary_months=NULL')
+            c.execute("UPDATE meta SET value='3' WHERE key='schema_version'")
+        store = Store(self.store.root)
+        with store.tx() as c:
+            row = c.execute('SELECT salary_status, salary_low, salary_high, salary_unit, salary_months, typeof(salary_low) FROM jobs').fetchone()
+        self.assertEqual(tuple(row), ('ok', 8000, 13000, 'month', 13, 'integer'))
 
     def test_city_takes_a_list_and_any_city_matches(self):
         self.add(job(1, 'AI 产品经理', '甲', '深圳'), job(2, 'AI 产品经理', '乙', '杭州'), job(3, 'AI 产品经理', '丙', '上海'),
@@ -249,7 +283,7 @@ class LibraryOf1500(unittest.TestCase):
                                                      'first_seen', 'last_seen', 'sources'})
         self.assertEqual(set(result['groups'][0]['sources'][0]), {'job_id', 'source', 'source_id', 'platform_id', 'direction',
                                                                    'first_seen', 'last_seen', 'status', 'url', 'application_url',
-                                                                   'salary', 'location', 'matched'})
+                                                                   'salary', 'location', 'matched', 'salary_parsed'})
 
     def test_cli_city_repeats(self):
         out = io.StringIO()
@@ -355,6 +389,12 @@ class WebSearch(unittest.TestCase):
         status, body = self.get('/api/search?q=' + quote('产品经理') + '&city=' + quote('深圳') + '&city=' + quote('杭州') + '&city=')
         self.assertEqual((status, {g['company'] for g in body['groups']}, body['query']['city']), (200, {'甲', '乙'}, ['深圳', '杭州']))
         self.assertEqual(self.get('/api/search?' + '&'.join('city=c%d' % n for n in range(11)))[0], 400)
+
+    def test_get_search_takes_salary_bounds(self):
+        status, body = self.get('/api/search?salary_min=20k&salary_max=' + quote('3万') + '&salary_known_only=1')
+        self.assertEqual((status, body['query']['salary_min'], body['query']['salary_max'], body['query']['salary_known_only'], body['groups']),
+                         (200, 20000, 30000, True, []))  # the one stored job has no salary
+        self.assertEqual(self.get('/api/search?salary_min=' + quote('很多'))[0], 400)
 
 
 if __name__ == '__main__':

@@ -22,10 +22,11 @@ class SearchRun:
             self.search_thread = threading.Thread(target=self.run, kwargs={'demo': demo}, daemon=True)
             self.search_thread.start()
 
-    def search_jobs(self, q='', city=None, direction=None, source=None, fresh=None, limit=50):
-        """Read-only search of the local job library (hunt.search.index.search); the web and the CLI both call this."""
+    def search_jobs(self, q='', **filters):
+        """Read-only search of the local job library; filters are those of hunt.search.index.search. The web and the CLI
+        both call this."""
         with self.tx() as c:
-            return index.search(c, q, city=city, direction=direction, source=source, fresh=fresh, limit=limit)
+            return index.search(c, q, **filters)
 
     def search_config(self):
         """Config for a real search: explicit keywords win, else the orientation's terms; neither is an error (no built-in default terms)."""
