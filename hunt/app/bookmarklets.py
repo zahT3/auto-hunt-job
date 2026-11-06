@@ -7,7 +7,7 @@ from urllib.parse import quote
 DIR = Path(__file__).resolve().parents[2] / 'static' / 'bookmarklets'
 # (file stem, button label, when to use). The universal one comes first: it works on most sites.
 ITEMS = (('universal', '通用岗位页', '多数官网招聘页、内推页和其他没有专用书签的站点；只有它能用于白名单之外的网站。'),
-         ('boss-zhipin', 'BOSS直聘', 'zhipin.com 岗位详情页，需要自己先登录。'),
+         ('boss-zhipin', 'BOSS直聘', 'zhipin.com 搜索结果页或岗位详情页，需要自己先登录。点一次收下本页岗位列表；之后你自己打开岗位、翻页时，详情和新的一页会自动送到收件箱，关掉页面就停。'),
          ('liepin', '猎聘', 'liepin.com 岗位详情页，需要自己先登录。'),
          ('liepin-list', '猎聘搜索页', 'liepin.com 搜索结果页：收下本页每个岗位的标题、公司、地点和薪资，停几秒后自动点「下一页」，一直翻到最后一页；翻页中再点一次就停。不含职位描述，想要完整 JD 时打开岗位详情页再点「猎聘」书签。'),
          ('lagou', '拉勾', 'lagou.com 岗位详情页，需要自己先登录。'),
