@@ -207,7 +207,7 @@ class Store(WorkbenchActions, OrientActions, AiSettings, AssistActions, SearchRu
         channel = data.get('channel', 'import')
         identity = channel + ':' + str(data['platform_id']) if data.get('platform_id') else 'url:' + url if url else 'paste:' + digest([title, jd])
         with self.tx() as c:
-            previous = index.find(c, identity)
+            previous = index.find(c, identity) or (identity.startswith('url:') and index.find_link(c, url))
             if previous:
                 j = self.job(c, previous)
                 # A search-card summary (猎聘 card mode, the search-page bookmarklet) never replaces a job already read in full.

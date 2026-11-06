@@ -223,6 +223,32 @@ class Search(unittest.TestCase):
         self.assertEqual(cli('hide', 'remove', added['rule']['id'])[1]['rules'], [])
         self.assertEqual(cli('hide', 'remove', 'nope'), (1, dict(schema_version=1, error='没有这条规则')))
 
+    def test_a_pasted_link_that_differs_only_in_tracking_is_the_same_job(self):
+        first, duplicate = self.store.import_job(dict(title='数据工程师', jd='写 SQL。', url='https://www.careers.example.com/jobs/42?utm_source=wx'))
+        self.assertFalse(duplicate)
+        for url in ('http://careers.example.com/jobs/42/apply', 'https://careers.example.com/jobs/42/?gclid=1#top'):
+            again, duplicate = self.store.import_job(dict(title='数据工程师', jd='写 SQL。', url=url))
+            self.assertEqual((again['id'], duplicate), (first['id'], True))
+        other, duplicate = self.store.import_job(dict(title='数据工程师', jd='写 SQL。', url='https://careers.example.com/jobs/43'))
+        self.assertFalse(duplicate)
+        # A job its source names by id keeps its own record even when the link is the same.
+        sourced, duplicate = self.store.import_job(dict(title='数据工程师', jd='写 SQL。', channel='feishu', platform_id='42',
+                                                        url='https://careers.example.com/jobs/42'))
+        self.assertFalse(duplicate)
+        with self.store.tx() as c:
+            self.assertEqual(c.execute('SELECT COUNT(*) FROM jobs').fetchone()[0], 3)
+            self.assertEqual(c.execute('SELECT url_key FROM jobs WHERE id=?', (first['id'],)).fetchone()[0], 'careers.example.com/jobs/42')
+
+    def test_a_version_4_library_gets_link_keys(self):
+        self.store.import_job(dict(title='数据工程师', jd='写 SQL。', url='https://www.careers.example.com/jobs/42?utm_source=wx'))
+        with self.store.tx() as c:
+            c.execute('UPDATE jobs SET url_key=NULL'); c.execute("UPDATE meta SET value='4' WHERE key='schema_version'")
+        store = Store(self.store.root)
+        with store.tx() as c:
+            self.assertEqual(c.execute('SELECT url_key FROM jobs').fetchone()[0], 'careers.example.com/jobs/42')
+        _, duplicate = store.import_job(dict(title='数据工程师', jd='写 SQL。', url='https://careers.example.com/jobs/42'))
+        self.assertTrue(duplicate)
+
     def test_city_takes_a_list_and_any_city_matches(self):
         self.add(job(1, 'AI 产品经理', '甲', '深圳'), job(2, 'AI 产品经理', '乙', '杭州'), job(3, 'AI 产品经理', '丙', '上海'),
                  job(4, 'AI 产品经理', '丁', '北京/杭州'))

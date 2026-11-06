@@ -1,6 +1,7 @@
 """Canonical company and job-title forms: the job library links sources by them, and the benchmark matches with them."""
 import re
 import unicodedata
+from urllib.parse import parse_qsl, urlencode, urlsplit
 
 BRACKETS = re.compile(r'\([^()]*\)|\[[^\[\]]*\]|【[^【】]*】')
 
@@ -22,6 +23,37 @@ def normalize_title(text):
 def normalize_company(text):
     text = ''.join(c for c in _text(text) if not c.isspace())
     return re.sub(r'(?:股份有限公司|有限公司|集团)+$', '', text)
+
+
+# Per-visit tracking only; parameters that may carry the job id (jobid, id, positionId...) stay.
+TRACKING = {'spm', 'from', 'ka', 'lid', 'securityid', 'sessionid', 'scene', 'gclid', 'fbclid', 'ref', '_from', 'trk'}
+TRACKING_PREFIXES = ('utm_', 'd_')
+# 猎聘 job links carry per-visit search state in the query (skId, ckId, index...); the path alone names the job, so a
+# search-results card and the same job's detail page land on one record.
+LIEPIN_JOB = re.compile(r'/(?:job|a)/\d+\.shtml')
+
+
+def url_key(url):
+    """One job page however its link was written: no scheme, no 'www.', no default port, no tracking parameters, the
+    rest of the query sorted, no trailing '/' or '/apply' (the rules AIHawk's job database dedups by, plus ours).
+    A '#/...' fragment is a single-page-app route (Moka keeps the job id there) and stays; other anchors go.
+    '' for anything that is not an http(s) link."""
+    try:
+        parts = urlsplit(str(url or '').strip())
+        port = parts.port
+    except ValueError:
+        return ''
+    if parts.scheme.lower() not in ('http', 'https') or not parts.hostname: return ''
+    host = parts.hostname.rstrip('.').lower()
+    host = host[4:] if host.startswith('www.') else host
+    if port and port != {'http': 80, 'https': 443}[parts.scheme.lower()]: host += ':%d' % port
+    path = parts.path.rstrip('/')
+    if path.lower().endswith('/apply'): path = path[:-len('/apply')].rstrip('/')
+    liepin = (host == 'liepin.com' or host.endswith('.liepin.com')) and LIEPIN_JOB.fullmatch(path)
+    query = [] if liepin else sorted((k, v) for k, v in parse_qsl(parts.query, keep_blank_values=True)
+                                      if k.lower() not in TRACKING and not k.lower().startswith(TRACKING_PREFIXES))
+    route = parts.fragment if parts.fragment.startswith('/') else ''
+    return host + path + ('?' + urlencode(query) if query else '') + ('#' + route if route else '')
 
 
 # Salary text as job sources write it: '15-25K·14薪', '2-3万', '200-300元/天', '年薪30-50万', 'CNY 18000–21000 MONTH',

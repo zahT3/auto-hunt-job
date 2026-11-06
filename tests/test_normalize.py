@@ -1,7 +1,7 @@
-"""Salary text parsing (hunt.search.normalize): what each common form becomes, and that unreadable text never becomes 0."""
+"""hunt.search.normalize: salary text parsing (unreadable text never becomes 0) and the job-link dedup key."""
 import unittest
 
-from hunt.search.normalize import parse_amount, parse_salary
+from hunt.search.normalize import parse_amount, parse_salary, url_key
 
 
 def ok(low, high, unit='month', months=None, currency='CNY'):
@@ -39,6 +39,27 @@ class Salary(unittest.TestCase):
         for bad in ('很多', '-1', True, 10 ** 9):
             with self.subTest(bad=bad), self.assertRaises(ValueError):
                 parse_amount(bad)
+
+
+
+class LinkKey(unittest.TestCase):
+    def test_links_to_one_job_share_a_key(self):
+        same = ['https://careers.example.com/jobs/42', 'http://careers.example.com/jobs/42', 'https://www.careers.example.com/jobs/42',
+                'https://CAREERS.example.com./jobs/42/', 'https://careers.example.com:443/jobs/42', 'https://careers.example.com/jobs/42/apply',
+                'https://careers.example.com/jobs/42/apply/', 'https://careers.example.com/jobs/42?utm_source=x&utm_campaign=y',
+                'https://careers.example.com/jobs/42?gclid=1&spm=a.b', 'https://careers.example.com/jobs/42#section']
+        self.assertEqual({url_key(u) for u in same}, {'careers.example.com/jobs/42'})
+
+    def test_what_still_tells_jobs_apart(self):
+        self.assertEqual(url_key('https://jobs.example.com/view?id=2&utm_source=x&a=1'), 'jobs.example.com/view?a=1&id=2')  # sorted
+        self.assertNotEqual(url_key('https://jobs.example.com/view?id=1'), url_key('https://jobs.example.com/view?id=2'))
+        self.assertNotEqual(url_key('https://jobs.example.com/a'), url_key('https://jobs.example.com/A'))  # paths keep case
+        self.assertEqual(url_key('https://example.com:8443/jobs/1'), 'example.com:8443/jobs/1')
+        self.assertEqual(url_key('https://app.mokahr.com/social-recruitment/x/1#/job/abc'), 'app.mokahr.com/social-recruitment/x/1#/job/abc')
+        self.assertEqual(url_key('https://www.liepin.com/job/1970.shtml?skId=a&d_sfrom=b'), 'liepin.com/job/1970.shtml')
+        self.assertEqual(url_key('https://jobs.lever.co/acme/0f1e/apply'), 'jobs.lever.co/acme/0f1e')
+        for bad in (None, '', 'ftp://example.com/x', 'careers.example.com/jobs/1', 'https://', 'https://[bad'):
+            self.assertEqual(url_key(bad), '')
 
 
 if __name__ == '__main__':

@@ -12,16 +12,16 @@ import unicodedata
 from datetime import datetime, timedelta, timezone
 
 from ..base import Error, digest, dumps, now
-from .normalize import SALARY_UNITS, normalize_company, normalize_title, parse_amount, parse_salary
+from .normalize import SALARY_UNITS, normalize_company, normalize_title, parse_amount, parse_salary, url_key
 from .query import matches
 
-SCHEMA_VERSION = 4
+SCHEMA_VERSION = 5
 # A job closes after this many consecutive clean rounds of its source without it.
 CLOSE_AFTER = 2
 # Source report statuses that mean the source read everything it was asked for; a truncated report never counts.
 CLEAN = ('ok', 'empty', 'filtered_empty')
 SALARY = ('salary_status', 'salary_low', 'salary_high', 'salary_unit', 'salary_months', 'salary_currency')
-DERIVED = ('company', 'title', 'city', 'source', 'source_id', 'platform_id', 'direction', 'group_key', 'jd_digest') + SALARY
+DERIVED = ('company', 'title', 'city', 'source', 'source_id', 'platform_id', 'direction', 'group_key', 'jd_digest', 'url_key') + SALARY
 INTEGER = ('salary_low', 'salary_high', 'salary_months')
 UNKNOWN_COMPANY = ('', '待确认')
 MAX_LIMIT = 500
@@ -77,7 +77,7 @@ def _derived(job):
     pay = parse_salary(job.get('salary')) or {}
     return dict(company=company or None, title=title, city=city, source=job.get('channel'), source_id=found.get('source_id'),
                 platform_id=None if pid is None else str(pid), direction=direction.get('id'),
-                group_key=group_key(company, title, city), jd_digest=digest(job.get('jd')),
+                group_key=group_key(company, title, city), jd_digest=digest(job.get('jd')), url_key=url_key(job.get('url')) or None,
                 **{'salary_' + k: pay.get(k) for k in ('status', 'low', 'high', 'unit', 'months', 'currency')})
 
 
@@ -146,7 +146,14 @@ def _to_v4(c):
     _rederive(c)
 
 
-STEPS = {2: _to_v2, 3: _to_v3, 4: _to_v4}
+def _to_v5(c):
+    # A dedup key per job link (url_key): pasted and imported links that differ only in tracking or 'www.' are one job.
+    _add_columns(c)
+    c.execute('CREATE INDEX IF NOT EXISTS jobs_url ON jobs(url_key)')
+    _rederive(c)
+
+
+STEPS = {2: _to_v2, 3: _to_v3, 4: _to_v4, 5: _to_v5}
 
 
 def migrate(c):
@@ -197,6 +204,15 @@ def get(c, job_id):
 def find(c, identity):
     """The id of the job stored under this identity, or None."""
     row = c.execute('SELECT id FROM jobs WHERE identity=?', (identity,)).fetchone()
+    return row[0] if row else None
+
+
+def find_link(c, url):
+    """The id of a job stored by its link alone (identity 'url:...') whose link has the same url_key, or None.
+    Jobs a source names by its own id are left out: their identity, not their link, says which job they are."""
+    key = url_key(url)
+    if not key: return None
+    row = c.execute("SELECT id FROM jobs WHERE url_key=? AND identity LIKE 'url:%' ORDER BY rowid LIMIT 1", (key,)).fetchone()
     return row[0] if row else None
 
 

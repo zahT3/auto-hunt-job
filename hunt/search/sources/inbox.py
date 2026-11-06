@@ -4,17 +4,12 @@ import hmac
 import re
 from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
 from ..parse import SourceError, normalize, now, public_url
+from ..normalize import LIEPIN_JOB, TRACKING, TRACKING_PREFIXES
 
 MAX_BODY = 200 * 1024
 MAX_TEXT = 100000
 ALLOWED_DOMAINS = ('zhipin.com', 'liepin.com', 'lagou.com', 'zhaopin.com', '51job.com', 'mokahr.com',
                    'jobs.feishu.cn', 'jobs.bytedance.com')
-# Per-visit tracking only; parameters that may carry the job id (jobid, id, positionId...) stay.
-TRACKING = {'spm', 'from', 'ka', 'lid', 'securityid', 'sessionid', 'scene', 'gclid', 'fbclid', 'ref', '_from', 'trk'}
-TRACKING_PREFIXES = ('utm_', 'd_')
-# 猎聘 job links carry per-visit search state in the query (skId, ckId, index...); the path alone names the job, so a
-# search-results card and the same job's detail page land on one record.
-LIEPIN_JOB = re.compile(r'/(?:job|a)/\d+\.shtml')
 
 
 def _origin_host(origin):
