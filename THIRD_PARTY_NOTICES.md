@@ -60,6 +60,12 @@ PDF 字体使用用户本机已安装的字体或 `HUNT_PDF_FONT` 指定文件�
 
 以上均改写为 Python 并接入本项目的来源注册表。`mokahr.py` 的解密依赖可选包 `cryptography`（`requirements-sources.txt`），未安装时 `app.mokahr.com` 租户报告 `not_configured`。
 
+### boss-helper（只借思路）
+
+- 仓库：<https://github.com/Ocyss/boss-helper>，参考的 commit：`00b1e13655da711492b08a9ed3fc04eb88d21670`
+- 许可：MIT（Copyright 2024 Ocyss）。该项目 README 另写"仅供学习交流，禁止用于商业用途"；本项目没有复制它的代码或注释。
+- 借用的思路：`static/bookmarklets/boss-zhipin.js` 从 BOSS 页面 Vue 2 组件（`__vue__`）上读 `jobList` 和 `jobDetail`，并包住这两个属性的 setter 来被动接收新数据；列表容器选择器 `#wrap .page-job-wrapper,.job-recommend-main,.page-jobs-main` 和这些属性、字段名取自该项目。代码由本项目自己写。它代替用户点卡片、自动翻页、轮询和请求 `/wapi/` 接口的做法没有采用。
+
 ### career-ops-china
 
 - 仓库：<https://github.com/shuheng-mo/career-ops-china>（career-ops 的中国大陆定制衍生项目，不是 GitHub 上的 fork）

@@ -275,3 +275,56 @@ class InboxTests(InboxCase):
 
 if __name__ == '__main__':
     unittest.main()
+
+
+class StructuredTests(InboxCase):
+    """The BOSS bookmarklet's structured fields: a whitelist, list-only records, and detail replacing them."""
+
+    def card(self, **structured):
+        fields = dict(brandName='示例科技', salaryDesc='20-30K', skills=['Python', 'SQL', 'Python'], jobExperience='3-5年',
+                      jobDegree='本科', cityName='上海', goldHunter=0, bossActiveTimeDesc='本周活跃', lastModifyTime=1762300000000,
+                      bossName='张先生', bossTitle='HR', bossOnline=True, encryptUserId='u1')
+        fields.update(structured)
+        return payload(summary_only=True, structured=fields,
+                       extracted=dict(job_title='Python 工程师', raw_text='BOSS 直聘列表信息，不含职位描述。'))
+
+    def test_only_whitelisted_fields_are_kept_and_recruiter_identity_is_dropped(self):
+        job = normalize_payload(self.card())
+        self.assertEqual(job['raw']['structured'], dict(brandName='示例科技', salaryDesc='20-30K', skills=['Python', 'SQL'],
+                                                        jobExperience='3-5年', jobDegree='本科', cityName='上海', goldHunter=0,
+                                                        bossActiveTimeDesc='本周活跃'))
+        text = json.dumps(job, ensure_ascii=False)
+        for secret in ('张先生', 'bossName', 'bossTitle', 'bossOnline', 'encryptUserId', 'u1'):
+            self.assertNotIn(secret, text)
+        self.assertEqual((job['company'], job['salary'], job['location'], job['experience']), ('示例科技', '20-30K', '上海', '3-5年'))
+
+    def test_last_modify_time_is_the_sources_own_claim_never_a_posting_date(self):
+        job = normalize_payload(self.card())
+        self.assertEqual(job['raw']['source_modified'], dict(field='lastModifyTime', value=1762300000000))
+        self.assertIsNone(job['published_at'])
+
+    def test_a_list_card_is_marked_list_only(self):
+        job = normalize_payload(self.card())
+        self.assertIs(job['raw']['summary_only'], True)
+        self.assertEqual(job['raw']['capture'], 'list')
+
+    def test_wrong_types_are_refused(self):
+        for bad in (dict(skills='Python'), dict(skills=[1]), dict(goldHunter=2), dict(brandName=['x']), dict(lastModifyTime={'a': 1})):
+            with self.subTest(bad=bad), self.assertRaises(Exception):
+                normalize_payload(self.card(**bad))
+        with self.assertRaises(Exception):
+            normalize_payload(payload(structured=['brandName']))
+
+    def test_the_detail_replaces_the_list_record_and_a_later_card_does_not_undo_it(self):
+        status, first, _ = self.post(self.card())
+        self.assertEqual(status, 200)
+        detail = payload(structured=dict(brandName='示例科技', salaryDesc='20-30K', skills=['Python']),
+                         extracted=dict(job_title='Python 工程师', raw_text='岗位职责：负责后端服务开发。任职要求：熟悉 Python。'))
+        status, second, _ = self.post(detail)
+        self.assertEqual((status, second['job_id'], second['duplicate']), (200, first['job_id'], True))
+        status, third, _ = self.post(self.card())
+        self.assertEqual(third['job_id'], first['job_id'])
+        [job] = self.store.state()['jobs']
+        self.assertIn('负责后端服务开发', job['jd'])
+        self.assertNotIn('summary_only', job['raw'])
+
