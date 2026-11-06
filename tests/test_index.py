@@ -142,7 +142,112 @@ class Search(unittest.TestCase):
         store = Store(self.store.root)
         with store.tx() as c:
             self.assertEqual(dict(c.execute('SELECT id, city FROM jobs')), {'job-1': '深圳/远程', 'job-2': '远程', 'job-3': '深圳'})
-            self.assertEqual(store.meta(c, 'schema_version'), 3)
+            self.assertEqual(store.meta(c, 'schema_version'), index.SCHEMA_VERSION)
+
+    def test_salary_range_overlap_keeps_unknown_pay_and_never_mixes_units(self):
+        rows = [('甲', '15-25K·14薪'), ('乙', '8-12k'), ('丙', '面议'), ('丁', None), ('戊', '200-300元/天'), ('己', '年薪30-50万'),
+                ('庚', '30k以上'), ('辛', '待遇优厚'), ('壬', 'USD 8000-9000 MONTH')]
+        self.add(*[dict(job(n, 'AI 产品经理', company, '深圳'), salary=pay) for n, (company, pay) in enumerate(rows)])
+        result = self.store.search_jobs('产品经理', salary_min='20k')
+        self.assertEqual({g['company'] for g in result['groups']}, {'甲', '丙', '丁', '庚', '辛'})
+        self.assertEqual((result['salary_unknown'], result['salary_other_unit']), (3, 3))  # 面议, none, unparsed; day, year, USD
+        self.assertEqual(result['query']['salary_min'], 20000)
+        known = self.store.search_jobs('产品经理', salary_min=20000, salary_max='2.2万', salary_known_only=True)
+        self.assertEqual({g['company'] for g in known['groups']}, {'甲'})  # 庚 starts at 30k
+        daily = self.store.search_jobs('产品经理', salary_min=250, salary_unit='day', salary_known_only=True)
+        self.assertEqual([g['company'] for g in daily['groups']], ['戊'])
+        first = next(g for g in result['groups'] if g['company'] == '甲')['sources'][0]
+        self.assertEqual((first['salary'], first['salary_parsed']),
+                         ('15-25K·14薪', dict(status='ok', low=15000, high=25000, unit='month', months=14, currency='CNY')))
+        self.assertIsNone(next(g for g in result['groups'] if g['company'] == '丁')['sources'][0]['salary_parsed'])
+        self.assertEqual(self.store.search_jobs('产品经理')['salary_other_unit'], 0)  # no filter, nothing dropped
+        for bad in (dict(salary_min='很多'), dict(salary_min=30000, salary_max=20000), dict(salary_min=1, salary_unit='week')):
+            with self.assertRaises(Error): self.store.search_jobs('', **bad)
+        out = io.StringIO()
+        with contextlib.redirect_stdout(out):
+            code = main(['search', '产品经理', '--salary-min', '20k', '--salary-known-only', '--json', '--data', str(self.store.root)])
+        self.assertEqual((code, {g['company'] for g in json.loads(out.getvalue())['groups']}), (0, {'甲', '庚'}))
+
+    def test_a_version_3_library_gets_salary_columns(self):
+        self.add(dict(job(1, 'AI 产品经理', '甲', '深圳'), salary='8-13k·13薪'))
+        with self.store.tx() as c:  # roll the row back to what version 3 stored
+            c.execute('UPDATE jobs SET salary_status=NULL, salary_low=NULL, salary_high=NULL, salary_unit=NULL, salary_months=NULL')
+            c.execute("UPDATE meta SET value='3' WHERE key='schema_version'")
+        store = Store(self.store.root)
+        with store.tx() as c:
+            row = c.execute('SELECT salary_status, salary_low, salary_high, salary_unit, salary_months, typeof(salary_low) FROM jobs').fetchone()
+        self.assertEqual(tuple(row), ('ok', 8000, 13000, 'month', 13, 'integer'))
+
+    def test_hide_list_hides_by_company_title_or_recruiter_until_asked(self):
+        # Through the action table, before any job exists (these synthetic rows lack the workbench fields state() reads).
+        state = self.store.action(dict(action='hide_add', kind='company', value='外包科技'))
+        self.assertEqual(state['result']['rule']['kind'], 'company')
+        self.store.action(dict(action='hide_add', kind='title', value='销售 方向'))  # spaces and case do not matter
+        self.store.action(dict(action='hide_add', kind='recruiter', value='猎头'))
+        again = self.store.action(dict(action='hide_add', kind='company', value='外包科技有限公司'))['result']
+        self.assertEqual(len(again['rules']), 3)  # the same canonical company is not added twice
+        rules = {r['kind']: r['id'] for r in self.store.action(dict(action='hide_list'))['result']['rules']}
+        self.add(job(1, 'AI 产品经理', '星河外包科技有限公司', '深圳'), job(2, 'AI 产品经理（销售方向）', '甲', '深圳'),
+                 dict(job(3, 'AI 产品经理', '乙', '深圳'), recruiter='王女士 · 猎头顾问'), job(4, 'AI 产品经理', '丙', '深圳'))
+        result = self.store.search_jobs('产品经理')
+        self.assertEqual(([g['company'] for g in result['groups']], result['hidden']), (['丙'], 3))
+        shown = self.store.search_jobs('产品经理', include_hidden=True)
+        self.assertEqual((shown['total_jobs'], shown['hidden']), (4, 3))
+        by = {g['company']: g['sources'][0]['hidden_by'] for g in shown['groups']}
+        self.assertEqual(by, {'星河外包科技有限公司': [rules['company']], '甲': [rules['title']], '乙': [rules['recruiter']], '丙': []})
+        self.store.hide_remove(dict(id=rules['recruiter']))
+        self.assertEqual({g['company'] for g in self.store.search_jobs('产品经理')['groups']}, {'乙', '丙'})
+        for bad in (dict(kind='city', value='深圳'), dict(kind='company', value=' '), dict(kind='title', value='x' * 101)):
+            with self.assertRaises(Error): self.store.hide_add(bad)
+        with self.assertRaises(Error): self.store.hide_remove(dict(id='nope'))
+
+    def test_hidden_jobs_leave_their_groups_too(self):
+        self.add(dict(job(1, 'AI产品经理-抖音电商', '字节跳动', '深圳'), recruiter='猎头 Amy'),
+                 job(2, 'AI产品经理-抖音电商', '字节跳动', '深圳', channel='liepin'))
+        self.store.hide_add(dict(kind='recruiter', value='猎头'))
+        sources = self.store.search_jobs('抖音电商', source='liepin')['groups'][0]['sources']
+        self.assertEqual([s['source'] for s in sources], ['liepin'])
+
+    def test_cli_hide_commands(self):
+        def cli(*args):
+            out = io.StringIO()
+            with contextlib.redirect_stdout(out):
+                code = main(list(args) + ['--data', str(self.store.root)])
+            return code, json.loads(out.getvalue())
+        self.add(job(1, 'AI 产品经理', '星河外包', '深圳'))
+        code, added = cli('hide', 'add', 'company', '外包')
+        self.assertEqual((code, added['rule']['value']), (0, '外包'))
+        self.assertEqual(cli('search', '产品经理', '--json')[1]['hidden'], 1)
+        self.assertEqual(cli('search', '产品经理', '--include-hidden', '--json')[1]['total_groups'], 1)
+        self.assertEqual(cli('hide', 'list')[1]['rules'], added['rules'])
+        self.assertEqual(cli('hide', 'remove', added['rule']['id'])[1]['rules'], [])
+        self.assertEqual(cli('hide', 'remove', 'nope'), (1, dict(schema_version=1, error='没有这条规则')))
+
+    def test_a_pasted_link_that_differs_only_in_tracking_is_the_same_job(self):
+        first, duplicate = self.store.import_job(dict(title='数据工程师', jd='写 SQL。', url='https://www.careers.example.com/jobs/42?utm_source=wx'))
+        self.assertFalse(duplicate)
+        for url in ('http://careers.example.com/jobs/42/apply', 'https://careers.example.com/jobs/42/?gclid=1#top'):
+            again, duplicate = self.store.import_job(dict(title='数据工程师', jd='写 SQL。', url=url))
+            self.assertEqual((again['id'], duplicate), (first['id'], True))
+        other, duplicate = self.store.import_job(dict(title='数据工程师', jd='写 SQL。', url='https://careers.example.com/jobs/43'))
+        self.assertFalse(duplicate)
+        # A job its source names by id keeps its own record even when the link is the same.
+        sourced, duplicate = self.store.import_job(dict(title='数据工程师', jd='写 SQL。', channel='feishu', platform_id='42',
+                                                        url='https://careers.example.com/jobs/42'))
+        self.assertFalse(duplicate)
+        with self.store.tx() as c:
+            self.assertEqual(c.execute('SELECT COUNT(*) FROM jobs').fetchone()[0], 3)
+            self.assertEqual(c.execute('SELECT url_key FROM jobs WHERE id=?', (first['id'],)).fetchone()[0], 'careers.example.com/jobs/42')
+
+    def test_a_version_4_library_gets_link_keys(self):
+        self.store.import_job(dict(title='数据工程师', jd='写 SQL。', url='https://www.careers.example.com/jobs/42?utm_source=wx'))
+        with self.store.tx() as c:
+            c.execute('UPDATE jobs SET url_key=NULL'); c.execute("UPDATE meta SET value='4' WHERE key='schema_version'")
+        store = Store(self.store.root)
+        with store.tx() as c:
+            self.assertEqual(c.execute('SELECT url_key FROM jobs').fetchone()[0], 'careers.example.com/jobs/42')
+        _, duplicate = store.import_job(dict(title='数据工程师', jd='写 SQL。', url='https://careers.example.com/jobs/42'))
+        self.assertTrue(duplicate)
 
     def test_city_takes_a_list_and_any_city_matches(self):
         self.add(job(1, 'AI 产品经理', '甲', '深圳'), job(2, 'AI 产品经理', '乙', '杭州'), job(3, 'AI 产品经理', '丙', '上海'),
@@ -249,7 +354,7 @@ class LibraryOf1500(unittest.TestCase):
                                                      'first_seen', 'last_seen', 'sources'})
         self.assertEqual(set(result['groups'][0]['sources'][0]), {'job_id', 'source', 'source_id', 'platform_id', 'direction',
                                                                    'first_seen', 'last_seen', 'status', 'url', 'application_url',
-                                                                   'salary', 'location', 'matched'})
+                                                                   'salary', 'location', 'recruiter', 'matched', 'hidden_by', 'salary_parsed'})
 
     def test_cli_city_repeats(self):
         out = io.StringIO()
@@ -355,6 +460,18 @@ class WebSearch(unittest.TestCase):
         status, body = self.get('/api/search?q=' + quote('产品经理') + '&city=' + quote('深圳') + '&city=' + quote('杭州') + '&city=')
         self.assertEqual((status, {g['company'] for g in body['groups']}, body['query']['city']), (200, {'甲', '乙'}, ['深圳', '杭州']))
         self.assertEqual(self.get('/api/search?' + '&'.join('city=c%d' % n for n in range(11)))[0], 400)
+
+    def test_get_search_include_hidden(self):
+        self.store.hide_add(dict(kind='company', value='甲'))
+        self.assertEqual(self.get('/api/search')[1]['hidden'], 1)
+        body = self.get('/api/search?include_hidden=1')[1]
+        self.assertEqual((body['total_jobs'], len(body['groups'][0]['sources'][0]['hidden_by'])), (1, 1))
+
+    def test_get_search_takes_salary_bounds(self):
+        status, body = self.get('/api/search?salary_min=20k&salary_max=' + quote('3万') + '&salary_known_only=1')
+        self.assertEqual((status, body['query']['salary_min'], body['query']['salary_max'], body['query']['salary_known_only'], body['groups']),
+                         (200, 20000, 30000, True, []))  # the one stored job has no salary
+        self.assertEqual(self.get('/api/search?salary_min=' + quote('很多'))[0], 400)
 
 
 if __name__ == '__main__':

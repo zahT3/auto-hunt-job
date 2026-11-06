@@ -1,5 +1,6 @@
 """The search use case: one run of discovery, import, preparation and classification."""
 import copy
+import json
 import threading
 import uuid
 
@@ -7,6 +8,8 @@ from ..base import Error, dumps, now
 from ..profile.profile import build_profile, synthetic_profile
 from ..search import index
 from ..workbench.actions import LOCKED
+
+MAX_HIDDEN = 500
 
 
 class SearchRun:
@@ -22,10 +25,40 @@ class SearchRun:
             self.search_thread = threading.Thread(target=self.run, kwargs={'demo': demo}, daemon=True)
             self.search_thread.start()
 
-    def search_jobs(self, q='', city=None, direction=None, source=None, fresh=None, limit=50):
-        """Read-only search of the local job library (hunt.search.index.search); the web and the CLI both call this."""
+    def search_jobs(self, q='', **filters):
+        """Read-only search of the local job library, with the user's "don't show me" list applied; filters are those
+        of hunt.search.index.search. The web and the CLI both call this."""
         with self.tx() as c:
-            return index.search(c, q, city=city, direction=direction, source=source, fresh=fresh, limit=limit)
+            return index.search(c, q, hide=self._hidden(c), **filters)
+
+    # The "don't show me" list: rules the user adds and removes by hand, kept in meta. Nothing is ever added automatically.
+    def _hidden(self, c):
+        row = c.execute("SELECT value FROM meta WHERE key='hidden'").fetchone()
+        return json.loads(row[0]) if row else []
+
+    def hide_list(self):
+        with self.tx() as c:
+            return dict(rules=self._hidden(c))
+
+    def hide_add(self, payload):
+        kind, value = index.hide_rule(payload.get('kind'), payload.get('value'))
+        with self.tx() as c:
+            rules = self._hidden(c)
+            same = next((r for r in rules if r['kind'] == kind and index.hide_text(kind, r['value']) == index.hide_text(kind, value)), None)
+            if same: return dict(rules=rules, rule=same)
+            if len(rules) >= MAX_HIDDEN: raise Error('不想看清单最多 %d 条' % MAX_HIDDEN)
+            rule = dict(id='h' + uuid.uuid4().hex[:12], kind=kind, value=value, added_at=now())
+            rules.append(rule)
+            c.execute('INSERT OR REPLACE INTO meta VALUES(?,?)', ('hidden', dumps(rules)))
+            return dict(rules=rules, rule=rule)
+
+    def hide_remove(self, payload):
+        with self.tx() as c:
+            rules = self._hidden(c)
+            left = [r for r in rules if r['id'] != payload.get('id')]
+            if len(left) == len(rules): raise Error('没有这条规则')
+            c.execute('INSERT OR REPLACE INTO meta VALUES(?,?)', ('hidden', dumps(left)))
+            return dict(rules=left)
 
     def search_config(self):
         """Config for a real search: explicit keywords win, else the orientation's terms; neither is an error (no built-in default terms)."""
