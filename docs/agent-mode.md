@@ -13,7 +13,8 @@
 | `python -m hunt directions set FILE` | 写入 1–4 个方向。FILE 是 `["backend", "frontend"]`，或 `{"directions": [{"id": "backend", "why": "理由"}], "terms": [...], "conditions": {...}}`（后两项可省略；省略 `terms` 时按方向自动生成搜索词）。方向 id 必须在参考表里 |
 | `python -m hunt jobs export --unclassified [--limit N]` | 待归类岗位：从没归过类、方向或岗位原文变了、或规则判断不了的。每条含 `id`、`title`、`company`、`jd`（前 4000 字）、`direction`（当前结果）。不加 `--unclassified` 时导出全部，`--limit` 默认 100、最多 1000 |
 | `python -m hunt classify import FILE` | 写回归类。FILE 是 `[{"job_id": "...", "direction_id": "backend", "reason": "不超过 200 字"}]`，不属于任何已选方向时 `direction_id` 写 `null`。整份校验，任何一条有错（岗位不存在、方向不在已选里、缺字段）就一条都不写 |
-| `python -m hunt search [WORD ...] [--city 城市 ...] [--direction ID] [--source 来源] [--fresh 天数] [--salary-min 金额] [--salary-max 金额] [--salary-unit month] [--salary-known-only] [--limit N] --json` | 查本机岗位库（只读，不联网）：标题和 JD 里要同时出现每个词；按"同一岗位、多个来源"分组返回。结构见下面的「search 的输出」 |
+| `python -m hunt search [WORD ...] [--city 城市 ...] [--direction ID] [--source 来源] [--fresh 天数] [--salary-min 金额] [--salary-max 金额] [--salary-unit month] [--salary-known-only] [--include-hidden] [--limit N] --json` | 查本机岗位库（只读，不联网）：标题和 JD 里要同时出现每个词；按"同一岗位、多个来源"分组返回。结构见下面的「search 的输出」 |
+| `python -m hunt hide add KIND VALUE` / `hide remove ID` / `hide list` | "不想看"清单，只能手动维护。KIND 是 `company`、`title` 或 `recruiter`；岗位的这个字段里含 VALUE 就在搜索里隐藏。输出 `{"schema_version": 1, "rules": [{"id", "kind", "value", "added_at"}], "rule": {...}}`（`rule` 只在 add 时有） |
 | `python -m hunt summary [--direction ID]` | 每个已选方向的岗位数、来源分布、高频要求、哪些确认事实对得上、哪些高频要求事实里没有；外加不属于已选方向的岗位数 |
 
 出错时退出码为 1，输出 `{"schema_version": 1, "error": "中文原因"}`。
@@ -26,11 +27,12 @@
 {
   "schema_version": 1,
   "query": {"q": "AI 产品经理", "words": ["AI", "产品经理"], "city": ["深圳"], "direction": null, "source": null, "fresh": null, "limit": 50,
-            "salary_min": null, "salary_max": null, "salary_unit": "month", "salary_known_only": false},
+            "salary_min": null, "salary_max": null, "salary_unit": "month", "salary_known_only": false, "include_hidden": false},
   "total_groups": 12,
   "total_jobs": 13,
   "salary_unknown": 2,
   "salary_other_unit": 0,
+  "hidden": 1,
   "full_text": true,
   "elapsed_ms": 4.2,
   "note": "只查本机岗位库；岗位在本机库里的状态，不等于招聘方是否仍在招。",
@@ -48,7 +50,7 @@
       "sources": [
         {"job_id": "…", "source": "feishu", "source_id": "feishu:jobs.bytedance.com", "platform_id": "73…", "matched": true,
          "status": "open", "first_seen": "…", "last_seen": "…", "direction": "ai-product-manager",
-         "url": "https://…", "application_url": "https://…", "location": "深圳",
+         "url": "https://…", "application_url": "https://…", "location": "深圳", "recruiter": null, "hidden_by": [],
          "salary": "15-25K·14薪",
          "salary_parsed": {"status": "ok", "low": 15000, "high": 25000, "unit": "month", "months": 14, "currency": "CNY"}}
       ]
@@ -63,10 +65,11 @@
 - **过滤**：`--city` 可以写多次（最多 10 个），岗位的城市里有任何一个命中就算（"北京/深圳"的岗位两个城市都算）。"深圳市""Shenzhen"会规范成"深圳"，"Remote""远程办公"规范成"远程"；内置城市表里没有的地名按原样比对。下面「自然语言搜索条件」输出的 `city` 列表可以原样传进来。输出的 `query.city` 总是规范后的城市列表，没有过滤时是空列表。`--source` 填渠道（`liepin`、`feishu`、`tencent` 等）或来源 ID（运行报告里的 `source_id`）。`--direction` 填方向 id，只看已归到这个方向的岗位。`--fresh N` 只留仍在招、且最近 N 天内被搜到过的岗位。
 - **薪资**：每条来源的 `salary` 是来源给的原文，`salary_parsed` 是拆开后的结果，没有薪资时是 `null`。`status` 有三种：`ok`（`low`、`high` 是每个 `unit` 的金额，单位元，开放的一端是 `null`，例如"15k以上"）、`negotiable`（面议）、`unparsed`（读不懂，金额全是 `null`，不会当成 0）。`unit` 是 `month`、`day`、`year`、`hour`；`months` 是写明的发薪月数（"·14薪"），没写是 `null`。没写单位时：`k` 按月；`万` 不超过 4 万按月，8 万起按年，中间（如"5-8万"）分不清，标 `unparsed`；不带单位的纯数字 1000–100000 按月；外币不写单位按年。
 - **按薪资筛**：`--salary-min`、`--salary-max` 接受 `15000`、`15k`、`1.5万`。和岗位薪资区间有重叠就算命中，只比 `--salary-unit`（默认 `month`）相同、币种是人民币的岗位：日薪、年薪、外币岗位不和月薪混算，直接不返回，数量在 `salary_other_unit`。没写薪资、面议和读不懂的岗位默认保留，加 `--salary-known-only` 才去掉；`salary_unknown` 是结果里这类岗位记录的条数（不设薪资条件时也会给）。
+- **不想看**：`hide add` 加的规则默认生效：公司按规范名比（"星河外包科技有限公司"含"外包科技"就算），岗位名和招聘者不分大小写、忽略空格，都是"包含"匹配。命中的岗位不返回，条数在 `hidden`；加 `--include-hidden` 全部显示，每条来源的 `hidden_by` 列出命中的规则 id。被隐藏的岗位也不会出现在别的组的 `sources` 里。不会自动往清单里加东西。`recruiter` 是来源给的招聘者文字（例如"王女士 · 猎头顾问"），现在的来源都还没有这个字段，所以按招聘者的规则暂时不会命中任何岗位。网页端用 `/api/action` 的 `hide_add`（`kind`、`value`）、`hide_remove`（`id`）、`hide_list`，返回的 `result` 和 CLI 输出相同（没有 `schema_version`）。
 - **分组**：公司规范名（去掉"有限公司""集团"、括号和空白）、规范标题（去掉括号内容、标点和空白）、城市三者都相同的岗位链接成一组，`sources` 列出组里每一条记录，`matched` 表示这条记录本身是否命中了检索词和过滤条件。只链接，不删记录，也不做模糊合并。公司是"待确认"的岗位不分组。同一个来源里有两条同组的岗位时（一家公司常把同一个标题开好几个岗），说明它们是不同的岗位，这组就不链接，每条单独成组。
 - **排序**：仍在招的在前；标题里含全部检索词的在前；再按最近一次被搜到的时间。`limit` 限制的是组数（1–500，默认 50），`total_groups` 和 `total_jobs` 是限制前的总数。
 - **新旧**：`status` 是本机库的判断：`open` 或 `closed`。某个来源一轮搜索正常跑完（没出错、没被截断），但连续 2 轮都没再返回某个岗位，而这两轮的搜索词仍然匹配这个岗位的标题，它就标成 `closed`；之后再被搜到会恢复成 `open`。来源自己标明已下线的岗位直接是 `closed`。`first_seen`、`last_seen` 都是 UTC 时间。
-- **网页接口**：`GET /api/search?q=…&city=…&city=…&direction=…&source=…&fresh=…&limit=…&salary_min=…&salary_max=…&salary_unit=…&salary_known_only=1` 返回同样的 JSON；`city` 可以重复，对应多个 `--city`，空值忽略；`salary_known_only` 写 `1` 或 `true` 才生效。只读，只接受本机同源请求，参数错误时返回 400 和 `{"error": "中文原因"}`。
+- **网页接口**：`GET /api/search?q=…&city=…&city=…&direction=…&source=…&fresh=…&limit=…&salary_min=…&salary_max=…&salary_unit=…&salary_known_only=1&include_hidden=1` 返回同样的 JSON；`city` 可以重复，对应多个 `--city`，空值忽略；`salary_known_only`、`include_hidden` 写 `1` 或 `true` 才生效。只读，只接受本机同源请求，参数错误时返回 400 和 `{"error": "中文原因"}`。
 
 ## 一次完整流程
 

@@ -26,6 +26,7 @@ INTEGER = ('salary_low', 'salary_high', 'salary_months')
 UNKNOWN_COMPANY = ('', '待确认')
 MAX_LIMIT = 500
 MAX_CITIES = 10
+HIDE_KINDS = ('company', 'title', 'recruiter')
 
 _CITIES = ('北京|上海|天津|重庆|深圳|广州|杭州|南京|成都|武汉|西安|苏州|郑州|长沙|青岛|宁波|无锡|合肥|厦门|福州|济南|大连|沈阳|哈尔滨|'
            '长春|石家庄|太原|南昌|昆明|贵阳|南宁|海口|兰州|西宁|银川|乌鲁木齐|呼和浩特|拉萨|佛山|东莞|珠海|中山|惠州|常州|南通|徐州|'
@@ -242,11 +243,36 @@ def _like(term):
 
 ROW = ("j.rowid, j.id, j.company, j.title, j.city, j.source, j.source_id, j.platform_id, j.direction, j.group_key, j.first_seen, "
        "j.last_seen, j.status, json_extract(j.data, '$.url'), json_extract(j.data, '$.application_url'), "
-       "json_extract(j.data, '$.salary'), json_extract(j.data, '$.location'), " + ', '.join('j.' + k for k in SALARY))
+       "json_extract(j.data, '$.salary'), json_extract(j.data, '$.location'), json_extract(j.data, '$.recruiter'), " +
+       ', '.join('j.' + k for k in SALARY))
 FIELDS = ('rowid', 'job_id', 'company', 'title', 'city', 'source', 'source_id', 'platform_id', 'direction', 'group',
-          'first_seen', 'last_seen', 'status', 'url', 'application_url', 'salary', 'location') + SALARY
+          'first_seen', 'last_seen', 'status', 'url', 'application_url', 'salary', 'location', 'recruiter') + SALARY
 # What each source entry of a result shows; the salary columns go out together as salary_parsed.
-SHOWN = tuple(k for k in FIELDS if k not in ('rowid', 'group', 'company', 'title', 'city') + SALARY) + ('matched',)
+SHOWN = tuple(k for k in FIELDS if k not in ('rowid', 'group', 'company', 'title', 'city') + SALARY) + ('matched', 'hidden_by')
+
+
+def hide_text(kind, value):
+    """The form a "don't show me" rule and a job's field are compared in: a company by its canonical name (no 有限公司),
+    a title or recruiter folded, without spaces."""
+    if kind == 'company': return normalize_company(value)
+    return ''.join(unicodedata.normalize('NFKC', str(value or '')).casefold().split())
+
+
+def hide_rule(kind, value):
+    """A checked rule (kind, value) to store, or Error. A rule hides a job whose field contains its text."""
+    if kind not in HIDE_KINDS: raise Error('kind 须是 ' + '、'.join(HIDE_KINDS))
+    value = str(value or '').strip() if isinstance(value, str) else ''
+    if not value or len(value) > 100: raise Error('请填写 1 至 100 个字')
+    if not hide_text(kind, value): raise Error('这条规则规范化后为空，无法匹配')
+    return kind, value
+
+
+def _hidden_by(row, rules):
+    ids = []
+    for rule in rules:
+        field = row.get(rule['kind'])
+        if field and rule['key'] in hide_text(rule['kind'], field): ids.append(rule['id'])
+    return ids
 
 
 def _pay(row):
@@ -277,7 +303,7 @@ def city_filter(city):
 
 
 def search(c, q='', city=None, direction=None, source=None, fresh=None, limit=50, salary_min=None, salary_max=None,
-           salary_unit='month', salary_known_only=False):
+           salary_unit='month', salary_known_only=False, hide=(), include_hidden=False):
     """Jobs matching every word of q in the title or JD, grouped by group_key; each group lists all its sources.
 
     Words of 3+ characters use the trigram index; shorter ones ('AI', '产品') fall back to LIKE. city, one name or a list
@@ -286,7 +312,10 @@ def search(c, q='', city=None, direction=None, source=None, fresh=None, limit=50
 
     salary_min / salary_max (15000, '15k', '1.5万') keep jobs whose pay range in salary_unit overlaps them, in CNY; a
     job paid per day or per year never matches a monthly filter (salary_other_unit counts those). Jobs with no salary,
-    面议 or text that does not parse stay in unless salary_known_only; salary_unknown counts them."""
+    面议 or text that does not parse stay in unless salary_known_only; salary_unknown counts them.
+
+    hide is the user's "don't show me" list ([{id, kind, value}]); a job whose company, title or recruiter contains a
+    rule's text is left out and counted in hidden, unless include_hidden, which keeps it with the rule ids in hidden_by."""
     began = time.monotonic()
     if not isinstance(limit, int) or not 1 <= limit <= MAX_LIMIT: raise Error('limit 必须是 1 至 %d' % MAX_LIMIT)
     if fresh is not None and (not isinstance(fresh, int) or isinstance(fresh, bool) or not 1 <= fresh <= 3650):
@@ -317,6 +346,7 @@ def search(c, q='', city=None, direction=None, source=None, fresh=None, limit=50
         args.append((datetime.now(timezone.utc) - timedelta(days=fresh)).isoformat(timespec='microseconds'))
     sql = 'SELECT %s FROM jobs j%s' % (ROW, ' WHERE ' + ' AND '.join(where) if where else '')
     hits = [dict(zip(FIELDS, r)) for r in c.execute(sql, args)]
+    rules = [dict(r, key=hide_text(r['kind'], r['value'])) for r in hide or () if r.get('kind') in HIDE_KINDS]
     other_unit = 0
     if pay:
         low, high, unit = pay
@@ -329,6 +359,11 @@ def search(c, q='', city=None, direction=None, source=None, fresh=None, limit=50
             return (low is None or h['salary_high'] is None or h['salary_high'] >= low) and \
                    (high is None or h['salary_low'] is None or h['salary_low'] <= high)
         hits = [h for h in hits if paid(h)]
+    hidden = 0
+    for h in hits:
+        h['hidden_by'] = _hidden_by(h, rules)
+        hidden += bool(h['hidden_by'])
+    if not include_hidden: hits = [h for h in hits if not h['hidden_by']]
     folded = [w.casefold() for w in words]
     keyed = {}
     for hit in hits:
@@ -341,7 +376,8 @@ def search(c, q='', city=None, direction=None, source=None, fresh=None, limit=50
         part = keys[start:start + 500]
         for r in c.execute('SELECT %s FROM jobs j WHERE j.group_key IN (%s)' % (ROW, ','.join('?' * len(part))), part):
             member = dict(zip(FIELDS, r))
-            if member['job_id'] not in matched:
+            member['hidden_by'] = _hidden_by(member, rules)
+            if member['job_id'] not in matched and (include_hidden or not member['hidden_by']):
                 keyed[member['group']].append(dict(member, matched=False, title_match=False))
     groups = {}
     for key, members in keyed.items():
@@ -364,8 +400,9 @@ def search(c, q='', city=None, direction=None, source=None, fresh=None, limit=50
     for row in rows: del row['_rank']
     return dict(schema_version=1, query=dict(q=str(q or ''), words=words, city=places, direction=direction, source=source,
                                              fresh=fresh, limit=limit, salary_min=pay and pay[0], salary_max=pay and pay[1],
-                                             salary_unit=salary_unit, salary_known_only=bool(salary_known_only)),
+                                             salary_unit=salary_unit, salary_known_only=bool(salary_known_only),
+                                             include_hidden=bool(include_hidden)),
                 total_groups=len(rows), total_jobs=len(hits), groups=rows[:limit], full_text=fts,
-                salary_unknown=sum(h['salary_status'] != 'ok' for h in hits), salary_other_unit=other_unit,
+                salary_unknown=sum(h['salary_status'] != 'ok' for h in hits), salary_other_unit=other_unit, hidden=hidden,
                 elapsed_ms=round((time.monotonic() - began) * 1000, 1),
                 note='只查本机岗位库；岗位在本机库里的状态，不等于招聘方是否仍在招。')

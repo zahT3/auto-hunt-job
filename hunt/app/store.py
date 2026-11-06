@@ -337,6 +337,9 @@ ACTIONS = {
     'config': lambda s, p: s.save_config(p.get('config',{})),
     'candidate': lambda s, p: s.import_candidate(p.get('candidate')),
     'event': lambda s, p: s.add_event(p),
+    'hide_add': lambda s, p: s.hide_add(p),
+    'hide_remove': lambda s, p: s.hide_remove(p),
+    'hide_list': lambda s, p: s.hide_list(),
 }
-# Read-only actions whose answer is the point: the response carries it as `result` next to the state.
-RESULT_ACTIONS = {'jd_extract', 'job_match', 'nl_query'}
+# Actions whose answer is the point: the response carries it as `result` next to the state.
+RESULT_ACTIONS = {'jd_extract', 'job_match', 'nl_query', 'hide_add', 'hide_remove', 'hide_list'}

@@ -178,6 +178,51 @@ class Search(unittest.TestCase):
             row = c.execute('SELECT salary_status, salary_low, salary_high, salary_unit, salary_months, typeof(salary_low) FROM jobs').fetchone()
         self.assertEqual(tuple(row), ('ok', 8000, 13000, 'month', 13, 'integer'))
 
+    def test_hide_list_hides_by_company_title_or_recruiter_until_asked(self):
+        # Through the action table, before any job exists (these synthetic rows lack the workbench fields state() reads).
+        state = self.store.action(dict(action='hide_add', kind='company', value='外包科技'))
+        self.assertEqual(state['result']['rule']['kind'], 'company')
+        self.store.action(dict(action='hide_add', kind='title', value='销售 方向'))  # spaces and case do not matter
+        self.store.action(dict(action='hide_add', kind='recruiter', value='猎头'))
+        again = self.store.action(dict(action='hide_add', kind='company', value='外包科技有限公司'))['result']
+        self.assertEqual(len(again['rules']), 3)  # the same canonical company is not added twice
+        rules = {r['kind']: r['id'] for r in self.store.action(dict(action='hide_list'))['result']['rules']}
+        self.add(job(1, 'AI 产品经理', '星河外包科技有限公司', '深圳'), job(2, 'AI 产品经理（销售方向）', '甲', '深圳'),
+                 dict(job(3, 'AI 产品经理', '乙', '深圳'), recruiter='王女士 · 猎头顾问'), job(4, 'AI 产品经理', '丙', '深圳'))
+        result = self.store.search_jobs('产品经理')
+        self.assertEqual(([g['company'] for g in result['groups']], result['hidden']), (['丙'], 3))
+        shown = self.store.search_jobs('产品经理', include_hidden=True)
+        self.assertEqual((shown['total_jobs'], shown['hidden']), (4, 3))
+        by = {g['company']: g['sources'][0]['hidden_by'] for g in shown['groups']}
+        self.assertEqual(by, {'星河外包科技有限公司': [rules['company']], '甲': [rules['title']], '乙': [rules['recruiter']], '丙': []})
+        self.store.hide_remove(dict(id=rules['recruiter']))
+        self.assertEqual({g['company'] for g in self.store.search_jobs('产品经理')['groups']}, {'乙', '丙'})
+        for bad in (dict(kind='city', value='深圳'), dict(kind='company', value=' '), dict(kind='title', value='x' * 101)):
+            with self.assertRaises(Error): self.store.hide_add(bad)
+        with self.assertRaises(Error): self.store.hide_remove(dict(id='nope'))
+
+    def test_hidden_jobs_leave_their_groups_too(self):
+        self.add(dict(job(1, 'AI产品经理-抖音电商', '字节跳动', '深圳'), recruiter='猎头 Amy'),
+                 job(2, 'AI产品经理-抖音电商', '字节跳动', '深圳', channel='liepin'))
+        self.store.hide_add(dict(kind='recruiter', value='猎头'))
+        sources = self.store.search_jobs('抖音电商', source='liepin')['groups'][0]['sources']
+        self.assertEqual([s['source'] for s in sources], ['liepin'])
+
+    def test_cli_hide_commands(self):
+        def cli(*args):
+            out = io.StringIO()
+            with contextlib.redirect_stdout(out):
+                code = main(list(args) + ['--data', str(self.store.root)])
+            return code, json.loads(out.getvalue())
+        self.add(job(1, 'AI 产品经理', '星河外包', '深圳'))
+        code, added = cli('hide', 'add', 'company', '外包')
+        self.assertEqual((code, added['rule']['value']), (0, '外包'))
+        self.assertEqual(cli('search', '产品经理', '--json')[1]['hidden'], 1)
+        self.assertEqual(cli('search', '产品经理', '--include-hidden', '--json')[1]['total_groups'], 1)
+        self.assertEqual(cli('hide', 'list')[1]['rules'], added['rules'])
+        self.assertEqual(cli('hide', 'remove', added['rule']['id'])[1]['rules'], [])
+        self.assertEqual(cli('hide', 'remove', 'nope'), (1, dict(schema_version=1, error='没有这条规则')))
+
     def test_city_takes_a_list_and_any_city_matches(self):
         self.add(job(1, 'AI 产品经理', '甲', '深圳'), job(2, 'AI 产品经理', '乙', '杭州'), job(3, 'AI 产品经理', '丙', '上海'),
                  job(4, 'AI 产品经理', '丁', '北京/杭州'))
@@ -283,7 +328,7 @@ class LibraryOf1500(unittest.TestCase):
                                                      'first_seen', 'last_seen', 'sources'})
         self.assertEqual(set(result['groups'][0]['sources'][0]), {'job_id', 'source', 'source_id', 'platform_id', 'direction',
                                                                    'first_seen', 'last_seen', 'status', 'url', 'application_url',
-                                                                   'salary', 'location', 'matched', 'salary_parsed'})
+                                                                   'salary', 'location', 'recruiter', 'matched', 'hidden_by', 'salary_parsed'})
 
     def test_cli_city_repeats(self):
         out = io.StringIO()
@@ -389,6 +434,12 @@ class WebSearch(unittest.TestCase):
         status, body = self.get('/api/search?q=' + quote('产品经理') + '&city=' + quote('深圳') + '&city=' + quote('杭州') + '&city=')
         self.assertEqual((status, {g['company'] for g in body['groups']}, body['query']['city']), (200, {'甲', '乙'}, ['深圳', '杭州']))
         self.assertEqual(self.get('/api/search?' + '&'.join('city=c%d' % n for n in range(11)))[0], 400)
+
+    def test_get_search_include_hidden(self):
+        self.store.hide_add(dict(kind='company', value='甲'))
+        self.assertEqual(self.get('/api/search')[1]['hidden'], 1)
+        body = self.get('/api/search?include_hidden=1')[1]
+        self.assertEqual((body['total_jobs'], len(body['groups'][0]['sources'][0]['hidden_by'])), (1, 1))
 
     def test_get_search_takes_salary_bounds(self):
         status, body = self.get('/api/search?salary_min=20k&salary_max=' + quote('3万') + '&salary_known_only=1')

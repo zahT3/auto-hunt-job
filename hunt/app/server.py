@@ -61,7 +61,8 @@ def make_server(store, port=8766):
                                                            source=query.get('source') or None,fresh=number('fresh'),limit=number('limit',50),
                                                            salary_min=query.get('salary_min') or None,salary_max=query.get('salary_max') or None,
                                                            salary_unit=query.get('salary_unit') or 'month',
-                                                           salary_known_only=query.get('salary_known_only') in ('1','true')))
+                                                           salary_known_only=query.get('salary_known_only') in ('1','true'),
+                                                           include_hidden=query.get('include_hidden') in ('1','true')))
                 except (Error,ValueError) as e: return self.send(400,{'error':str(e)})
             if path.startswith('/api/file/'):
                 bits=path.split('/')
