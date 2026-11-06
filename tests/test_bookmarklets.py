@@ -211,3 +211,159 @@ class PageCase(unittest.TestCase):
 
 if __name__ == '__main__':
     unittest.main()
+
+
+# A stand-in for BOSS's list page: a Vue-2-like component on the list container, whose jobList and jobDetail are
+# reactive properties proxied onto the instance the way Vue 2 does it. userOpens / userTurnsPage stand for the
+# page's own handlers running after the user clicks a card or the pager; the bookmarklet never calls them.
+VUE_FIXTURE = '''<!doctype html><html><head><meta charset="utf-8"><title>Python 岗位 - BOSS直聘</title></head><body>
+<div id="wrap"><div class="page-job-wrapper"><ul class="job-list"><li class="job-card">合成卡片</li></ul></div></div>
+<script>
+const item = (n, extra) => Object.assign({encryptJobId: 'job' + n, securityId: 'sec' + n, lid: 'lid' + n,
+  jobName: '合成岗位 ' + n, salaryDesc: '20-30K', brandName: '合成公司 ' + n, cityName: '上海', areaDistrict: '浦东新区',
+  jobExperience: '3-5年', jobDegree: '本科', skills: ['Python', 'SQL'], goldHunter: n === 2 ? 1 : 0,
+  lastModifyTime: 1762300000000 + n, bossName: '招聘者' + n, bossTitle: 'HR', bossOnline: true}, extra || {});
+const PAGE1 = [item(1), item(2), item(3)], PAGE2 = [item(4), item(5)];
+const detail = (n) => ({lid: 'lid' + n, securityId: 'sec' + n,
+  jobInfo: {encryptId: 'job' + n, jobName: '合成岗位 ' + n, salaryDesc: '20-30K', experienceName: '3-5年', degreeName: '本科',
+    locationName: '上海', showSkills: ['Python'], postDescription: '岗位职责：负责合成岗位 ' + n + ' 的后端开发。任职要求：熟悉 Python。'},
+  bossInfo: {name: '招聘者' + n, title: 'HR', activeTimeDesc: '本周活跃'}, brandComInfo: {brandName: '合成公司 ' + n}});
+function component(data) {
+  const vm = {_data: data};
+  for (const key of Object.keys(data))
+    Object.defineProperty(vm, key, {configurable: true, enumerable: true,
+      get() { return this._data[key]; }, set(v) { this._data[key] = v; }});
+  return vm;
+}
+const vm = component({jobList: PAGE1, jobDetail: {}});
+document.querySelector('.page-job-wrapper').__vue__ = vm;
+window.userOpens = (n) => { vm.jobDetail = detail(n); };
+window.userTurnsPage = () => { vm.jobList = PAGE2; };
+</script></body></html>'''
+
+# The old page shape, with no component data at all: the bookmarklet must fall back to reading the page text.
+DOM_FIXTURE = '''<!doctype html><html><head><meta charset="utf-8"><title>合成后端工程师 - BOSS直聘</title></head><body>
+<div class="job-banner"><div class="name"><h1>合成后端工程师</h1></div><span class="salary">25-35K</span>
+<div class="company-info"><a class="name">合成文字公司</a></div></div>
+<div class="job-detail-section">岗位职责：维护合成服务。任职要求：熟悉 Go。</div></body></html>'''
+
+
+class BossVueFixtureTests(unittest.TestCase):
+    """The BOSS bookmarklet in a real browser against synthetic pages served as https://www.zhipin.com."""
+
+    @classmethod
+    def setUpClass(cls):
+        try:
+            from playwright.sync_api import sync_playwright
+            cls.runtime = sync_playwright().start()
+            # A real user's Chrome asks once before a site may reach 127.0.0.1 (Local Network Access); a test cannot
+            # answer that prompt, so the check is switched off here.
+            cls.browser = cls.runtime.chromium.launch(headless=True, args=['--disable-features=LocalNetworkAccessChecks'])
+        except Exception as exc:
+            if hasattr(cls, 'runtime'): cls.runtime.stop()
+            raise unittest.SkipTest('Browser fixture unavailable: ' + str(exc))
+
+    @classmethod
+    def tearDownClass(cls):
+        cls.browser.close()
+        cls.runtime.stop()
+
+    def setUp(self):
+        self.temp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.temp.cleanup)
+        self.store = Store(Path(self.temp.name) / 'app')
+        self.server = make_server(self.store, 0)
+        threading.Thread(target=self.server.serve_forever, daemon=True).start()
+        self.addCleanup(self.server.server_close)
+        self.addCleanup(self.server.shutdown)
+        self.code = unquote(bookmarklets.render('boss-zhipin', 'http://127.0.0.1:%d/api/inbox' % self.server.server_port,
+                                                self.store.inbox_token()))[len('javascript:'):]
+        self.requests = []
+
+    def open(self, html):
+        context = self.browser.new_context(service_workers='block')
+        self.addCleanup(context.close)
+        # Only the fixture page is served for zhipin.com; any other zhipin.com request (an API call) is recorded and refused.
+        def route(r):
+            if r.request.url == BOSS + '/web/geek/job?query=python': r.fulfill(status=200, content_type='text/html; charset=utf-8', body=html)
+            else:
+                self.requests.append(r.request.url)
+                r.abort()
+        context.route(BOSS + '/**', route)
+        page = context.new_page()
+        page.goto(BOSS + '/web/geek/job?query=python')
+        return page
+
+    def jobs(self):
+        return {j['url']: j for j in self.store.state()['jobs']}
+
+    def wait_for(self, page, test):
+        for _ in range(50):
+            if test(): return
+            page.wait_for_timeout(100)
+        self.fail('timed out')
+
+    def toast(self, page):
+        return page.evaluate("document.getElementById('__hunt_toast') && document.getElementById('__hunt_toast').textContent") or ''
+
+    def test_list_mode_sends_the_whole_page_as_list_only_records(self):
+        page = self.open(VUE_FIXTURE)
+        page.evaluate(self.code)
+        self.wait_for(page, lambda: len(self.jobs()) == 3)
+        jobs = self.jobs()
+        job = jobs[BOSS + '/job_detail/job2.html']
+        self.assertEqual((job['title'], job['company'], job['salary'], job['experience']), ('合成岗位 2', '合成公司 2', '20-30K', '3-5年'))
+        self.assertIs(job['raw']['summary_only'], True)
+        self.assertEqual(job['raw']['capture'], 'list')
+        self.assertEqual(job['raw']['structured']['goldHunter'], 1)
+        self.assertEqual(job['raw']['source_modified'], dict(field='lastModifyTime', value=1762300000002))
+        self.assertIsNone(job['published_at'])
+        self.assertIn('不含职位描述', job['jd'])
+        self.assertNotIn('招聘者', json.dumps(self.store.state()['jobs'], ensure_ascii=False))
+        self.wait_for(page, lambda: '本页 3 个岗位' in self.toast(page))
+        self.assertEqual(self.requests, [])
+
+    def test_the_users_own_card_click_and_page_turn_are_received_passively(self):
+        page = self.open(VUE_FIXTURE)
+        page.evaluate(self.code)
+        self.wait_for(page, lambda: len(self.jobs()) == 3)
+        page.evaluate('userOpens(1)')
+        self.wait_for(page, lambda: '负责合成岗位 1' in self.jobs()[BOSS + '/job_detail/job1.html']['jd'])
+        job = self.jobs()[BOSS + '/job_detail/job1.html']
+        self.assertNotIn('summary_only', job['raw'])
+        self.assertEqual(job['raw']['structured']['bossActiveTimeDesc'], '本周活跃')
+        self.assertEqual(len(self.jobs()), 3)
+        page.evaluate('userTurnsPage()')
+        self.wait_for(page, lambda: len(self.jobs()) == 5)
+        page.evaluate('userOpens(5)')
+        self.wait_for(page, lambda: '负责合成岗位 5' in self.jobs()[BOSS + '/job_detail/job5.html']['jd'])
+        # The page's own data still works after the hooks: the component reads back what was assigned.
+        self.assertEqual(page.evaluate("document.querySelector('.page-job-wrapper').__vue__.jobDetail.jobInfo.encryptId"), 'job5')
+        self.assertEqual(self.requests, [])
+
+    def test_without_page_data_it_falls_back_to_the_page_text_and_says_so(self):
+        page = self.open(DOM_FIXTURE)
+        page.evaluate(self.code)
+        self.wait_for(page, lambda: len(self.jobs()) == 1)
+        [job] = self.jobs().values()
+        self.assertEqual(job['title'], '合成后端工程师')
+        self.assertIn('维护合成服务', job['jd'])
+        self.wait_for(page, lambda: '已改用页面文字读取' in self.toast(page))
+
+    def test_a_list_that_does_not_match_falls_back_too(self):
+        page = self.open(VUE_FIXTURE.replace("encryptJobId: 'job' + n", "jobId: 'job' + n"))
+        page.evaluate(self.code)
+        self.wait_for(page, lambda: '已改用页面文字读取' in self.toast(page))
+        self.assertTrue(all('/job_detail/' not in url for url in self.jobs()))
+
+
+class BossRedLineTests(unittest.TestCase):
+    """What the BOSS bookmarklet must never do, checked on the built code (comments stripped)."""
+
+    def test_no_clicks_page_turns_polling_api_calls_or_cookies(self):
+        code = unquote(bookmarklets.build('boss-zhipin'))
+        for forbidden in ('clickJobCardAction', 'pageChange', '/wapi', 'document.cookie', 'setInterval', '.click(',
+                          'dispatchEvent', 'XMLHttpRequest', 'bossName', 'bossOnline', 'bossTitle'):
+            with self.subTest(forbidden=forbidden):
+                self.assertNotIn(forbidden, code)
+        self.assertEqual(code.count('fetch('), 1)  # the one POST to the local inbox, in the shared prelude
