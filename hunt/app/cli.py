@@ -73,6 +73,15 @@ def parser():
         commands.add_parser(name, help=help_text, add_help=False)
     catalog = commands.add_parser('catalog', help='列出支持的公司官网和标识')
     catalog.add_argument('--json', action='store_true')
+    acs = commands.add_parser('acs', help='预览或导入 ACS 离线提取的职位正文',
+                              description='将 ACS 离线提取结果交给求职项目，默认只预览')
+    acs.add_argument('--result', type=Path, required=True, help='acs extract 输出的 JSON')
+    acs.add_argument('--html', type=Path, required=True, help='明确指定原始 HTML，用于哈希核对')
+    acs.add_argument('--title', required=True, help='已从正文核对的岗位名称')
+    acs.add_argument('--company', required=True, help='已从正文核对的公司名称')
+    acs.add_argument('--location', help='已从正文核对的地点，未知则不提供')
+    acs.add_argument('--fetched-at', help='有证据的网页获取时间，ISO 8601 带时区')
+    acs.add_argument('--data', type=Path, help='明确提供才导入这个求职数据目录；省略时不写库')
     seeds = commands.add_parser('companies', help='列出大范围搜索将扫描的公司')
     seeds.add_argument('--terms', nargs='+', default=[], metavar='TERM', help='搜索词，用于给公司排序')
     seeds.add_argument('--limit', type=int, default=300, help='最多列出的公司数，默认 300')
@@ -144,6 +153,29 @@ def parser():
         command.add_argument('--json', action='store_true', help='保留参数；本组命令总是输出 JSON')
         command.set_defaults(json=True)
     return result
+
+
+def acs_command(args):
+    from ..search.sources.acs import build_job
+    try:
+        job = build_job(args.result, args.html, title=args.title, company=args.company,
+                        location=args.location, fetched_at=args.fetched_at)
+        if args.data is None:
+            response = dict(status='preview', job=job)
+        else:
+            store = Store(args.data)
+            try:
+                saved, duplicate = store.import_job(job)
+                response = dict(status='imported', job_id=saved['id'], duplicate=duplicate,
+                                availability=saved['availability'], application_status=saved['status'],
+                                data_dir=str(args.data.resolve()))
+            finally:
+                store.prepare_pool.shutdown(wait=True)
+        print(json.dumps(response, ensure_ascii=False, indent=2))
+        return 0
+    except (OSError, ValueError, TypeError) as error:
+        print(json.dumps(dict(status='failed', error=str(error)), ensure_ascii=False), file=sys.stderr)
+        return 1
 
 
 def read_json(path):
@@ -286,6 +318,8 @@ def main(argv=None):
     if arguments and arguments[0] in FORWARD:
         return dispatch(arguments[0], arguments[1:])
     args = parser().parse_args(arguments)
+    if args.command == 'acs':
+        return acs_command(args)
     try:
         if args.command == 'catalog':
             result = dict(schema_version=1, companies=CATALOG)
