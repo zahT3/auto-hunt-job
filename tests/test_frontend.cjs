@@ -572,6 +572,13 @@ test('the three ATS steps keep 不知道 apart from 不符合, count rows and es
  assert.match(html,/class="fact pending"[^>]*>f7</);assert.match(html,/定位原文/);
  assert.doesNotMatch(html,/<Go>|<b>/);assert.match(html,/不打分&lt;b&gt;/);
 });
+test('an empty step 3 shows the escaped evidence_note, or a default when it is missing',()=>{
+ const h=harness();h.state({candidate:{facts:[]}});
+ const withNote=h.run(`verdictHtml(${JSON.stringify({...MATCH,evidence:[],evidence_note:'原文没有<b>职责</b>小节'})})`);
+ assert.match(withNote,/<p class="note">原文没有&lt;b&gt;职责&lt;\/b&gt;小节<\/p>/);assert.doesNotMatch(withNote,/<b>职责/);
+ assert.match(h.run(`verdictHtml(${JSON.stringify({...MATCH,evidence:[]})})`),/<p class="note">原文里没有职责小节。<\/p>/);
+ assert.doesNotMatch(h.run(`verdictHtml(${JSON.stringify(MATCH)})`),/原文里没有职责小节/);
+});
 test('JD marks never nest, escape the text and put each note beside its paragraph',()=>{
  const h=harness();h.state({candidate:{facts:[]}});
  const html=h.run(`jdHtml({jd:'任职要求\\n3 年以上 <Go> 开发经验，熟悉 Kafka。\\n英语六级优先'},${JSON.stringify(MATCH)})`);

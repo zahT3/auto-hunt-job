@@ -155,7 +155,7 @@ export function verdictHtml(m) {
     `<p class="legend"><span><span class="hl">黄底</span> 有原词</span><span><mark class="ev ev-kw-related">虚线</mark> 只有相近说法</span>` +
     `<span><mark class="ev ev-kw-absent">波浪线</mark> 没有</span></p></section>` +
     `<section aria-labelledby="v3"><p class="step"><span id="v3">第 3 步 事实证据</span><span>最后才有人读</span></p>` +
-    `<p class="score">${count(m.evidence, (r) => items(r.fact_ids).length)}</p><ul>${evidence}</ul>` +
+    `<p class="score">${count(m.evidence, (r) => items(r.fact_ids).length)}</p><ul>${evidence}</ul>${empty(m.evidence, esc(m.evidence_note || "原文里没有职责小节。"))}` +
     `<p class="note">${esc(m.notice || "")}${m.notice ? "。" : ""}</p></section></div>`
   );
 }
