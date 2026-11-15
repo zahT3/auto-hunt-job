@@ -9,6 +9,10 @@ from .ats import read_board
 from .catalog import lookup
 
 
+# The page script moved from .../assistance/openings/<hash>.js to .../assistance/assets/openings-<hash>.js (observed 2026-11-16).
+OKX_SCRIPT = re.compile(r'/assistance/(?:openings/|assets/openings-[\w-]+\.js)')
+
+
 def embedded_json(script):
     # Decode a literal passed to JSON.parse; no JavaScript interpreter or eval.
     for m in re.finditer(r"JSON\.parse\('((?:\\.|[^'\\])*)'\)", script):
@@ -16,9 +20,10 @@ def embedded_json(script):
             token = match[1]
             if token == "'": return "'"
             if token in ('\n', '\r\n'): return ''
+            if token[0] == 'x' and len(token) == 3: return chr(int(token[1:], 16))  # JS \xHH, which JSON lacks
             return json.loads('"\\' + token + '"')
         try:
-            text = re.sub(r'\\(u[0-9a-fA-F]{4}|\r\n|.|\n)', escape, m[1])
+            text = re.sub(r'\\(u[0-9a-fA-F]{4}|x[0-9a-fA-F]{2}|\r\n|.|\n)', escape, m[1])
             data = json.loads(text)
         except (ValueError, TypeError): continue
         if isinstance(data, dict) and isinstance(data.get('jobs'), list): return data
@@ -86,7 +91,7 @@ def read_jobs(source, read, terms, limit, pages, report, renderer=None):
             rows.append(job)
         yield from emit(rows)
     elif name == 'okx':
-        resources = [u for u in scripts(html, url) if urlsplit(u).hostname == 'www.okx.com' and '/assistance/openings/' in u]
+        resources = [u for u in scripts(html, url) if urlsplit(u).hostname == 'www.okx.com' and OKX_SCRIPT.search(u)]
         if not resources: raise SourceError('parse_error', 'OKX 招聘脚本引用已变化')
         script = read(resources[0]).decode('utf-8'); report['pages'] += 1
         match = re.search(r'https://boards\.greenhouse\.io/([A-Za-z0-9_-]+)/jobs/', script)
