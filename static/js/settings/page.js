@@ -3,11 +3,13 @@
 import { action } from "../shared/api.js";
 import { $, esc, items, motionBehavior, replaceContent } from "../shared/dom.js";
 import { toast } from "../shared/feedback.js";
+import { hideRules, loadHideRules, removeHideRule } from "../shared/hide.js";
 import { sourceName } from "../shared/names.js";
 import { state } from "../shared/state.js";
 import { clock, monthDay } from "../shared/time.js";
 import { stateWord } from "../shared/ui.js";
 import { go, registerPage, setReturnTarget } from "../shell/router.js";
+import { hideRuleText } from "../search/model.js";
 import { openTargetSettings } from "../workbench/settings.js";
 
 export const CONSENT_KINDS = [
@@ -132,6 +134,24 @@ function sourcesSection() {
   );
 }
 
+export function hideSection() {
+  const rows = hideRules
+    .map(
+      (r) =>
+        `<li><span class="rule">${esc(hideRuleText(r))}</span><span class="n">${esc(monthDay(r.added_at))}加入</span>` +
+        `<button class="btn" type="button" data-hide-remove="${esc(r.id)}" aria-label="删除规则：${esc(hideRuleText(r))}">删除</button></li>`,
+    )
+    .join("");
+  return (
+    `<section id="s-hide" aria-labelledby="h-hide"><h2 id="h-hide" tabindex="-1">不想看清单</h2>` +
+    `<p class="lead">命中规则的岗位不出现在搜索结果里。规则只由你在搜索页手动加入，不会自动拉黑；删除后立即恢复显示。</p>` +
+    (rows
+      ? `<ul class="hide-list">${rows}</ul>`
+      : `<p class="help">清单是空的。在搜索结果里点「不想看这家公司」或「不想看这个岗位名」会加到这里。</p>`) +
+    `</section>`
+  );
+}
+
 function workbenchSection() {
   return (
     `<section id="s-wb" aria-labelledby="h-wb"><h2 id="h-wb" tabindex="-1">资料与工作台</h2>` +
@@ -154,11 +174,12 @@ export function settingsHtml() {
       ["s-ai", "AI 服务"],
       ["s-consent", "发送同意"],
       ["s-src", "来源"],
+      ["s-hide", "不想看清单"],
       ["s-wb", "资料与工作台"],
     ]
       .map(([id, t]) => `<a href="#/settings" data-jump="${id}">${t}</a>`)
       .join("") +
-    `</nav><div>${aiSection()}${consentSection()}${sourcesSection()}${workbenchSection()}</div></div></div>`
+    `</nav><div>${aiSection()}${consentSection()}${sourcesSection()}${hideSection()}${workbenchSection()}</div></div></div>`
   );
 }
 
@@ -224,7 +245,15 @@ async function saveSources(kind, on) {
     toast(`${sourceName(kind)}已${on ? "启用" : "停用"}，下一轮搜索生效。`);
 }
 
-registerPage("settings", { title: "设置", render: renderSettingsPage });
+registerPage("settings", {
+  title: "设置",
+  render: renderSettingsPage,
+  enter() {
+    loadHideRules()
+      .then(renderSettingsPage)
+      .catch(() => {});
+  },
+});
 
 document.addEventListener("submit", (e) => {
   if (e.target.id === "ai-form") {
@@ -248,6 +277,17 @@ document.addEventListener("click", (e) => {
     const section = $(`#${jump.dataset.jump}`);
     section?.scrollIntoView({ behavior: motionBehavior() });
     section?.querySelector("h2")?.focus({ preventScroll: true });
+    return;
+  }
+  const drop = e.target.closest("[data-hide-remove]");
+  if (drop) {
+    removeHideRule(drop.dataset.hideRemove)
+      .then(() => {
+        renderSettingsPage();
+        toast("已从不想看清单删除，相关岗位会重新出现在搜索里。");
+        ($("#h-hide") || $("#page-title"))?.focus({ preventScroll: true });
+      })
+      .catch((err) => toast(err.message || "没有删除。"));
     return;
   }
   const act = e.target.closest("[data-act]")?.dataset.act;
