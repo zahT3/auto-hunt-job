@@ -599,6 +599,107 @@ mark.ev.on {
   color: var(--ink-3);
   font-size: var(--fs-xs);
 }
+.resultmeta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 16px;
+  align-items: baseline;
+  margin-top: 6px;
+  color: var(--ink-2);
+  font-size: var(--fs-s);
+}
+.resultmeta .chk {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 28px;
+  cursor: pointer;
+  color: var(--ink);
+}
+#meta-notes {
+  display: contents;
+}
+.filter .menu.menu-pay {
+  display: grid;
+  grid-template-columns: auto 9em;
+  gap: 8px 10px;
+  align-items: center;
+  padding: 10px;
+}
+.menu-pay label {
+  padding: 0;
+}
+.menu-pay label:hover {
+  background: none;
+}
+.menu-pay input {
+  height: 32px;
+  border: 1px solid var(--rule-2);
+  border-radius: var(--r2);
+  padding: 0 8px;
+  background: var(--paper);
+}
+.menu-pay input[aria-invalid] {
+  border-color: var(--bad);
+}
+.pay-err {
+  grid-column: 1 / -1;
+  color: var(--bad);
+  font-size: var(--fs-s);
+  white-space: normal;
+}
+.pay-act {
+  grid-column: 1 / -1;
+  display: flex;
+  gap: 8px;
+}
+.g-tools {
+  display: flex;
+  gap: 14px;
+  margin-top: 6px;
+  font-size: var(--fs-xs);
+}
+.g-tools .linkish {
+  color: var(--ink-3);
+}
+.g-tools .linkish:hover,
+.g-tools .linkish:focus-visible {
+  color: var(--ink);
+}
+.group.is-hidden {
+  background: var(--wash);
+}
+.hidden-by {
+  margin-top: 6px;
+  color: var(--warn);
+  font-size: var(--fs-s);
+}
+.hide-list {
+  list-style: none;
+  margin-top: 12px;
+  border: 1px solid var(--rule);
+  border-radius: var(--r3);
+}
+.hide-list li {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 8px 12px;
+  border-bottom: 1px solid var(--rule);
+}
+.hide-list li:last-child {
+  border-bottom: 0;
+}
+.hide-list .rule {
+  flex: 1;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.hide-list .n {
+  color: var(--ink-3);
+  font-size: var(--fs-s);
+  white-space: nowrap;
+}
 .results {
   overflow: auto;
   flex: 1;

@@ -14,7 +14,95 @@ export const FRESH = [
 export const LIMIT = 100;
 
 export function defaultQuery() {
-  return { q: "", city: null, direction: null, source: null, fresh: 7 };
+  return {
+    q: "",
+    city: null,
+    direction: null,
+    source: null,
+    fresh: 7,
+    salaryMin: "",
+    salaryMax: "",
+    knownOnly: false,
+    includeHidden: false,
+  };
+}
+
+// A salary bound as a person types it: 15000, 15k, 1.5万. The same forms and range as the server's parse_amount, so a
+// typo is told here instead of as a 400. Returns {value} (null when empty) or {error}.
+export function parseSalary(text) {
+  const t = String(text ?? "")
+    .normalize("NFKC")
+    .trim()
+    .toLowerCase();
+  if (!t) return { value: null };
+  const m = /^(\d+(?:\.\d+)?)\s*(k|千|w|万)?$/.exec(t);
+  if (!m) return { error: "薪资须是数字，例如 15000、15k、1.5万" };
+  const amount = Number(m[1]) * ({ k: 1000, 千: 1000, w: 10000, 万: 10000 }[m[2]] || 1);
+  if (amount > 1e8) return { error: "薪资超出范围" };
+  return { value: Math.round(amount) };
+}
+
+// Both bounds, or the first error. A min above the max can match nothing, so it is an error too.
+export function salaryBounds(query) {
+  const lo = parseSalary(query.salaryMin);
+  const hi = parseSalary(query.salaryMax);
+  if (lo.error) return { error: `最低：${lo.error}` };
+  if (hi.error) return { error: `最高：${hi.error}` };
+  if (lo.value != null && hi.value != null && lo.value > hi.value)
+    return { error: "最低不能高于最高" };
+  return { min: lo.value, max: hi.value };
+}
+
+// 15000 -> "1.5 万", 20000 -> "2 万", 8500 -> "8500 元".
+export function moneyText(n) {
+  if (n >= 10000) return `${Number((n / 10000).toFixed(2))} 万`;
+  return `${n} 元`;
+}
+
+// "月薪 1.5 万以上", "月薪 2 万以下", "月薪 1.5 万至 2.5 万"; "" when no bound is set or one is invalid.
+export function salaryPhrase(query) {
+  const b = salaryBounds(query);
+  if (b.error || (b.min == null && b.max == null)) return "";
+  if (b.min != null && b.max != null)
+    return b.min === b.max
+      ? `月薪 ${moneyText(b.min)}`
+      : `月薪 ${moneyText(b.min)}至 ${moneyText(b.max)}`;
+  return b.min != null ? `月薪 ${moneyText(b.min)}以上` : `月薪 ${moneyText(b.max)}以下`;
+}
+
+export const salaryActive = (query) => {
+  const b = salaryBounds(query);
+  return !b.error && (b.min != null || b.max != null);
+};
+
+// What the results header says about jobs the salary filter could not judge or left out.
+export function salaryNotes(query, result) {
+  const notes = [];
+  const unknown = result?.salary_unknown || 0;
+  const other = result?.salary_other_unit || 0;
+  if (query.knownOnly) notes.push("没写或读不懂薪资的岗位已去掉");
+  else if (salaryActive(query) && unknown)
+    notes.push(`${unknown} 条没写或读不懂薪资，仍保留`);
+  if (salaryActive(query) && other) notes.push(`${other} 条按日薪或年薪，未参与比较`);
+  return notes;
+}
+
+export const hiddenText = (n) => `已隐藏 ${n} 条`;
+
+export const HIDE_KIND = { company: "公司", title: "岗位名", recruiter: "招聘者" };
+export const hideRuleText = (rule) =>
+  `${HIDE_KIND[rule?.kind] || "内容"}含「${String(rule?.value ?? "")}」`;
+
+// The text a hide rule stores for a group: the whole company name or the whole title; null when the group has none.
+export function hideValue(group, kind) {
+  const v = String((kind === "company" ? group?.company : group?.title) ?? "").trim();
+  return v ? v.slice(0, 100) : null;
+}
+
+// The rules that hid a group, from the ids on its sources.
+export function hiddenByRules(group, rules) {
+  const ids = new Set(items(group?.sources).flatMap((s) => items(s.hidden_by)));
+  return items(rules).filter((r) => ids.has(r.id));
 }
 
 // Empty values are left out; city is one value in the UI but the parameter may repeat.
@@ -24,6 +112,11 @@ export function searchParams(query, { withFresh = true } = {}) {
   for (const city of query.city ? [query.city] : []) p.append("city", city);
   if (query.direction) p.set("direction", query.direction);
   if (query.source) p.set("source", query.source);
+  const pay = salaryBounds(query);
+  if (pay.min != null) p.set("salary_min", String(pay.min));
+  if (pay.max != null) p.set("salary_max", String(pay.max));
+  if (query.knownOnly) p.set("salary_known_only", "1");
+  if (query.includeHidden) p.set("include_hidden", "1");
   if (withFresh && query.fresh) p.set("fresh", String(query.fresh));
   p.set("limit", String(LIMIT));
   return p.toString();
@@ -79,6 +172,7 @@ export function sentenceParts(query, result, hidden) {
   );
   const when = query.fresh ? `只看${freshLabel(query.fresh)}搜到过、仍在列表的` : "不限时间";
   return {
+    salary: salaryPhrase(query),
     city: query.city || "所有城市",
     direction: query.direction ? directionName(query.direction) : "所有方向",
     words: query.q.trim(),

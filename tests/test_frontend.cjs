@@ -464,6 +464,56 @@ test('search params leave out empty filters, repeat city, and drop fresh for the
  assert.equal(h.run(`searchParams({q:'  Go 支付 ',city:'上海',direction:'backend',source:'feishu',fresh:7})`),'q=Go+%E6%94%AF%E4%BB%98&city=%E4%B8%8A%E6%B5%B7&direction=backend&source=feishu&fresh=7&limit=100');
  assert.equal(h.run(`searchParams({q:'',city:null,direction:null,source:null,fresh:7},{withFresh:false})`),'limit=100');
 });
+test('salary bounds are parsed like the server does and wrong input is explained',()=>{
+ const h=harness();const p=v=>JSON.parse(h.run(`JSON.stringify(parseSalary(${JSON.stringify(v)}))`));
+ assert.deepEqual(p('15000'),{value:15000});assert.deepEqual(p(' 15k '),{value:15000});assert.deepEqual(p('1.5万'),{value:15000});
+ assert.deepEqual(p('１５Ｋ'),{value:15000});assert.deepEqual(p(''),{value:null});assert.deepEqual(p(null),{value:null});
+ for(const bad of ['abc','15-25k','-5','1.5.5万','k','15 000'])assert.match(p(bad).error,/薪资须是数字，例如 15000、15k、1.5万/,bad);
+ assert.match(p('999999999').error,/超出范围/);
+ const b=(lo,hi)=>JSON.parse(h.run(`JSON.stringify(salaryBounds({salaryMin:${JSON.stringify(lo)},salaryMax:${JSON.stringify(hi)}}))`));
+ assert.deepEqual(b('1.5万',''),{min:15000,max:null});assert.match(b('x','').error,/^最低：/);assert.match(b('','y').error,/^最高：/);
+ assert.equal(b('3万','2万').error,'最低不能高于最高');
+});
+test('filters go into the URL as canonical numbers and flags, and an invalid bound is not sent',()=>{
+ const h=harness();const q=extra=>`searchParams(Object.assign(defaultQuery(),{fresh:null},${JSON.stringify(extra)}))`;
+ assert.equal(h.run(q({})),'limit=100');
+ assert.equal(h.run(q({salaryMin:'1.5万',salaryMax:'25k',knownOnly:true,includeHidden:true})),'salary_min=15000&salary_max=25000&salary_known_only=1&include_hidden=1&limit=100');
+ assert.equal(h.run(q({salaryMin:'abc'})),'limit=100');
+ assert.equal(h.run(q({salaryMin:'3万',salaryMax:'2万'})),'limit=100');
+});
+test('the sentence writes the salary filter out and the header counts what was left out',()=>{
+ const h=harness();const ph=(lo,hi)=>h.run(`salaryPhrase({salaryMin:'${lo}',salaryMax:'${hi}'})`);
+ assert.equal(ph('15000',''),'月薪 1.5 万以上');assert.equal(ph('','2万'),'月薪 2 万以下');assert.equal(ph('1.5万','2.5万'),'月薪 1.5 万至 2.5 万');
+ assert.equal(ph('8500',''),'月薪 8500 元以上');assert.equal(ph('',''),'');assert.equal(ph('x',''),'');
+ h.state({});h.run(`searchQuery.salaryMin='15k';searchData={total_groups:0,groups:[],salary_unknown:3,salary_other_unit:2,hidden:0}`);
+ assert.match(h.run('sentenceHtml()'),/看 <b>全部来源<\/b>，<b>月薪 1.5 万以上<\/b>，只看最近 7 天/);
+ assert.equal(h.run('metaNotesHtml()'),'<span>3 条没写或读不懂薪资，仍保留</span><span>2 条按日薪或年薪，未参与比较</span>');
+ h.run(`searchQuery.knownOnly=true`);assert.match(h.run('metaNotesHtml()'),/没写或读不懂薪资的岗位已去掉/);assert.doesNotMatch(h.run('metaNotesHtml()'),/仍保留/);
+ h.run(`searchQuery.salaryMin='';searchQuery.knownOnly=false`);assert.equal(h.run('metaNotesHtml()'),'');
+});
+test('the hidden count offers 查看 and, once shown, a way back; hide rules are escaped',()=>{
+ const h=harness();h.state({});
+ h.run(`searchData={groups:[],hidden:2}`);
+ assert.equal(h.run('metaNotesHtml()'),'<span>已隐藏 2 条 · <button type="button" class="linkish" data-act="show-hidden">查看</button></span>');
+ h.run(`searchQuery.includeHidden=true`);assert.match(h.run('metaNotesHtml()'),/下面包含被隐藏的 2 条 · <button[^>]*data-act="hide-hidden">重新隐藏/);
+ h.run(`searchQuery.includeHidden=false;searchData={groups:[],hidden:0}`);assert.equal(h.run('metaNotesHtml()'),'');
+ const g={group:'g"1',title:'<b>后端</b>',company:'A&B <公司>',sources:[{source:'feishu',status:'open',first_seen:'2026-10-01T01:00:00Z',last_seen:'2026-10-17T01:00:00Z',hidden_by:['h1']}]};
+ const row=h.run(`groupHtml(${JSON.stringify(g)})`);
+ assert.doesNotMatch(row,/<b>后端|<公司>/);
+ assert.match(row,/data-act="hide" data-kind="company" data-id="g&quot;1" aria-label="不想看这家公司：A&amp;B &lt;公司&gt;"/);
+ assert.match(row,/data-kind="title"[^>]*>不想看这个岗位名/);assert.match(row,/class="group open is-hidden"/);assert.match(row,/规则已不在清单里/);
+ assert.equal(h.run(`hideValue({company:'  ',title:'x'},'company')`),null);assert.equal(h.run(`hideValue({title:'${'长'.repeat(120)}'},'title').length`),100);
+ assert.equal(h.run(`hideRuleText({kind:'company',value:'<外包>'})`),'公司含「<外包>」');
+ assert.equal(h.run(`JSON.stringify(hiddenByRules(${JSON.stringify(g)},[{id:'h1',kind:'title',value:'后端'},{id:'h2',kind:'company',value:'x'}]).map(r=>r.id))`),'["h1"]');
+});
+test('the settings page lists the hide rules with a delete button and says nothing is added automatically',()=>{
+ const h=harness();h.state({});
+ assert.match(h.run('hideSection()'),/清单是空的/);assert.match(h.run('hideSection()'),/不会自动拉黑/);
+ h.run(`hideRules.push({id:'h"1',kind:'company',value:'<外包>',added_at:'2026-11-02T01:00:00Z'})`);
+ const html=h.run('hideSection()');
+ assert.match(html,/公司含「&lt;外包&gt;」/);assert.doesNotMatch(html,/<外包>/);
+ assert.match(html,/data-hide-remove="h&quot;1" aria-label="删除规则：公司含「&lt;外包&gt;」">删除/);
+});
 test('freshness only says first seen, last seen and still in the list, never 发布 or 在招',()=>{
  const h=harness();const f=g=>JSON.parse(h.run(`JSON.stringify(freshness(${JSON.stringify(g)},${NOW}))`));
  assert.deepEqual(f({status:'open',first_seen:'2026-11-02T01:00:00Z',last_seen:'2026-11-03T01:00:00Z'}),{tone:'fresh',label:'新搜到',detail:'昨天首次搜到，今天还搜得到'});
