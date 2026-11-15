@@ -24,6 +24,16 @@ class FetchError(ValueError):
     pass
 
 
+class TransientFetchError(FetchError):
+    """A connection dropped or timed out mid-request (TLS EOF, reset, socket timeout); the request itself was not refused.
+
+    HTTP statuses, redirects, oversize or compressed bodies, bad URLs and the overall deadline are plain FetchError."""
+
+
+_TRANSIENT = (ssl.SSLEOFError, ConnectionResetError, ConnectionAbortedError, BrokenPipeError, TimeoutError, socket.timeout,
+              http.client.RemoteDisconnected, http.client.IncompleteRead)
+
+
 def validate_url(url):
     if not isinstance(url, str) or len(url) > 8192 or any(ord(c) < 33 for c in url):
         raise FetchError('公开 URL 无效')
@@ -243,7 +253,9 @@ def fetch(url, method='GET', data=None, headers=None, with_metadata=False, *, be
         except (OSError, http.client.HTTPException, ValueError) as exc:
             if isinstance(exc, FetchError):
                 raise
-            raise FetchError('公开抓取失败：' + str(exc)) from exc
+            # Past the overall deadline our own abort() timer closes the socket, which also looks like a reset.
+            transient = isinstance(exc, _TRANSIENT) and time.monotonic() - started < limit
+            raise (TransientFetchError if transient else FetchError)('公开抓取失败：' + str(exc)) from exc
         finally:
             timer.cancel()
             conn.close()

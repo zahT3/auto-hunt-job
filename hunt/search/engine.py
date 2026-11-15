@@ -9,7 +9,7 @@ import time
 from collections import Counter
 from contextlib import nullcontext
 from urllib.parse import urlsplit
-from ..net.network import fetch, FetchError
+from ..net.network import fetch, FetchError, TransientFetchError
 from .sources import Context, route
 from .query import search_terms, expanded_terms, matches
 from .parse import SourceError, now
@@ -74,18 +74,29 @@ def source_configs(config, cap=20):
     return [s for s in result[:cap] if not config.get('official_only') or s.get('kind') not in ('boss', 'liepin', 'websearch')]
 
 
+RETRY_BACKOFF = 1.5  # seconds before the one retry of a dropped connection
+
+
 class Budget:
     def __init__(self, transport, maximum, should_continue=None):
-        self.transport, self.maximum, self.used = transport, maximum, 0
+        self.transport, self.maximum, self.used, self.retries = transport, maximum, 0, 0
         self.should_continue = should_continue
     def get(self, url, **kwargs):
         if self.should_continue and not self.should_continue(): raise SourceError('cancelled', '扫描已停止；没有继续发起请求')
         if self.used >= self.maximum: raise SourceError('budget_exhausted', '本轮公开请求预算已用完；保留已取得结果')
         self.used += 1
+        try:
+            return self.transport(url, **kwargs)
+        except TransientFetchError:
+            # One retry, only for a dropped connection or timeout, never for an HTTP status or a parse problem. It costs
+            # a request of the budget; with none left (or the scan stopped) the original error stands.
+            if self.used >= self.maximum or self.should_continue and not self.should_continue(): raise
+        time.sleep(RETRY_BACKOFF)
+        self.used += 1; self.retries += 1
         return self.transport(url, **kwargs)
 
 
-SUMMED = ('pages', 'fetched', 'filtered', 'requests', 'entry_requests', 'rendered_pages', 'elapsed_seconds')
+SUMMED = ('pages', 'fetched', 'filtered', 'requests', 'retries', 'entry_requests', 'rendered_pages', 'elapsed_seconds')
 
 
 def sweep_limits(config):
@@ -130,12 +141,12 @@ def discover(config, profile=None, transport=None, *, browser_profile_root=None,
 
     def new_report(source):
         return dict(source_id=source.get('id') or str(source.get('kind')), kind=source.get('kind'), company=source.get('company'), status='empty',
-                    fetched=0, returned=0, filtered=0, pages=0, requests=0, error=None, search_url=None, checked_at=now(), truncated=False,
+                    fetched=0, returned=0, filtered=0, pages=0, requests=0, retries=0, error=None, search_url=None, checked_at=now(), truncated=False,
                     mode=source.get('mode', 'public'), passes=1)
 
     def run_source(source, report, quota, request_quota, pages):
         kind = source.get('kind'); sid = report['source_id']
-        began, start, entry_start = clock(), budget.used, entry_budget.used
+        began, start, entry_start, retry_start = clock(), budget.used, entry_budget.used, budget.retries
         renderer = None; context = None
         def read(url, **kwargs):
             if budget.used - start >= request_quota:
@@ -213,6 +224,7 @@ def discover(config, profile=None, transport=None, *, browser_profile_root=None,
         except (ValueError, TypeError, KeyError, AttributeError) as e:
             report['status'], report['error'] = 'parse_error', str(e)[:400]
         report['requests'] = budget.used - start
+        report['retries'] = budget.retries - retry_start
         report['entry_requests'] = entry_budget.used - entry_start
         report['rendered_pages'] = getattr(renderer, 'used', 0)
         denied = getattr(context, 'denied_requests', None)
