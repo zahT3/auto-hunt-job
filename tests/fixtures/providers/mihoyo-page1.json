@@ -1,0 +1,83 @@
+{
+ "code": 0,
+ "message": "",
+ "traceId": "",
+ "data": {
+  "list": [
+   {
+    "id": "9000",
+    "title": "AI 产品经理（示例）",
+    "addressDetailList": [
+     {
+      "addressId": "8",
+      "addressDetail": "上海"
+     }
+    ],
+    "competencyType": "产品策划类",
+    "jobNature": "全职",
+    "jobNatureId": 1,
+    "projectName": "社会招聘",
+    "hurry": false,
+    "channelDetailIds": [
+     1,
+     2
+    ],
+    "tagList": [],
+    "jobSummary": "",
+    "objectId": "9",
+    "objectName": "常规社招"
+   },
+   {
+    "id": "9001",
+    "title": "客户端开发（示例）",
+    "addressDetailList": [
+     {
+      "addressId": "8",
+      "addressDetail": "上海"
+     }
+    ],
+    "competencyType": "程序&技术类",
+    "jobNature": "全职",
+    "jobNatureId": 1,
+    "projectName": "社会招聘",
+    "hurry": false,
+    "channelDetailIds": [
+     1,
+     2
+    ],
+    "tagList": [],
+    "jobSummary": "",
+    "objectId": "9",
+    "objectName": "常规社招"
+   },
+   {
+    "id": "9002",
+    "title": "运营经理（示例）",
+    "addressDetailList": [
+     {
+      "addressId": "8",
+      "addressDetail": "上海"
+     }
+    ],
+    "competencyType": "运营类",
+    "jobNature": "全职",
+    "jobNatureId": 1,
+    "projectName": "社会招聘",
+    "hurry": false,
+    "channelDetailIds": [
+     1,
+     2
+    ],
+    "tagList": [],
+    "jobSummary": "",
+    "objectId": "9",
+    "objectName": "常规社招"
+   }
+  ],
+  "pageNo": 1,
+  "pageSize": 100,
+  "total": 3
+ },
+ "success": true,
+ "error": false
+}

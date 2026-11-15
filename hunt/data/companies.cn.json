@@ -175,16 +175,15 @@
     {
       "id": "xiaomi",
       "name": "小米",
-      "careers_url": "https://hr.xiaomi.com/",
-      "provider": null,
+      "careers_url": "https://xiaomi.jobs.f.mioffice.cn/",
+      "provider": "feishu",
       "tags": [
         "大厂",
         "硬件",
         "AI",
         "汽车"
       ],
-      "source": "curated",
-      "status": "needs_adapter"
+      "source": "curated"
     },
     {
       "id": "antgroup",
@@ -211,19 +210,19 @@
         "数据"
       ],
       "source": "curated",
-      "status": "needs_adapter"
+      "status": "needs_adapter",
+      "status_note": "2026-11-15 实测：job.ctrip.com、careers.ctrip.com 的 TLS 握手在本机超时（curl 28），在内置浏览器里 job.ctrip.com 返回空页面，未能看到岗位接口"
     },
     {
       "id": "mihoyo",
       "name": "米哈游",
       "careers_url": "https://jobs.mihoyo.com/",
-      "provider": null,
+      "provider": "mihoyo",
       "tags": [
         "游戏",
         "AI"
       ],
-      "source": "curated",
-      "status": "needs_adapter"
+      "source": "curated"
     },
     {
       "id": "dji",
@@ -377,7 +376,8 @@
         "广告"
       ],
       "source": "career-ops-china",
-      "status": "needs_adapter"
+      "status": "needs_adapter",
+      "status_note": "2026-11-15 实测：社招列表 GET /recruit/e/api/v1/open/positions/simple 不带 cookie 返回 HTTP 400（code 1），换 Referer 返回 code -1；官网页面自己能读，差别推测在会话 cookie 或请求头（未验证），按规则不带 cookie、不伪装"
     },
     {
       "id": "job-xiaohongshu-com",

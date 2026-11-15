@@ -1,0 +1,16 @@
+{
+ "code": 0,
+ "message": "",
+ "traceId": "",
+ "data": {
+  "id": "9000",
+  "title": "AI 产品经理（示例）",
+  "description": "1、负责 AI 产品规划（合成示例）",
+  "jobRequire": "1、三年以上产品经验（合成示例）",
+  "addition": "",
+  "projectName": "社会招聘",
+  "hireType": 0
+ },
+ "success": true,
+ "error": false
+}

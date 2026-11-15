@@ -9,6 +9,7 @@ from hunt.search.sources import REGISTRY, route
 FIXTURES = Path(__file__).parent / 'fixtures' / 'providers'
 BYTEDANCE = 'https://jobs.bytedance.com'
 TENANT = 'https://vrfi1sk8a0.jobs.feishu.cn'
+XIAOMI = 'https://xiaomi.jobs.f.mioffice.cn'
 MAC_UA = 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125.0.0.0 Safari/537.36'
 
 
@@ -194,16 +195,24 @@ class FeishuTests(unittest.TestCase):
 
     def test_detect(self):
         provider = REGISTRY['feishu']
-        for url in (BYTEDANCE, BYTEDANCE + '/experienced/position', TENANT, TENANT + '/index', 'https://JOBS.bytedance.com/'):
+        for url in (BYTEDANCE, BYTEDANCE + '/experienced/position', TENANT, TENANT + '/index', XIAOMI, 'https://JOBS.bytedance.com/'):
             hit = provider.detect(dict(careers_url=url))
             self.assertEqual(hit['kind'], 'feishu', url)
             self.assertIs(route(dict(careers_url=url)), provider, url)
         for url in ('http://jobs.bytedance.com', 'https://bytedance.com', 'https://jobs.bytedance.com.evil.test',
                     'https://evil.jobs.bytedance.com', 'https://jobs.feishu.cn', 'https://feishu.cn',
                     'https://jobs.feishu.cn.evil.test', 'https://a.b.jobs.feishu.cn', 'https://evil.test/jobs.feishu.cn',
-                    'https://user@jobs.bytedance.com.evil.test/', 'https://xjobs.feishu.cn'):
+                    'https://user@jobs.bytedance.com.evil.test/', 'https://xjobs.feishu.cn', 'https://jobs.f.mioffice.cn', 'https://x.jobs.f.mioffice.cn.evil.test',
+                    'https://a.b.jobs.f.mioffice.cn', 'http://xiaomi.jobs.f.mioffice.cn'):
             self.assertIsNone(provider.detect(dict(careers_url=url)), url)
         self.assertIsNone(provider.detect(dict()))
+
+    def test_xiaomi_tenant_reads_list_and_builds_detail_url(self):
+        server = Server(2)
+        result = run(server, url=XIAOMI + '/')
+        self.assertEqual(result['sources'][0]['status'], 'ok')
+        self.assertTrue(server.calls[0][0].startswith(XIAOMI + '/api/v1/search/job/posts'))
+        self.assertEqual(result['jobs'][0]['url'], XIAOMI + '/index/position/0/detail')
 
 
 if __name__ == '__main__':

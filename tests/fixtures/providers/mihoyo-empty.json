@@ -1,0 +1,13 @@
+{
+ "code": 0,
+ "message": "",
+ "traceId": "",
+ "data": {
+  "list": [],
+  "pageNo": 1,
+  "pageSize": 100,
+  "total": 0
+ },
+ "success": true,
+ "error": false
+}

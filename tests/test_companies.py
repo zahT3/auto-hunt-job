@@ -54,10 +54,10 @@ class NontechSeedTests(unittest.TestCase):
     def test_original_53_records_are_unchanged(self):
         # Changed on purpose (2026-10-27): six seeds moved to their Moka/Feishu tenants (builder.SEED_URLS), and
         # 小鹏/蔚来 gained the AI tag so an AI-direction sweep counts them as relevant.
-        # 四家启用专用读取器，京东改为社招列表；小米 HTTP 403，继续保留 needs_adapter。
+        # 四家启用专用读取器，京东改为社招列表；2026-11-15 小米改走自己的飞书租户 xiaomi.jobs.f.mioffice.cn、米哈游接 ats.openout.mihoyo.com，二者去掉 needs_adapter。
         original = json.dumps(companies.load_seeds()[:53], ensure_ascii=False, sort_keys=True).encode()
         self.assertEqual(hashlib.sha256(original).hexdigest(),
-                         '42db2af677ea47df1448ed3159ebe98f521c81f2ca98942d44f09f9cdd94e938')
+                         '7b1e1d02e7ea61151812cc8f47b5ef3afa61f189a8f4d9e2c0e0d9cac31a6a49')
 
     def test_seed_url_fixes_route_to_supported_readers(self):
         from hunt.search.sources import route
@@ -137,7 +137,7 @@ class SelectTests(unittest.TestCase):
             self.assertIn(s.get('status'), (None, 'dead', 'needs_adapter'), s)
             if s.get('status'): flagged.setdefault(s['status'], set()).add(s['id'])
         self.assertEqual(len(flagged['dead']), 9)
-        self.assertEqual(len(flagged['needs_adapter']), 18)  # 京东、网易接通；小米 HTTP 403，仍待适配
+        self.assertEqual(len(flagged['needs_adapter']), 16)  # 京东、网易、小米、米哈游接通；快手、携程仍待适配
         self.assertIn('baichuan-ai-com-careers', flagged['dead'])
         self.assertIn('huawei', flagged['needs_adapter'])
         self.assertFalse({s['id'] for s in seeds if s.get('provider')} & set().union(*flagged.values()))
@@ -151,7 +151,7 @@ class SelectTests(unittest.TestCase):
         default = {c['id'] for c in companies.select(['AI'], 300)}
         self.assertNotIn('huawei', default)
         self.assertNotIn('baichuan-ai-com-careers', default)
-        self.assertEqual(len(default), len(companies.load_seeds()) - 27)
+        self.assertEqual(len(default), len(companies.load_seeds()) - 25)
         self.assertEqual(len(companies.select(['AI'], 300, include_flagged=True)), len(companies.load_seeds()))
 
     def test_select_keyword_providers_survive_small_limit(self):
