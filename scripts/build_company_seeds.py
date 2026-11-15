@@ -128,9 +128,7 @@ STATUS = dict.fromkeys((
     'sensorsdata-cn-about-job-html',
 ), 'dead') | dict.fromkeys((
     'huawei',
-    'xiaomi',
     'antgroup',
-    'mihoyo',
     'oppo',
     'pony-ai',
     'zhaopin-kuaishou-cn-recruit-e',
@@ -146,10 +144,16 @@ STATUS = dict.fromkeys((
     'doris-apache-org',
     'apply-workable-com-huggingface',
 ), 'needs_adapter')
+# Why a seed stays needs_adapter after a real probe; written to the row as status_note.
+STATUS_NOTES = {
+    "ctrip": "2026-11-15 实测：job.ctrip.com、careers.ctrip.com 的 TLS 握手在本机超时（curl 28），在内置浏览器里 job.ctrip.com 返回空页面，未能看到岗位接口",
+    "zhaopin-kuaishou-cn-recruit-e": "2026-11-15 实测：社招列表 GET /recruit/e/api/v1/open/positions/simple 不带 cookie 返回 HTTP 400（code 1），换 Referer 返回 code -1；官网页面自己能读，差别推测在会话 cookie 或请求头（未验证），按规则不带 cookie、不伪装"
+}
 # 2026-10-27 benchmark: these seeds pointed at marketing pages while the jobs sit on a Moka or Feishu tenant the
 # readers already support (found from each official careers page). Applied to seed rows only; hunt/catalog.py keeps its URLs.
 # 京东使用其公开社招列表，由专用 API 读取器承接。
 SEED_URLS = {
+    'xiaomi': 'https://xiaomi.jobs.f.mioffice.cn/',
     'join-jd-com-home': 'https://zhaopin.jd.com/web/job/job_info_list/3',
     'kimi': 'https://app.mokahr.com/apply/moonshot/148506',
     'minimax': 'https://vrfi1sk8a0.jobs.feishu.cn/379481',
@@ -241,7 +245,8 @@ def build(rows):
                           tags=_tags(row['section'], row['name'], row.get('notes', '')), source='career-ops-china'))
     seeds.extend(dict(s) for s in NONTECH)
     seeds = [dict(s, careers_url=SEED_URLS[s['id']], provider=provider_of(SEED_URLS[s['id']])) if s['id'] in SEED_URLS else s for s in seeds]
-    return [dict(s, status=STATUS[s['id']]) if s['id'] in STATUS else s for s in seeds]
+    seeds = [dict(s, status=STATUS[s['id']]) if s['id'] in STATUS else s for s in seeds]
+    return [dict(s, status_note=STATUS_NOTES[s['id']]) if s['id'] in STATUS_NOTES else s for s in seeds]
 
 
 def pinned_commit(pins):

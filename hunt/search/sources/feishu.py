@@ -1,4 +1,4 @@
-"""Feishu Jobs (飞书招聘) public JSON API: ByteDance's own site and *.jobs.feishu.cn tenants.
+"""Feishu Jobs (飞书招聘) public JSON API: ByteDance's own site and *.jobs.feishu.cn tenants and Xiaomi's *.jobs.f.mioffice.cn.
 
 Ported from career-ops providers/feishu-jobs.mjs (https://github.com/career-ops-hq/career-ops,
 commit f4d7477c8d25f81e6e4a952b724378913ea8c86e, MIT License). Pages are requested one after
@@ -14,7 +14,8 @@ from ..parse import SourceError, json_data, normalize
 from . import Provider, paged_jobs, register
 
 BYTEDANCE = 'jobs.bytedance.com'
-TENANT = re.compile(r'[a-z0-9-]+\.jobs\.feishu\.cn')
+# Xiaomi runs its own Feishu Jobs deployment under mioffice.cn; same API and paths.
+TENANT = re.compile(r'[a-z0-9-]+\.jobs\.feishu\.cn|[a-z0-9-]+\.jobs\.f\.mioffice\.cn')
 PAGE_SIZE = 100
 # Upstream paces every request after the first.
 PAUSE = 0.3
@@ -100,7 +101,7 @@ def detect(entry):
 def fetch(entry, ctx):
     # An explicit kind skips detect(), so the host check is repeated here; no URL at all means ByteDance's own site.
     origin = _entry_origin(entry) if (entry.get('careers_url') or entry.get('url')) else 'https://' + BYTEDANCE
-    if not origin: raise SourceError('not_configured', '飞书招聘来源需要 jobs.bytedance.com 或 *.jobs.feishu.cn 的 HTTPS 链接')
+    if not origin: raise SourceError('not_configured', '飞书招聘来源需要 jobs.bytedance.com、*.jobs.feishu.cn 或 *.jobs.f.mioffice.cn 的 HTTPS 链接')
     api, first = origin + '/api/v1/search/job/posts', True
     company = entry.get('company') or ('字节跳动' if origin == 'https://' + BYTEDANCE else urlsplit(origin).hostname)
     headers = {'Content-Type': 'application/json', 'Accept': 'application/json', 'User-Agent': USER_AGENT, 'Referer': origin + '/'}
