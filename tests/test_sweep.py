@@ -43,14 +43,14 @@ def run_discover(config, prov, **kwargs):
 class SweepDiscoveryTests(unittest.TestCase):
     def test_sweep_defaults(self):
         result = run_discover(dict(sweep=True, discovery_sources=sources('a')), provider(dict(a=1)))
-        self.assertEqual(result['sweep'], dict(max_companies=300, max_jobs=1500, requests=3000, deadline_seconds=600, prepare=50, max_pages=20))
+        self.assertEqual(result['sweep'], dict(max_companies=300, max_jobs=1500, requests=3000, deadline_seconds=600, prepare=50, max_pages=20, workers=4))
         self.assertFalse(result['deadline_reached'])
         self.assertTrue(result['started_at'] and result['finished_at'])
 
     def test_sweep_bounds_clamped(self):
         result = run_discover(dict(sweep=True, sweep_max_jobs=99999, sweep_deadline_seconds=1, sweep_max_companies=0,
                                    sweep_requests=10 ** 6, sweep_prepare=-3, sweep_max_pages=999, discovery_sources=sources('a')), provider(dict(a=1)))
-        self.assertEqual(result['sweep'], dict(max_companies=1, max_jobs=5000, requests=10000, deadline_seconds=30, prepare=0, max_pages=50))
+        self.assertEqual(result['sweep'], dict(max_companies=1, max_jobs=5000, requests=10000, deadline_seconds=30, prepare=0, max_pages=50, workers=4))
 
     def test_non_sweep_unchanged(self):
         result = run_discover(dict(max_jobs=500, discovery_sources=sources('a')), provider(dict(a=None)))

@@ -26,7 +26,7 @@ def validate_config(payload):
     if type(cfg.get('liepin_cards', False)) is not bool: raise Error('猎聘只读卡片必须为开关')
     if type(cfg.get('sweep', False)) is not bool: raise Error('大范围搜索必须为开关')
     for key, low, high in (('sweep_max_companies', 1, 1000), ('sweep_max_jobs', 1, 5000), ('sweep_requests', 1, 10000),
-                           ('sweep_deadline_seconds', 30, 3600), ('sweep_prepare', 0, 200), ('sweep_max_pages', 1, 50)):
+                           ('sweep_deadline_seconds', 30, 3600), ('sweep_prepare', 0, 200), ('sweep_max_pages', 1, 50), ('sweep_workers', 1, 8)):
         if key in cfg and (type(cfg[key]) is not int or not low <= cfg[key] <= high):
             raise Error('大范围搜索参数 %s 必须是 %d 至 %d 的整数' % (key, low, high))
     if cfg.get('browser_channel') not in (None, 'chrome'): raise Error('仅支持默认 Chromium 或 Google Chrome')

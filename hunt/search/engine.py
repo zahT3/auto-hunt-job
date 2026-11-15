@@ -5,7 +5,9 @@ opt-in and uses a dedicated local profile. Failure is never an empty-success.
 """
 import math
 import re
+import threading
 import time
+from concurrent.futures import ThreadPoolExecutor, wait, FIRST_COMPLETED
 from collections import Counter
 from contextlib import nullcontext
 from urllib.parse import urlsplit
@@ -78,21 +80,36 @@ RETRY_BACKOFF = 1.5  # seconds before the one retry of a dropped connection
 
 
 class Budget:
-    def __init__(self, transport, maximum, should_continue=None):
+    """A shared request budget, safe for several source threads; `child()` counts one source's share of it."""
+    def __init__(self, transport, maximum, should_continue=None, parent=None):
         self.transport, self.maximum, self.used, self.retries = transport, maximum, 0, 0
-        self.should_continue = should_continue
+        self.should_continue, self.parent = should_continue, parent
+        self.root = parent.root if parent else self
+        self.lock = self.root.lock if parent else threading.Lock()
+    def child(self):
+        return Budget(self.transport, self.maximum, self.should_continue, parent=self)
+    def _charge(self, retry=False):
+        """Spends one request of the root budget, or returns False when none is left."""
+        with self.lock:
+            if self.root.used >= self.root.maximum: return False
+            node = self
+            while node:
+                node.used += 1
+                if retry: node.retries += 1
+                node = node.parent
+            return True
+    def charge(self):
+        if not self._charge(): raise SourceError('budget_exhausted', '本轮公开请求预算已用完；保留已取得结果')
     def get(self, url, **kwargs):
         if self.should_continue and not self.should_continue(): raise SourceError('cancelled', '扫描已停止；没有继续发起请求')
-        if self.used >= self.maximum: raise SourceError('budget_exhausted', '本轮公开请求预算已用完；保留已取得结果')
-        self.used += 1
+        self.charge()
         try:
             return self.transport(url, **kwargs)
         except TransientFetchError:
             # One retry, only for a dropped connection or timeout, never for an HTTP status or a parse problem. It costs
             # a request of the budget; with none left (or the scan stopped) the original error stands.
-            if self.used >= self.maximum or self.should_continue and not self.should_continue(): raise
+            if self.should_continue and not self.should_continue() or not self._charge(retry=True): raise
         time.sleep(RETRY_BACKOFF)
-        self.used += 1; self.retries += 1
         return self.transport(url, **kwargs)
 
 
@@ -106,7 +123,25 @@ def sweep_limits(config):
                 requests=bounded(config.get('sweep_requests'), 3000, 1, 10000),
                 deadline_seconds=bounded(config.get('sweep_deadline_seconds'), 600, 30, 3600),
                 prepare=bounded(config.get('sweep_prepare'), 50, 0, 200),
-                max_pages=bounded(config.get('sweep_max_pages'), 20, 1, 50))
+                max_pages=bounded(config.get('sweep_max_pages'), 20, 1, 50),
+                workers=bounded(config.get('sweep_workers'), 4, 1, 8))
+
+
+SHARED_HOST_KINDS = ('mokahr', 'dayee', 'greenhouse', 'lever', 'ashby')
+SHARED_HOSTS = ('app.mokahr.com', 'mokahr.com', 'boards-api.greenhouse.io', 'boards.greenhouse.io', 'api.lever.co', 'jobs.lever.co',
+                'api.ashbyhq.com', 'jobs.ashbyhq.com')
+
+
+def host_key(source):
+    """Sources with the same key never run at the same moment: the request host, or kind plus tenant where one provider
+    serves many employers from a single host. Browser-driven sources share one key and run one at a time."""
+    kind = source.get('kind')
+    if kind in LOGIN_GATED and source.get('mode') == 'browser' or kind == 'website' and source.get('official_browser'): return 'browser'
+    parts = urlsplit(str(source.get('careers_url') or source.get('url') or ''))
+    host = parts.netloc.lower()
+    if source.get('board'): return '%s:%s' % (kind, source['board'])
+    if kind in SHARED_HOST_KINDS or host in SHARED_HOSTS or host.endswith('.mokahr.com'): return host + parts.path.rstrip('/')
+    return host or 'kind:%s' % kind
 
 
 def discover(config, profile=None, transport=None, *, browser_profile_root=None, browser_headless=False, should_continue=None, on_source=None, clock=time.monotonic, known=None):
@@ -124,6 +159,7 @@ def discover(config, profile=None, transport=None, *, browser_profile_root=None,
                 return False
             return user_continue() if user_continue else True
     jobs, reports, seen, owners = [], [], set(), {}
+    lock, taken = threading.RLock(), [0]  # `taken` counts kept jobs while a pass is still running; `jobs` is filled in source order after it
     if not terms: raise ValueError('请提供 1 至 8 个岗位或技能关键词；不接受联系方式或整段简历作为搜索词')
     sources = source_configs(config, sweep['max_companies'] if sweep else 20)
     if config.get('official_only') and not sources:
@@ -144,17 +180,17 @@ def discover(config, profile=None, transport=None, *, browser_profile_root=None,
                     fetched=0, returned=0, filtered=0, pages=0, requests=0, retries=0, error=None, search_url=None, checked_at=now(), truncated=False,
                     mode=source.get('mode', 'public'), passes=1)
 
-    def run_source(source, report, quota, request_quota, pages):
+    def run_source(source, report, quota, request_quota, pages, mine):
         kind = source.get('kind'); sid = report['source_id']
-        began, start, entry_start, retry_start = clock(), budget.used, entry_budget.used, budget.retries
+        began, spent, entry_spent = clock(), budget.child(), entry_budget.child()
         renderer = None; context = None
         def read(url, **kwargs):
-            if budget.used - start >= request_quota:
+            if spent.used >= request_quota:
                 raise SourceError('budget_exhausted', '此渠道已用完公平分配的请求预算；其他渠道继续扫描')
-            return budget.get(url, **kwargs)
+            return spent.get(url, **kwargs)
         try:
             if should_continue and not should_continue(): raise SourceError('cancelled', '扫描已停止；没有继续发起请求')
-            if len(jobs) >= limit: raise SourceError('budget_exhausted', '已达到本轮保留岗位上限')
+            if taken[0] >= limit: raise SourceError('budget_exhausted', '已达到本轮保留岗位上限')
             if kind in ('boss', 'liepin') and source.get('mode') == 'browser':
                 from .sources_browser import BrowserReader
                 context = BrowserReader(kind, profile_root=browser_profile_root, headless=browser_headless,
@@ -171,9 +207,8 @@ def discover(config, profile=None, transport=None, *, browser_profile_root=None,
                 if browser and kind in ('boss', 'liepin'):
                     def read(url, **kwargs):
                         if should_continue and not should_continue(): raise SourceError('cancelled', '扫描已停止；没有继续发起请求')
-                        if budget.used - start >= request_quota or budget.used >= maximum:
-                            raise SourceError('budget_exhausted', '浏览器页面请求预算已用完')
-                        budget.used += 1
+                        if spent.used >= request_quota: raise SourceError('budget_exhausted', '浏览器页面请求预算已用完')
+                        spent.charge()
                         return browser.read(url)
                 provider = route(source)
                 if not provider: raise SourceError('not_configured', '未知岗位渠道：' + str(kind))
@@ -190,27 +225,28 @@ def discover(config, profile=None, transport=None, *, browser_profile_root=None,
                 generator = provider.fetch(source, Context(read, terms, quota, pages, report, renderer, keep=keep))
                 for item in generator:
                     key = (item['channel'], item['platform_id'])
-                    if key in seen: continue
-                    # A provider that ignores ctx.limit must not eat the shares of later sources.
-                    if sweep and report['returned'] >= quota:
-                        report['truncated'] = True
-                        break
-                    seen.add(key)
+                    with lock:
+                        if key in seen: continue
+                        # A provider that ignores ctx.limit must not eat the shares of later sources.
+                        if sweep and (report['returned'] >= quota or taken[0] >= limit):
+                            report['truncated'] = True
+                            break
+                        seen.add(key); taken[0] += 1
                     item.setdefault('raw', {})['discovery'] = dict(source_id=sid, queries=terms, mode=report['mode'], checked_at=report['checked_at'])
                     # A login-gated platform's job page only answers a logged-in browser; a plain read of it proves nothing
                     # (猎聘 gave identity_mismatch every time) and adds requests from this IP.
                     if inline_checks and kind not in LOGIN_GATED:
                         from .entries import check_job
                         checking = clock()
-                        try: check_job(item, entry_budget.get, renderer=renderer)
+                        try: check_job(item, entry_spent.get, renderer=renderer)
                         except SourceError as e:
                             # The fetched job is real; only its entry check was cut off by the deadline.
-                            if e.status == 'cancelled' and timing['reached']:
-                                jobs.append(item); report['returned'] += 1
+                            if e.status == 'cancelled' and timing['reached']: keep_job(item, report, mine)
                             raise
-                        finally: entry['elapsed_seconds'] += clock() - checking
-                        entry['checked'] += 1
-                    jobs.append(item); report['returned'] += 1
+                        finally:
+                            with lock: entry['elapsed_seconds'] += clock() - checking
+                        with lock: entry['checked'] += 1
+                    keep_job(item, report, mine)
             report['status'] = 'ok' if report['returned'] else 'filtered_empty' if report['fetched'] else 'empty'
             if report.get('detail_errors'):
                 report['status'] = 'parse_error'
@@ -223,9 +259,9 @@ def discover(config, profile=None, transport=None, *, browser_profile_root=None,
             report['error'] = str(e)
         except (ValueError, TypeError, KeyError, AttributeError) as e:
             report['status'], report['error'] = 'parse_error', str(e)[:400]
-        report['requests'] = budget.used - start
-        report['retries'] = budget.retries - retry_start
-        report['entry_requests'] = entry_budget.used - entry_start
+        report['requests'] = spent.used
+        report['retries'] = spent.retries
+        report['entry_requests'] = entry_spent.used
         report['rendered_pages'] = getattr(renderer, 'used', 0)
         denied = getattr(context, 'denied_requests', None)
         if denied:
@@ -239,31 +275,74 @@ def discover(config, profile=None, transport=None, *, browser_profile_root=None,
                 report['browser_note'] = FALLBACK_NOTE
         report['elapsed_seconds'] = round(clock() - began, 2)
 
+    def keep_job(item, report, mine):
+        mine.append(item)
+        report['returned'] += 1
+
+    def run_pass(items, launch, finish):
+        """Runs `items` on the sweep's worker pool, started in order; two sources with one host_key never overlap.
+        launch(position, running) -> run_source args, or None to stop, is called on this thread when the source starts, finish(position, result)
+        when it ends. A source that finds the scan stopped is still started, so it is marked cancelled."""
+        if not items: return
+        pending, running, blocked = list(range(len(items))), {}, set()
+        with ThreadPoolExecutor(max_workers=sweep['workers'] if sweep else 1) as pool:
+            while pending or running:
+                for position in list(pending):
+                    if len(running) >= (sweep['workers'] if sweep else 1): break
+                    host = host_key(items[position][0]) if sweep else None
+                    if host is not None and host in blocked: continue
+                    args = launch(position, len(running))
+                    if args is None:  # the scan is over; nothing further starts
+                        pending.clear()
+                        break
+                    pending.remove(position)
+                    if host is not None: blocked.add(host)
+                    running[pool.submit(run_source, *args)] = (position, host)
+                done, _ = wait(running, return_when=FIRST_COMPLETED)
+                for future in done:
+                    position, host = running.pop(future)
+                    blocked.discard(host)
+                    future.result()
+                    finish(position)
+
     def scan(group):
-        pairs = []
-        for index, source in enumerate(group):
-            report = new_report(source)
-            reports.append(report); pairs.append((source, report))
-            remaining, before = len(group) - index, len(jobs)
+        pairs = [(source, new_report(source)) for source in group]
+        reports.extend(report for _, report in pairs)
+        mines, started = [[] for _ in group], [0]
+        def launch(position, running):
+            source, report = pairs[position]
             # Reserve work for later sources, so one large board cannot starve all others.
-            run_source(source, report, max(1, math.ceil((limit - len(jobs)) / remaining)),
-                       max(1, math.ceil((maximum - budget.used) / remaining)), pages)
-            for item in jobs[before:]: owners[id(item)] = report
+            remaining = len(group) - started[0] + running
+            started[0] += 1
+            with lock:
+                quota, request_quota = max(1, math.ceil((limit - taken[0]) / remaining)), max(1, math.ceil((maximum - budget.used) / remaining))
+            return source, report, quota, request_quota, pages, mines[position]
+        def finish(position):
+            source, report = pairs[position]
+            for item in mines[position]: owners[id(item)] = report
             if on_source: on_source(dict(report))
+        run_pass(pairs, launch, finish)
+        for mine in mines: jobs.extend(mine)
         if not sweep: return
         # Shares that small sources left unused flow back to the ones cut off by their share or page cap.
         candidates = [(s, r) for s, r in pairs if r['status'] == 'ok' and r['truncated']]
-        for index, (source, report) in enumerate(candidates):
-            if len(jobs) >= limit or budget.used >= maximum or not should_continue(): break
-            remaining, before = len(candidates) - index, len(jobs)
-            again = dict(new_report(source), source_id=report['source_id'], returned=report['returned'])
+        reruns, mines, started = {}, [[] for _ in candidates], [0]
+        def launch_again(position, running):
+            source, report = candidates[position]
+            if taken[0] >= limit or budget.used >= maximum or not should_continue(): return None
+            remaining = len(candidates) - started[0] + running
+            started[0] += 1
+            again = reruns[position] = dict(new_report(source), source_id=report['source_id'], returned=report['returned'])
             # Reruns from page 1; `seen` drops the replayed jobs, which still count towards ctx.limit.
-            run_source(source, again, report['returned'] + math.ceil((limit - len(jobs)) / remaining),
-                       math.ceil((maximum - budget.used) / remaining), pages)
-            for item in jobs[before:]: owners[id(item)] = report
+            return source, again, report['returned'] + math.ceil((limit - taken[0]) / remaining), math.ceil((maximum - budget.used) / remaining), pages, mines[position]
+        def finish_again(position):
+            source, report = candidates[position]; again = reruns[position]
+            for item in mines[position]: owners[id(item)] = report
             report.update(again, passes=2, search_url=report['search_url'] or again['search_url'], checked_at=report['checked_at'],
                           **{k: report[k] + again[k] for k in SUMMED})
             report['elapsed_seconds'] = round(report['elapsed_seconds'], 2)
+        run_pass(candidates, launch_again, finish_again)
+        for mine in mines: jobs.extend(mine)
 
     # companies.select marks a sweep's sources by relevance (tier 0 keyword search, 1 matching tags, 2+ the rest).
     # Relevant sources get both passes, sharing jobs and requests among themselves, before the unrelated tail starts,
