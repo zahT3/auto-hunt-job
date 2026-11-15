@@ -27,12 +27,12 @@ from . import llm
 from ..base import now
 from ..net import network
 
-VERSION = 2  # part of the digest: a change in prompt or schema re-extracts instead of reading stale cache rows
+VERSION = 3  # part of the digest: a change in prompt or schema re-extracts instead of reading stale cache rows
 CACHE_FILE, CACHE_SCHEMA = 'ai_cache.sqlite3', 1
 TITLE_CHARS, LOCATION_CHARS, JD_CHARS = 120, 60, 3000
 EVIDENCE_CHARS, VALUE_CHARS, BONUS_CHARS, MAX_ITEMS = 120, 40, 80, 30
 SINGLE = ('years', 'education', 'remote')
-LISTS = ('hard_skills', 'soft_skills', 'languages', 'certificates', 'bonus', 'location')
+LISTS = ('hard_skills', 'soft_skills', 'languages', 'certificates', 'bonus', 'location', 'duties')
 FIELDS = SINGLE + LISTS
 DEGREES = ('大专', '本科', '硕士', '博士')  # ascending
 NO_LOCATION = {'地点未知', '未知', '待确认'}  # placeholders the Store writes, not places
@@ -43,10 +43,11 @@ SYSTEM = ('你负责从招聘岗位里抽取任职要求。每个岗位在一个
           'years：{"value": {"min": 整数, "max": 整数或 null}, "evidence": 原文}（经验年限）\n'
           'education：{"value": "大专"、"本科"、"硕士"或"博士", "evidence": 原文}（最低学历）\n'
           'remote：{"value": true 或 false, "evidence": 原文}（是否接受远程）\n'
-          'hard_skills、soft_skills、languages、certificates、bonus、location：[{"value": 文字, "evidence": 原文}]'
-          '（硬技能、软技能、语言要求、证书或签证/工作许可、加分项、工作地点）\n'
-          'evidence 必须是该岗位里原样出现的一段文字，不超过 %d 字；value 不超过 %d 字（加分项 %d 字）。'
-          '写着"优先""加分"的要求放进 bonus，不放进硬技能或学历。' % (EVIDENCE_CHARS, VALUE_CHARS, BONUS_CHARS))
+          'hard_skills、soft_skills、languages、certificates、bonus、location、duties：[{"value": 文字, "evidence": 原文}]'
+          '（硬技能、软技能、语言要求、证书或签证/工作许可、加分项、工作地点、岗位职责里的每一条工作内容或成果）\n'
+          'evidence 必须是该岗位里原样出现的一段文字，不超过 %d 字；value 不超过 %d 字（加分项和职责 %d 字）。'
+          '写着"优先""加分"的要求放进 bonus，不放进硬技能或学历；职责只取"岗位职责""工作内容"这类小节里的工作事项，'
+          '不含学历、年限、技能清单等任职要求。' % (EVIDENCE_CHARS, VALUE_CHARS, BONUS_CHARS))
 
 
 # ---- text ----
@@ -57,6 +58,7 @@ SECTION_END = re.compile(r'\s*(岗位职责|工作职责|职位描述|工作内�
 BONUS_HEAD = re.compile(r'^\s*(加分项|加分|优先条件|nice to have|preferred qualifications?|bonus points?)\s*[:：]?\s*$', re.I)
 HEAD = re.compile(r'^\s*[^\s:：]{1,20}\s*[:：]\s*$')
 BONUS_WORD = re.compile(r'优先(?!级)|加分|nice to have|preferred|is a plus', re.I)
+DUTY_HEAD = re.compile(r'^\s*(岗位职责|工作职责|你的职责|职位职责|工作内容|你将负责|你将会?做什么|主要职责|职责描述|responsibilit\w*|what you.{0,6}(?:ll|will)\s+do|your role)\s*[:：]?', re.I)
 BULLET = re.compile(r'^\s*(?:[-•·*]|\d{1,2}\s*[.、)）]|[（(]\d{1,2}[)）])\s*')
 CN_NUM = dict(zip('一二两三四五六七八九十', (1, 2, 2, 3, 4, 5, 6, 7, 8, 9, 10)))
 YEAR_RANGE = re.compile(r'(?<!\d)(\d{1,2})\s*[-~～至到]\s*(\d{1,2})\s*年')
@@ -159,6 +161,22 @@ def _sections(jd):
     return [line for line in required if line not in bonus], bonus
 
 
+def _duties(jd, bonus):
+    """One item per line of the duties section (岗位职责 / 工作内容 / 你将负责 …), quoted as written; none without such a section."""
+    out, inside = [], False
+    for line in (l for l in lines(jd) if not META_LINE.match(l)):
+        head = DUTY_HEAD.match(line)
+        text = str(line)
+        if head:
+            inside, text = True, text[head.end():]
+        elif inside and (SECTION_START.match(line) or SECTION_END.match(line) or BONUS_HEAD.match(line) or HEAD.match(line)):
+            inside = False
+        text = BULLET.sub('', text).strip()
+        if inside and len(text) >= 4 and line not in bonus and len(out) < MAX_ITEMS:
+            out.append(dict(value=text[:BONUS_CHARS], evidence=_clip(line)))
+    return out
+
+
 def _years(lines):
     for line in lines:
         m = YEAR_RANGE.search(line)
@@ -252,7 +270,7 @@ def rules(job):
     out.update(hard_skills=_items(req, _hard), soft_skills=_items(req, lambda line: _words(line, SOFT)),
                languages=_items(req, _languages), certificates=_items(req, lambda line: _words(line, CERTS)),
                bonus=[dict(value=BULLET.sub('', line.orig)[:BONUS_CHARS], evidence=_clip(line)) for line in bonus[:MAX_ITEMS]],
-               location=_location(text))
+               location=_location(text), duties=_duties(job.get('jd'), bonus))
     return out
 
 
@@ -312,7 +330,7 @@ def _value_ok(field, value):
         return value in DEGREES
     if field == 'remote':
         return type(value) is bool
-    return _string(value, BONUS_CHARS if field == 'bonus' else VALUE_CHARS)
+    return _string(value, BONUS_CHARS if field in ('bonus', 'duties') else VALUE_CHARS)
 
 
 def clean_ai(raw, job):

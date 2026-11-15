@@ -116,6 +116,7 @@
                          "hard_skills": [{"value": "Python", "evidence": "..."}],
                          "soft_skills": [{"value": "沟通能力", "evidence": "..."}],
                          "bonus": [{"value": "有大模型应用经验", "evidence": "..."}],
+                         "duties": [{"value": "负责支付清结算核心链路的设计与开发", "evidence": "..."}],
                          "location": [{"value": "深圳", "evidence": "工作地点：深圳·南山"}]}}],
  "report": {"total": 6, "cached": 0, "by_ai": 2, "by_rules": 4, "capped": 4,
             "batches": [{"batch": 1, "jobs": 2, "by": "ai", "reason": null},
@@ -123,6 +124,7 @@
             "errors": [], "note": "已用 AI 抽取 2 个岗位……；已达本轮模型花费上限，剩余 4 个岗位按规则抽取", "spent_cny": 2.0}}
 ```
 
+- `duties` 是岗位职责类的条目（"岗位职责""工作内容""你将负责"小节里的逐条工作事项，保留原文）。规则只在能认出这类小节时给出，认不出就是空数组；写着"优先""加分"的行归 `bonus`。
 - `education` 只取 `大专`、`本科`、`硕士`、`博士`。写着"优先""加分"的要求进 `bonus`，不进硬技能或学历。
 - 有"岗位原文"同意（`job_text`）、当前主机的 key、预算没用完时才调用模型，每批 5 个岗位。否则走规则，`by` 是 `rules`，`note` 写明原因。
 - 模型的回答逐项检查：不是 JSON、多出或缺少岗位 id，整批改用规则；某个岗位有未定义的字段、条目多出键、值的类型不对，或值里有邮箱、链接、长数字，这个岗位改用规则。原文里找不到的条目单独去掉，`note` 里记数量。
@@ -131,7 +133,7 @@
 
 ### job_match
 
-按招聘方系统（ATS）的筛选顺序分三段：`hard` 硬条件，`keywords` 关键词覆盖，`evidence` 每条要求对应的事实。行的顺序跟 JD 一致，没有总分、没有排序，也不预测筛选结果。
+按招聘方系统（ATS）的筛选顺序分三段：`hard` 硬条件，`keywords` 关键词覆盖，`evidence` 岗位职责对应的事实（只含 JD 里的职责和成果类条目，硬条件和关键词不在这里重复）。行的顺序跟 JD 一致，没有总分、没有排序，也不预测筛选结果。
 
 ```json
 {"schema_version": 1, "job_id": "...", "title": "...", "company": "...", "structure_by": "rules",
@@ -140,7 +142,9 @@
           {"kind": "location", "requirement": "深圳", "jd_evidence": "工作地点：深圳", "status": "met", "fact_ids": [], "basis": "conditions", "why": null}],
  "keywords": [{"keyword": "Kubernetes", "source": "hard_skill", "jd_evidence": "...", "coverage": "related", "fact_ids": [],
                "related_fact_ids": ["f1"], "related_terms": ["k8s"], "why": "简历事实里只有相近表述……"}],
- "evidence": [{"kind": "hard_skill", "requirement": "Kubernetes", "jd_evidence": "...", "fact_ids": [], "related_fact_ids": ["f1"]}],
+ "evidence": [{"kind": "duty", "requirement": "负责支付清结算核心链路的设计与开发", "jd_evidence": "1. 负责支付清结算核心链路的设计与开发",
+               "fact_ids": [], "related_fact_ids": ["f2"], "status": "related"}],
+ "evidence_note": null,
  "notice": "按招聘系统的筛选顺序对照已确认的简历事实；不打分、不排序，也不预测筛选结果",
  "extract_note": "..."}
 ```
@@ -148,6 +152,7 @@
 - `hard[].kind` 依次是 `education`、`years`、`language`、`certificate`（含工作签证或工作许可）、`location`、`remote`。`status` 是 `met`、`not_met` 或 `unknown`：事实写了且够是 `met`；事实写了但不够（学历、年限偏低，只有英语四级）是 `not_met`；事实没写是 `unknown`。
 - `basis` 是 `facts` 或 `conditions`。地点对照的是定方向时填的意向城市（`orientation.conditions.cities`），没填就是 `unknown`；远程只列出岗位的说法，`status` 总是 `unknown`，`requirement` 是 `true` 或 `false`。
 - `keywords[].coverage`：`explicit` 是事实里有原词；`related` 是只有相近表述（`related_terms` 是在事实里找到的那些词），关键词筛选可能认不出，如果确有这项能力可以改用岗位原词；`absent` 是事实里没有，要么先补充并确认事实，要么就是缺口。`source` 是 `hard_skill`、`soft_skill` 或 `bonus`（加分项里认出的词）。
+- `evidence[]` 只来自 `structure.duties`，`kind` 恒为 `duty`。`status`：`supported` 是已确认事实里有这条职责的原话（`fact_ids`）；`related` 是只有相近事实（`related_fact_ids`，共有一段不是套话的 3 字以上词，或都提到同一项技能）；`none` 是没有事实。行的顺序跟 JD 一致。岗位没有职责小节或认不出时 `evidence` 为空数组，`evidence_note` 写明原因，有条目时为 `null`。
 - 只用已确认、有来源的事实；未确认的事实和生成的材料不算。对照本身只用规则，不发送任何内容。没有缓存时会先做一次 `jd_extract`，那一步按上面的同意和预算决定是否调用模型。
 
 ### 定方向结果里的新字段

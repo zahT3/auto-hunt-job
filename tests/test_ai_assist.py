@@ -160,6 +160,13 @@ class ExtractTests(Case):
         self.assertIn('去掉 2 条', report['note'])
         self.assertEqual((report['by_ai'], report['by_rules']), (1, 0))
 
+    def test_model_duties_are_kept_only_when_quoted(self):
+        text = '岗位职责：\n负责订单服务开发\n任职要求：\n熟悉 Python'
+        reply = {'a': dict(duties=[dict(value='订单服务开发', evidence='负责订单服务开发'), dict(value='带领百人团队', evidence='带领百人团队')])}
+        found, report = self.extract([job('a', text)], FakeModel(reply))
+        self.assertEqual((found['a']['by'], [i['value'] for i in found['a']['duties']]), ('ai', ['订单服务开发']))
+        self.assertIn('去掉 1 条', report['note'])
+
     def test_non_json_and_extra_fields_fall_back_to_rules(self):
         cases = [
             b'not json at all',
@@ -264,7 +271,7 @@ class MatchTests(Case):
     def test_three_stages_in_screening_order(self):
         facts = [dict(id='f1', text='4年 Golang 后端，用 k8s 部署，英语四级'), dict(id='f2', text='本科，负责跨部门沟通协调')]
         out = self.explain(self.STRICT, facts, dict(cities=['北京']), location='深圳')
-        self.assertEqual(set(out), {'hard', 'keywords', 'evidence', 'notice'})
+        self.assertEqual(set(out), {'hard', 'keywords', 'evidence', 'notice', 'evidence_note'})
         hard = {(r['kind'], r['requirement']): r for r in out['hard']}
         self.assertEqual([r['kind'] for r in out['hard']], ['education', 'years', 'language', 'certificate', 'certificate', 'location'])
         self.assertEqual((hard[('education', '本科')]['status'], hard[('education', '本科')]['fact_ids']), ('met', ['f2']))
@@ -282,10 +289,46 @@ class MatchTests(Case):
         self.assertEqual(kw['Docker']['coverage'], 'absent')
         self.assertEqual(kw['沟通能力']['coverage'], 'related')
         self.assertEqual((kw['大模型']['coverage'], kw['大模型']['source']), ('absent', 'bonus'))
-        evidence = {e['requirement']: e for e in out['evidence']}
-        self.assertEqual(evidence['本科']['fact_ids'], ['f2'])
-        self.assertEqual(evidence['Go']['related_fact_ids'], ['f1'])
-        self.assertNotIn('深圳', evidence)  # location rests on conditions, not facts
+        self.assertEqual(out['evidence'], [])  # no duties section: step 3 stays empty rather than repeating steps 1 and 2
+        self.assertIn('岗位职责', out['evidence_note'])
+
+    DUTIES = ('岗位职责：\n1. 负责支付清结算核心链路的设计与开发\n2. 参与风控规则引擎的迭代\n3. 搭建用户增长数据看板\n'
+              '任职要求：\n1. 本科及以上学历，3年以上 Java 开发经验；\n2. 熟悉 MySQL、Redis。')
+    DUTY_FACTS = [dict(id='f1', text='本科，计算机科学与技术'), dict(id='f2', text='在支付公司负责清结算系统开发，Java、MySQL'),
+                  dict(id='f3', text='负责风控规则引擎的迭代与上线')]
+
+    def test_step_three_lists_duties_only(self):
+        out = self.explain(self.DUTIES, self.DUTY_FACTS, location='深圳')
+        self.assertEqual([e['kind'] for e in out['evidence']], ['duty'] * 3)
+        self.assertEqual([e['status'] for e in out['evidence']], ['related', 'supported', 'none'])
+        self.assertEqual([(e['fact_ids'], e['related_fact_ids']) for e in out['evidence']], [([], ['f2']), (['f3'], []), ([], [])])
+        steps = {r['requirement'] for r in out['hard']} | {k['keyword'] for k in out['keywords']}
+        self.assertIn('本科', steps)
+        self.assertIn('MySQL', steps)
+        self.assertFalse(steps & {e['requirement'] for e in out['evidence']})
+        self.assertFalse({r['jd_evidence'] for r in out['hard']} & {e['jd_evidence'] for e in out['evidence']})
+        for e in out['evidence']:
+            self.assertIn(e['jd_evidence'], jd.document(job('a', self.DUTIES, location='深圳')))
+        self.assertIsNone(out['evidence_note'])
+
+    def test_unfinished_duty_words_alone_do_not_count_as_facts(self):
+        out = self.explain(self.DUTIES, [dict(id='f1', text='负责团队管理，参与项目开发')])
+        self.assertEqual([e['status'] for e in out['evidence']], ['none'] * 3)
+
+    def test_ai_duties_are_used_as_given(self):
+        structure = dict(digest='x', by='ai', duties=[dict(value='负责支付清结算核心链路', evidence='负责支付清结算核心链路的设计与开发')],
+                         hard_skills=[dict(value='Redis', evidence='熟悉 Redis')])
+        out = match.explain(structure, self.DUTY_FACTS)
+        self.assertEqual([(e['requirement'], e['status'], e['related_fact_ids']) for e in out['evidence']], [('负责支付清结算核心链路', 'related', ['f2'])])
+        self.assertEqual([k['keyword'] for k in out['keywords']], ['Redis'])
+
+    def test_rules_read_duty_sections_under_other_names(self):
+        for text in ('工作内容：\n- 维护订单服务\n- 对接财务系统\n福利待遇：\n五险一金', '你将负责：\n维护订单服务\n对接财务系统',
+                     'Responsibilities:\n- Maintain the order service\n- Integrate with finance\nRequirements:\n- Go'):
+            values = [i['value'] for i in jd.rules(job('d', text))['duties']]
+            self.assertEqual(len(values), 2, text)
+        self.assertEqual(jd.rules(job('d', BACKEND))['duties'], [])  # its only duty line says 优先, so it is a bonus item
+        self.assertEqual(jd.rules(job('d', ENGLISH))['duties'], [])
 
     def test_explicit_keyword_and_missing_conditions(self):
         out = self.explain(BACKEND, [dict(id='f2', text='4 年 Python 后端开发，维护 SQL 报表。')], location='深圳')

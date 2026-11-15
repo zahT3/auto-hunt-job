@@ -4,7 +4,8 @@
    met / not_met / unknown with the JD quote and the fact ids (or the user's search conditions for location).
 2. keywords: every skill keyword the JD names, and whether the confirmed facts use the same word (explicit), only a
    near wording (related: you may have it, but a keyword filter will not see it), or neither (absent).
-3. evidence: each requirement and the confirmed facts that back it.
+3. evidence: each duty or outcome the JD lists (岗位职责) and the confirmed facts that back it. Hard conditions and keywords
+   are steps 1 and 2 and are not repeated; a JD without a duties section leaves this stage empty.
 
 Input is the job's structure (jd.py), the confirmed, source-backed facts (orient.confirmed_facts: drafts, generated
 materials and unconfirmed facts never count) and optionally the user's orientation conditions. Rows keep the JD's
@@ -34,7 +35,11 @@ WHY = dict(
     no_certificate='已确认事实里没有提到；如果持有，请补充并确认',
     no_cities='你还没有填写意向城市', other_city='不在你填的意向城市里', remote='是否接受远程看你的求职条件，这里只列出岗位的说法',
     explicit='简历事实里有原词', related='简历事实里只有相近表述，关键词筛选可能认不出；如果确有这项能力，可改用岗位原词',
-    absent='简历事实里没有；如果你有这项能力，先补充并确认事实，否则就是缺口')
+    absent='简历事实里没有；如果你有这项能力，先补充并确认事实，否则就是缺口',
+    no_duties='原文里没有找到"岗位职责"或"工作内容"小节，这一步没有可对照的条目；硬条件和关键词见前两步')
+DUTY_LEAD = re.compile(r'^(?:负责|参与|协助|主要负责|全面负责|独立负责|带领|牵头|完成|承担|推动|管理|维护|开展|制定|组织|配合|支持|\d+[.、)）])+')
+DUTY_GRAM = 3  # one shared 3-character run that is not filler makes a fact "close" to a duty
+FILLER = re.compile(r'[的与和及等并或在对为把将]|工作|项目|公司|相关|团队|业务|产品|系统|开发|设计|负责|参与|经验|能力|管理')
 
 
 def _fold(text):
@@ -162,8 +167,38 @@ def backing(phrase, facts):
     return _naming(phrase, rows)
 
 
+def _grams(text):
+    """CJK 3-grams and ASCII words (2+ letters) of one text, for comparing a duty with a fact."""
+    tight = _tight(text)
+    runs = re.findall(r'[\u4e00-\u9fff]+', tight)
+    out = {run[i:i + DUTY_GRAM] for run in runs for i in range(len(run) - DUTY_GRAM + 1)}
+    out = {g for g in out if not FILLER.search(g)}
+    return out | {w for w in re.findall(r'[a-z][a-z0-9+#]+', tight)}
+
+
+def _duty(item, facts, hard_quotes):
+    """One duty row: facts that state the duty's own words (有事实), facts sharing a non-filler 3-character run or a skill word (相近), or none."""
+    text = item['value']
+    if item['evidence'] in hard_quotes:
+        return None
+    clause = _tight(DUTY_LEAD.sub('', text.strip()))
+    skills = jd.phrases(text)
+    exact = [f['id'] for f in facts if len(clause) >= 4 and clause.rstrip('。；;.') in f['tight']]
+    want = _grams(DUTY_LEAD.sub('', text.strip()))
+    close = []
+    for f in facts:
+        if f['id'] in exact:
+            continue
+        shared = want & _grams(f['low'])
+        asked = [w for w in skills if _says(w, f) or any(_says(n, f) for n in _near(w))]
+        if shared or asked:
+            close.append(f['id'])
+    return dict(kind='duty', requirement=text, jd_evidence=item['evidence'], fact_ids=exact, related_fact_ids=close,
+                status='supported' if exact else 'related' if close else 'none')
+
+
 def explain(structure, facts, conditions=None):
-    """dict(hard, keywords, evidence, notice) for one job's structure."""
+    """dict(hard, keywords, evidence, notice, evidence_note) for one job's structure."""
     facts = _facts(facts)
     hard = []
     if structure.get('education'):
@@ -179,8 +214,6 @@ def explain(structure, facts, conditions=None):
     keywords = [_keyword(i['value'], src, i, facts) for f, src in (('hard_skills', 'hard_skill'), ('soft_skills', 'soft_skill'))
                 for i in structure.get(f) or []]
     keywords += [_keyword(word, 'bonus', item, facts) for word, item in _bonus_keywords(structure)]
-    evidence = [dict(kind=r['kind'], requirement=r['requirement'], jd_evidence=r['jd_evidence'], fact_ids=r['fact_ids'], related_fact_ids=[])
-                for r in hard if r['basis'] == 'facts']
-    evidence += [dict(kind=k['source'], requirement=k['keyword'], jd_evidence=k['jd_evidence'], fact_ids=k['fact_ids'],
-                      related_fact_ids=k['related_fact_ids']) for k in keywords]
-    return dict(hard=hard, keywords=keywords, evidence=evidence, notice=NOTICE)
+    quotes = {r['jd_evidence'] for r in hard}
+    evidence = [row for row in (_duty(i, facts, quotes) for i in structure.get('duties') or []) if row]
+    return dict(hard=hard, keywords=keywords, evidence=evidence, notice=NOTICE, evidence_note=None if evidence else WHY['no_duties'])
