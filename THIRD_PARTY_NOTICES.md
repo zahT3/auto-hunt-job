@@ -133,6 +133,6 @@ PDF 字体使用用户本机已安装的字体或 `HUNT_PDF_FONT` 指定文件�
 | 名称 | 用途 | 许可 | 状态 |
 | --- | --- | --- | --- |
 | python-docx 1.2.0 | DOCX 写出（`hunt/profile/resume_render.py`，惰性导入） | MIT（已验证：PyPI 元数据，见设计 8.4） | 作为依赖安装，不复制源码 |
-| lxml | python-docx 的依赖，含 C 扩展 | 待任务 2 核对固定版本和许可证后填入 | 未核对 |
-| typing_extensions | python-docx 的依赖 | 待任务 2 核对固定版本和许可证后填入 | 未核对 |
+| lxml 6.1.3 | python-docx 的依赖，含 C 扩展 | BSD-3-Clause（已验证：已安装包的元数据，2026-11-16） | 作为依赖安装，不复制源码 |
+| typing_extensions 4.16.0 | python-docx 的依赖 | PSF-2.0（已验证：已安装包的元数据，2026-11-16） | 作为依赖安装，不复制源码 |
 | Noto Sans SC（google/fonts `ofl/notosanssc`）的 GB2312 子集 | PDF 中文字体，`hunt/data/fonts/NotoSansSC-GB2312.ttf` | SIL OFL 1.1，许可证原文随字体放在同一目录 | 以 `scripts/build_pdf_font.sh` 头部记录的哈希为准；子集即衍生字体，字体族名按 OFL 保留字体名规定处理（任务 2 核对） |
