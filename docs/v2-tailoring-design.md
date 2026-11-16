@@ -8,7 +8,7 @@
 - 怎么保证不编造：定制版不是一份新写的文字，而是**原始事实上的一串修改**。每条修改写明引用哪些事实（id 和版本）、服务哪一条岗位要求。不引用事实的文字不能进入导出文件。
 - 不用模型也能用：规则路径只做三件事：同一职责内按相关度调序、同义词换成岗位原词（限一张很短的白名单）、列出缺口。AI 路径在这之上多一步「改写措辞」，要过一道本地确定性检查，模型自己说了不算。
 - 复用方式：按已定的决定，不用别的语言重写。MIT / Apache-2.0 的做法用 Python 移植并署名；非商用许可只当思路。实际能直接搬的**代码很少**，主要搬的是门槛的设计：Resume-Matcher 的修改应用闸门和校验（Apache-2.0）、ai-job-search 的审稿人分工和岗位文本扫描（MIT）。
-- 最大风险：现有「事实」是简历按段落切出来的一行行文字，没有「公司 / 职位 / 时间 / 要点」的结构。调序和删减要先从行里还原条目。第 4.3 节给了做法，也是第 14 节的第一个问题。
+- 最大风险：现有「事实」是简历按段落切出来的一行行文字，没有「公司 / 职位 / 时间 / 要点」的结构。调序和删减需要条目结构。已定方案：程序预填，用户在定制页确认一次（第 4.3 节），没确认就不能定制。
 
 ## 2. 调研
 
@@ -68,10 +68,7 @@
     "jd_digest": "…",
     "match_digest": "…"
   },
-  "skeleton": [
-    {"section": "work", "title_fact": "intake-…",
-     "blocks": [{"head": "intake-…", "lines": ["intake-…", "intake-…"]}]}
-  ],
+  "layout_version": 1,
   "edits": [Edit],
   "gaps": [Gap],
   "rejected_by_gate": [{"edit": {…}, "reason": "new_term"}],
@@ -107,17 +104,29 @@
 - 一条修改引用的事实被改过（`version` 变了）或不再是已确认状态，这条修改变为 `stale`，不进导出，界面提示「事实已变，需重新审核」。借自 Reactive-Resume 的 `expectedUpdatedAt`。
 - 导出时记下当时的版本号和文件哈希，文件名带版本：`<公司>-<岗位>-v3.pdf`。
 
-### 4.3 骨架（最需要确认的一块）
+### 4.3 版面（layout）：由用户确认的条目结构
 
-事实是 `intake.analyze_resume` 按段落切出的行，每行带 `source.reference = upload://<sha>#page=1&paragraph=12`。没有条目结构。
+事实是 `intake.analyze_resume` 按段落切出的行，每行带 `source.reference = upload://<sha>#page=1&paragraph=12`，没有条目结构。调序和隐藏需要知道「哪些行属于同一段经历」，所以让用户确认一次，之后不再靠猜。
 
-做法：规则从行序还原一个骨架，用户可在审核界面纠正。
+**数据。** 候选人记录里加一个 `layout`，与 `facts` 分开存，所以事实的 id 和版本不受影响：
 
-1. 章节标题：整行短（≤12 字）且命中章节词（教育、工作经历、项目经历、专业技能、证书、自我评价等）。思路来自 OpenResume 的「整行是章节标题」，规则自己写。
-2. 条目头：章节内含日期区间的行（`2021.07–2023.03`、`2021年7月至今`）。条目头到下一个条目头之间的行是一个块。
-3. 不确定（章节里没有日期行、行序被 PDF 多栏打乱）：该章节整体当一个块，只允许块内调序，不允许删减，并在界面标「结构不确定」。
+```json
+{"layout": {"version": 1, "confirmed": true, "facts_digest": "…",
+  "sections": [{"key": "work", "title_fact": "intake-…",
+    "entries": [{"head": "intake-…", "lines": ["intake-…", "intake-…"]}]}]}}
+```
 
-调序只在一个块内部发生，块与块之间的顺序不动（经历保持新到旧）。这是 career-ops 也强制的惯例。
+`layout` 只引用事实 id，不含任何文字。每个事实最多出现一次；没有被放进任何条目的行归入「未归类」，不会进入定制版。
+
+**怎么得到。**
+1. 程序先给一个建议版面：章节标题 = 整行短（≤12 字）且命中章节词（教育、工作经历、项目经历、专业技能、证书、自我评价等）；条目头 = 章节内含日期区间的行（`2021.07–2023.03`、`2021年7月至今`），到下一个条目头之间的行归入该条目。章节标题的思路来自 OpenResume 的「整行是章节标题」，规则自己写。
+2. 用户在定制页第一次进入时看到「整理结构」：左边是原行，右边是章节和条目，可以拖行、拆分和合并条目、改章节归属。建议版面只是预填。
+3. 用户点「确认结构」后 `confirmed = true`。没有确认的版面不用于定制：页面停在「整理结构」。
+4. 事实被新增、删除或重新确认导致 `facts_digest` 变了，只把受影响的行标成「未归类」，其余条目保留，让用户补一步，不整体作废。
+
+这一步放在定制页里，不改工作台的「确认事实」流程（工作台冻结）。
+
+**规则。** 调序只在一个条目内部发生，条目之间的顺序不动（经历保持新到旧，career-ops 也强制这一点）。条目头所在行不参与调序，也不参与隐藏。
 
 ### 4.4 放在哪一层
 
@@ -125,7 +134,7 @@
 
 | 文件 | 层 | 内容 | 允许的依赖 |
 |---|---|---|---|
-| `hunt/profile/tailor.py` | profile | 骨架、规则路径、`apply_edits`、`trace` | 标准库 |
+| `hunt/profile/tailor.py` | profile | 版面建议与校验、规则路径、`apply_edits`、`trace` | 标准库 |
 | `hunt/profile/resume_render.py` | profile | Markdown / PDF / DOCX 写出、读回检查 | `profile.intake`、reportlab、pypdf |
 | `hunt/profile/claims.py` | profile | 改写后文字的事实核对（见 6.3） | 标准库 |
 | `hunt/ai/tailor.py` | ai | 起草者、审稿人、prompt、缓存 | `ai.llm`、`ai.orient`、`profile.*` |
@@ -140,7 +149,7 @@
 
 ### 5.1 规则路径（不用模型）
 
-输入：已确认事实、骨架、`job_match` 的结果。输出：一组 `by: "rules"` 的修改和缺口。
+输入：已确认事实、已确认的版面（4.3）、`job_match` 的结果。输出：一组 `by: "rules"` 的修改和缺口。
 
 1. **相关度。** 每条事实服务几条岗位要求：关键词行里 `coverage == explicit` 且 `fact_ids` 含它；职责行 `status` 为 supported 或 related；硬条件行 `met`。这个数只用来排序，界面不显示，也不叫分数。
 2. **reorder。** 块内按相关度降序，同相关度保持原顺序。技能类的一行（「技能：Python、SQL、Docker」）按顿号拆开，把岗位点名的项提前，项的集合不变。
@@ -181,7 +190,7 @@ prompt 规则取自 Resume-Matcher 的真实性规则，译成中文并按我们
 
 ### 6.1 应用修改
 
-`apply_edits(facts, skeleton, edits)` 逐条过四道闸，移植自 Resume-Matcher 的 `apply_diffs`：
+`apply_edits(facts, layout, edits)` 逐条过四道闸，移植自 Resume-Matcher 的 `apply_diffs`：
 
 1. 操作在允许集合内（`reorder / hide / alias / rephrase`），目标是已确认事实。
 2. 不碰身份行：姓名、联系方式、公司名、学校、学位、日期所在的行不允许 `rephrase`，只允许 reorder 和 hide（黑名单思路来自 `_BLOCKED_FIELD_NAMES`）。
@@ -215,7 +224,7 @@ prompt 规则取自 Resume-Matcher 的真实性规则，译成中文并按我们
 
 左右两栏，窄屏上下叠放：
 
-- 左：已确认事实，按骨架分章节和块，原样显示。
+- 左：已确认事实，按已确认的版面分章节和条目，原样显示。
 - 右：定制版，同样的章节和块。被修改的行显示逐字 diff（删除线和下划线）；hide 的行折叠成一行「已隐藏 1 条，展开」。
 - 每条被修改的行下方一行：操作类型、`对应岗位要求：Kubernetes`（点开跳到岗位原文引用并高亮）、`来源：intake-…（第 1 页第 12 段）`（点开显示事实原文）、接受 / 撤销按钮。
 - 右侧或下方一个窄栏「缺口」：未覆盖的关键词和未满足的硬条件，各带岗位引用和「补充事实」。没有分数、没有进度条。
@@ -275,11 +284,12 @@ AI 被拒绝的提议（`rejected_by_gate`）折叠在页面底部，写明被�
 | CLI | `/api/action` | 说明 |
 |---|---|---|
 | `hunt tailor JOB_ID [--ai]` | `tailor` | 生成新版本，返回完整结构 |
+| `hunt layout [--set FILE]` | `layout_get` / `layout_save` | 读取建议版面，或保存用户确认的版面 |
 | `hunt tailor_get JOB_ID [--version N]` | `tailor_get` | 读某一版 |
 | `hunt tailor_review JOB_ID --accept e1,e2 --reject e3` | `tailor_review` | 改修改状态 |
 | `hunt tailor_export JOB_ID --format pdf,docx,md [--version N]` | `tailor_export` | 导出并返回自检结果 |
 
-四个动作都加入 `RESULT_ACTIONS`。`--ai` 在没有同意时返回规则路径的结果加明确原因，退出码不变，由调用方读 `ai.used` 字段判断。外部 agent 可以不开界面完成整个流程；agent 不能绕过检查：`tailor_review` 接受一条 AI 改写前，服务端会重新跑 6.3。
+五个动作都加入 `RESULT_ACTIONS`。`--ai` 在没有同意时返回规则路径的结果加明确原因，退出码不变，由调用方读 `ai.used` 字段判断。外部 agent 可以不开界面完成整个流程；agent 不能绕过检查：`tailor_review` 接受一条 AI 改写前，服务端会重新跑 6.3。
 
 ## 11. 移植清单与署名
 
@@ -305,8 +315,8 @@ AI 被拒绝的提议（`rejected_by_gate`）折叠在页面底部，写明被�
 
 **任务 1：核心与规则路径**
 - 文件：`hunt/profile/tailor.py`、`tests/test_tailor.py`、`tests/fixtures/tailor/*`、`THIRD_PARTY_NOTICES.md`（本任务负责写全部条目）
-- 内容：骨架还原、规则路径五步、`apply_edits`、`check_result`、`trace`、同义词白名单
-- 完成标准：合成简历夹具上，骨架正确；规则路径生成的修改应用后 `trace` 通过；`apply_edits` 拒绝四类越权修改；`test_dependencies` 通过
+- 内容：版面建议与校验（`suggest_layout`、`validate_layout`）、规则路径五步、`apply_edits`、`check_result`、`trace`、同义词白名单
+- 完成标准：合成简历夹具上，建议版面在夹具上与手工标注一致，`validate_layout` 拒绝重复引用和不存在的事实；规则路径生成的修改应用后 `trace` 通过；`apply_edits` 拒绝四类越权修改；`test_dependencies` 通过
 
 **任务 2：导出与读回自检**
 - 文件：`hunt/profile/resume_render.py`、`tests/test_resume_render.py`
@@ -320,15 +330,15 @@ AI 被拒绝的提议（`rejected_by_gate`）折叠在页面底部，写明被�
 
 **任务 4：Store、CLI、接口文档、前端**
 - 文件：`hunt/app/tailor.py`、`hunt/app/store.py`（只加 mixin 和 `ACTIONS` 条目）、`hunt/app/cli.py`、`static/js/tailor/*`、`static/js/job/page.js`（只加入口按钮）、`static/style.css`、`docs/agent-mode.md`、`tests/test_frontend.cjs`、字体子集
-- 内容：SQLite 表、四个动作、导出目录、审核页、键盘操作
-- 完成标准：`--demo` 下从岗位页走完「生成 → 逐条接受 → 导出 → 自检」；CLI 四个命令输出与 `agent-mode.md` 的结构一致；`node --test`、全量 `unittest`、`build_release.py --check` 通过
+- 内容：SQLite 表、`layout` 存取、五个动作、导出目录、「整理结构」页、审核页、键盘操作
+- 完成标准：`--demo` 下从岗位页走完「生成 → 逐条接受 → 导出 → 自检」；CLI 五个命令输出与 `agent-mode.md` 的结构一致；`node --test`、全量 `unittest`、`build_release.py --check` 通过
 - 合并顺序：任务 1–3 合并后再合并，接口以任务 1–3 的实际签名为准
 
 **第二阶段（单独立项）**：求职信（`hunt/ai/cover.py` 及 UI），Rewoven 动效（`static/js/tailor/effect.js`）。
 
 ## 13. 风险
 
-- **骨架还原出错。** 行序、PDF 多栏、没有日期的经历都会让块边界错。缓解：不确定时只允许块内调序、不允许隐藏；审核界面允许把行拖到别的块；导出前一定要用户看过。最坏结果是顺序不理想，不会引入新内容。
+- **版面整理增加一步操作。** 用户第一次用要手动核对条目；预填减轻负担，但简历越乱越费事。不确认就不能定制。最坏结果是用户嫌麻烦，不会引入新内容。
 - **改写核对是启发式。** 6.3 挡得住加词、加数字、升级职责强度，挡不住否定变肯定等语义改动。缓解：AI 改写默认待审核，必须显示 before / after 和来源；审稿人只降级。不会声称「保证无编造」。
 - **审稿人和起草者同一模型家族，错误可能相关。** 所以确定性检查才是依据，审稿人只是附加。
 - **PDF 中文字体可移植性。** 当前靠系统字体或 `HUNT_PDF_FONT`，换机器可能缺。见第 14 节。
@@ -341,7 +351,7 @@ AI 被拒绝的提议（`rejected_by_gate`）折叠在页面底部，写明被�
 
 按影响从大到小：
 
-1. **骨架怎么得到。** 方案 A（推荐）：用 4.3 的规则还原，错了在审核界面纠正。方案 B：在「确认事实」时加一步，让用户把经历整理成「公司 / 职位 / 时间 / 要点」。B 更准，但改动现有确认流程，工作量大。选 A 的代价是首版可能有一部分简历结构不确定，只能块内调序。
+1. 版面结构：已按你的选择定为方案 B（用户确认条目结构，程序只预填），见 4.3。
 2. **改写的尺度。** 现在设计很保守：规则路径只换白名单里的同义词；AI 只能换成同义说法，不能加词。这会让多数简历的「改写」条数很少，主要价值在调序和缺口清单。你是否接受？如果希望 AI 更自由地重写句子，要先放宽 6.3 的第 1、4 项，风险随之上升，需要你明确同意。
 3. **页数上限和隐藏。** 默认不限页数、不自动隐藏，只在你设了上限时才建议隐藏。是否合适？
 4. **DOCX。** 用标准库手写最小 OOXML（不加依赖，版式简单），还是接受 `python-docx` 这个新依赖（版式更好）？
