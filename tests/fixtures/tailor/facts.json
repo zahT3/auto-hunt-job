@@ -1,0 +1,227 @@
+[
+ {
+  "id": "intake-f0",
+  "text": "姓名：林小满",
+  "source": {
+   "kind": "user_resume_draft",
+   "reference": "upload://x#paragraph=1",
+   "synthetic": true
+  },
+  "status": "confirmed",
+  "version": 1,
+  "disclosure": "private",
+  "tags": [
+   "identity"
+  ]
+ },
+ {
+  "id": "intake-f1",
+  "text": "邮箱：lin@example.com",
+  "source": {
+   "kind": "user_resume_draft",
+   "reference": "upload://x#paragraph=2",
+   "synthetic": true
+  },
+  "status": "confirmed",
+  "version": 1,
+  "disclosure": "private",
+  "tags": [
+   "contact"
+  ]
+ },
+ {
+  "id": "intake-f2",
+  "text": "工作经历",
+  "source": {
+   "kind": "user_resume_draft",
+   "reference": "upload://x#paragraph=3",
+   "synthetic": true
+  },
+  "status": "confirmed",
+  "version": 1,
+  "disclosure": "private",
+  "tags": []
+ },
+ {
+  "id": "intake-f3",
+  "text": "星河科技有限公司 后端工程师 2021.07-2023.03",
+  "source": {
+   "kind": "user_resume_draft",
+   "reference": "upload://x#paragraph=4",
+   "synthetic": true
+  },
+  "status": "confirmed",
+  "version": 1,
+  "disclosure": "private",
+  "tags": []
+ },
+ {
+  "id": "intake-f4",
+  "text": "负责订单服务的 Postgres 数据库优化，查询耗时下降 40%",
+  "source": {
+   "kind": "user_resume_draft",
+   "reference": "upload://x#paragraph=5",
+   "synthetic": true
+  },
+  "status": "confirmed",
+  "version": 1,
+  "disclosure": "private",
+  "tags": []
+ },
+ {
+  "id": "intake-f5",
+  "text": "参与内部文档站点维护",
+  "source": {
+   "kind": "user_resume_draft",
+   "reference": "upload://x#paragraph=6",
+   "synthetic": true
+  },
+  "status": "confirmed",
+  "version": 1,
+  "disclosure": "private",
+  "tags": []
+ },
+ {
+  "id": "intake-f6",
+  "text": "负责在 k8s 集群上部署微服务，使用 Docker 打包",
+  "source": {
+   "kind": "user_resume_draft",
+   "reference": "upload://x#paragraph=7",
+   "synthetic": true
+  },
+  "status": "confirmed",
+  "version": 1,
+  "disclosure": "private",
+  "tags": []
+ },
+ {
+  "id": "intake-f7",
+  "text": "云帆网络有限公司 实习生 2020.06-2020.09",
+  "source": {
+   "kind": "user_resume_draft",
+   "reference": "upload://x#paragraph=8",
+   "synthetic": true
+  },
+  "status": "confirmed",
+  "version": 1,
+  "disclosure": "private",
+  "tags": []
+ },
+ {
+  "id": "intake-f8",
+  "text": "整理测试用例",
+  "source": {
+   "kind": "user_resume_draft",
+   "reference": "upload://x#paragraph=9",
+   "synthetic": true
+  },
+  "status": "confirmed",
+  "version": 1,
+  "disclosure": "private",
+  "tags": []
+ },
+ {
+  "id": "intake-f9",
+  "text": "编写 Python 脚本导入数据",
+  "source": {
+   "kind": "user_resume_draft",
+   "reference": "upload://x#paragraph=10",
+   "synthetic": true
+  },
+  "status": "confirmed",
+  "version": 1,
+  "disclosure": "private",
+  "tags": []
+ },
+ {
+  "id": "intake-f10",
+  "text": "专业技能",
+  "source": {
+   "kind": "user_resume_draft",
+   "reference": "upload://x#paragraph=11",
+   "synthetic": true
+  },
+  "status": "confirmed",
+  "version": 1,
+  "disclosure": "private",
+  "tags": []
+ },
+ {
+  "id": "intake-f11",
+  "text": "技能：Excel、SQL、Python、Docker",
+  "source": {
+   "kind": "user_resume_draft",
+   "reference": "upload://x#paragraph=12",
+   "synthetic": true
+  },
+  "status": "confirmed",
+  "version": 1,
+  "disclosure": "private",
+  "tags": []
+ },
+ {
+  "id": "intake-f12",
+  "text": "教育背景",
+  "source": {
+   "kind": "user_resume_draft",
+   "reference": "upload://x#paragraph=13",
+   "synthetic": true
+  },
+  "status": "confirmed",
+  "version": 1,
+  "disclosure": "private",
+  "tags": []
+ },
+ {
+  "id": "intake-f13",
+  "text": "华南理工大学 计算机科学 本科 2017.09-2021.06",
+  "source": {
+   "kind": "user_resume_draft",
+   "reference": "upload://x#paragraph=14",
+   "synthetic": true
+  },
+  "status": "confirmed",
+  "version": 1,
+  "disclosure": "private",
+  "tags": []
+ },
+ {
+  "id": "intake-f14",
+  "text": "主修数据结构与算法",
+  "source": {
+   "kind": "user_resume_draft",
+   "reference": "upload://x#paragraph=15",
+   "synthetic": true
+  },
+  "status": "confirmed",
+  "version": 1,
+  "disclosure": "private",
+  "tags": []
+ },
+ {
+  "id": "intake-f15",
+  "text": "热爱学习",
+  "source": {
+   "kind": "user_resume_draft",
+   "reference": "upload://x#paragraph=16",
+   "synthetic": true
+  },
+  "status": "confirmed",
+  "version": 1,
+  "disclosure": "private",
+  "tags": []
+ },
+ {
+  "id": "intake-f16",
+  "text": "独立完成日志平台选型",
+  "source": {
+   "kind": "user_resume_draft",
+   "reference": "upload://x#paragraph=17",
+   "synthetic": true
+  },
+  "status": "unconfirmed",
+  "version": 1,
+  "disclosure": "private",
+  "tags": []
+ }
+]

@@ -1,0 +1,139 @@
+{
+ "hard": [
+  {
+   "kind": "education",
+   "requirement": "本科",
+   "jd_evidence": "本科及以上学历",
+   "status": "met",
+   "fact_ids": [
+    "intake-f13"
+   ],
+   "basis": "facts",
+   "why": null
+  },
+  {
+   "kind": "years",
+   "requirement": "3年以上",
+   "jd_evidence": "3年以上后端经验",
+   "status": "unknown",
+   "fact_ids": [],
+   "basis": "facts",
+   "why": "已确认事实里没有写工作年限"
+  }
+ ],
+ "keywords": [
+  {
+   "keyword": "Kubernetes",
+   "source": "hard_skill",
+   "jd_evidence": "熟悉 Kubernetes",
+   "coverage": "related",
+   "fact_ids": [],
+   "related_fact_ids": [
+    "intake-f6"
+   ],
+   "related_terms": [
+    "k8s",
+    "容器编排"
+   ],
+   "why": ""
+  },
+  {
+   "keyword": "PostgreSQL",
+   "source": "hard_skill",
+   "jd_evidence": "使用 PostgreSQL",
+   "coverage": "related",
+   "fact_ids": [],
+   "related_fact_ids": [
+    "intake-f4"
+   ],
+   "related_terms": [
+    "Postgres"
+   ],
+   "why": ""
+  },
+  {
+   "keyword": "Python",
+   "source": "hard_skill",
+   "jd_evidence": "熟练使用 Python",
+   "coverage": "explicit",
+   "fact_ids": [
+    "intake-f9",
+    "intake-f11"
+   ],
+   "related_fact_ids": [],
+   "related_terms": [],
+   "why": ""
+  },
+  {
+   "keyword": "SQL",
+   "source": "hard_skill",
+   "jd_evidence": "熟悉 SQL",
+   "coverage": "explicit",
+   "fact_ids": [
+    "intake-f11"
+   ],
+   "related_fact_ids": [],
+   "related_terms": [],
+   "why": ""
+  },
+  {
+   "keyword": "Docker",
+   "source": "hard_skill",
+   "jd_evidence": "了解 Docker",
+   "coverage": "explicit",
+   "fact_ids": [
+    "intake-f6",
+    "intake-f11"
+   ],
+   "related_fact_ids": [],
+   "related_terms": [],
+   "why": ""
+  },
+  {
+   "keyword": "Kafka",
+   "source": "hard_skill",
+   "jd_evidence": "有 Kafka 经验",
+   "coverage": "absent",
+   "fact_ids": [],
+   "related_fact_ids": [],
+   "related_terms": [],
+   "why": ""
+  },
+  {
+   "keyword": "TypeScript",
+   "source": "bonus",
+   "jd_evidence": "加分：TypeScript",
+   "coverage": "related",
+   "fact_ids": [],
+   "related_fact_ids": [
+    "intake-f14"
+   ],
+   "related_terms": [
+    "JavaScript"
+   ],
+   "why": ""
+  }
+ ],
+ "evidence": [
+  {
+   "kind": "duty",
+   "requirement": "负责后端服务的数据库优化",
+   "jd_evidence": "负责后端服务的数据库优化",
+   "fact_ids": [
+    "intake-f4"
+   ],
+   "related_fact_ids": [],
+   "status": "supported"
+  },
+  {
+   "kind": "duty",
+   "requirement": "维护技术文档",
+   "jd_evidence": "维护技术文档",
+   "fact_ids": [],
+   "related_fact_ids": [],
+   "status": "none"
+  }
+ ],
+ "notice": "",
+ "evidence_note": null
+}
