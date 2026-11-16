@@ -1,0 +1,282 @@
+[
+  {
+    "id": "intake-47cd435c0ceb0101c5",
+    "text": "林示例",
+    "source": {
+      "kind": "user_resume_draft",
+      "reference": "upload://fixture#paragraph=1",
+      "label": "resume.txt",
+      "synthetic": true
+    },
+    "status": "confirmed",
+    "version": 1,
+    "disclosure": "private",
+    "tags": []
+  },
+  {
+    "id": "intake-1b087ebb38cbbf66db",
+    "text": "邮箱：candidate@example.invalid",
+    "source": {
+      "kind": "user_resume_draft",
+      "reference": "upload://fixture#paragraph=2",
+      "label": "resume.txt",
+      "synthetic": true
+    },
+    "status": "confirmed",
+    "version": 1,
+    "disclosure": "private",
+    "tags": []
+  },
+  {
+    "id": "intake-1a0d419d52eb9480b2",
+    "text": "教育背景",
+    "source": {
+      "kind": "user_resume_draft",
+      "reference": "upload://fixture#paragraph=3",
+      "label": "resume.txt",
+      "synthetic": true
+    },
+    "status": "confirmed",
+    "version": 1,
+    "disclosure": "private",
+    "tags": []
+  },
+  {
+    "id": "intake-0e7a7ffd25aee24094",
+    "text": "2017.09-2021.06 示例大学 计算机科学与技术 本科",
+    "source": {
+      "kind": "user_resume_draft",
+      "reference": "upload://fixture#paragraph=4",
+      "label": "resume.txt",
+      "synthetic": true
+    },
+    "status": "confirmed",
+    "version": 1,
+    "disclosure": "private",
+    "tags": []
+  },
+  {
+    "id": "intake-dedc1de82e2b1460dd",
+    "text": "工作经历",
+    "source": {
+      "kind": "user_resume_draft",
+      "reference": "upload://fixture#paragraph=5",
+      "label": "resume.txt",
+      "synthetic": true
+    },
+    "status": "confirmed",
+    "version": 1,
+    "disclosure": "private",
+    "tags": []
+  },
+  {
+    "id": "intake-4862d40950ce14e4d0",
+    "text": "2021年7月至今 示例科技有限公司 后端开发工程师",
+    "source": {
+      "kind": "user_resume_draft",
+      "reference": "upload://fixture#paragraph=6",
+      "label": "resume.txt",
+      "synthetic": true
+    },
+    "status": "confirmed",
+    "version": 1,
+    "disclosure": "private",
+    "tags": []
+  },
+  {
+    "id": "intake-08a9269451bfff6103",
+    "text": "负责内部检索服务的接口开发，使用 Python 和 SQL。",
+    "source": {
+      "kind": "user_resume_draft",
+      "reference": "upload://fixture#paragraph=7",
+      "label": "resume.txt",
+      "synthetic": true
+    },
+    "status": "confirmed",
+    "version": 1,
+    "disclosure": "private",
+    "tags": []
+  },
+  {
+    "id": "intake-7605b5d49c795ddda5",
+    "text": "使用 Docker 部署本地测试环境。",
+    "source": {
+      "kind": "user_resume_draft",
+      "reference": "upload://fixture#paragraph=8",
+      "label": "resume.txt",
+      "synthetic": true
+    },
+    "status": "confirmed",
+    "version": 1,
+    "disclosure": "private",
+    "tags": []
+  },
+  {
+    "id": "intake-1b9055f557d8b68ac8",
+    "text": "2019.07-2019.09 示例网络公司 开发实习生",
+    "source": {
+      "kind": "user_resume_draft",
+      "reference": "upload://fixture#paragraph=9",
+      "label": "resume.txt",
+      "synthetic": true
+    },
+    "status": "confirmed",
+    "version": 1,
+    "disclosure": "private",
+    "tags": []
+  },
+  {
+    "id": "intake-3ad2caf83fed6b969c",
+    "text": "参与前端页面的原型开发。",
+    "source": {
+      "kind": "user_resume_draft",
+      "reference": "upload://fixture#paragraph=10",
+      "label": "resume.txt",
+      "synthetic": true
+    },
+    "status": "confirmed",
+    "version": 1,
+    "disclosure": "private",
+    "tags": []
+  },
+  {
+    "id": "intake-ac682758114b056f18",
+    "text": "2020.01-2020.12 示例云公司 示例数据有限公司 工程师",
+    "source": {
+      "kind": "user_resume_draft",
+      "reference": "upload://fixture#paragraph=11",
+      "label": "resume.txt",
+      "synthetic": true
+    },
+    "status": "confirmed",
+    "version": 1,
+    "disclosure": "private",
+    "tags": []
+  },
+  {
+    "id": "intake-df97a9a4e5c82104af",
+    "text": "整理合成数据集。",
+    "source": {
+      "kind": "user_resume_draft",
+      "reference": "upload://fixture#paragraph=12",
+      "label": "resume.txt",
+      "synthetic": true
+    },
+    "status": "confirmed",
+    "version": 1,
+    "disclosure": "private",
+    "tags": []
+  },
+  {
+    "id": "intake-6da510783817e81118",
+    "text": "项目经历",
+    "source": {
+      "kind": "user_resume_draft",
+      "reference": "upload://fixture#paragraph=13",
+      "label": "resume.txt",
+      "synthetic": true
+    },
+    "status": "confirmed",
+    "version": 1,
+    "disclosure": "private",
+    "tags": []
+  },
+  {
+    "id": "intake-a6d66422300d2d2893",
+    "text": "2022.03-2022.06 简历审核页（个人项目）",
+    "source": {
+      "kind": "user_resume_draft",
+      "reference": "upload://fixture#paragraph=14",
+      "label": "resume.txt",
+      "synthetic": true
+    },
+    "status": "confirmed",
+    "version": 1,
+    "disclosure": "private",
+    "tags": []
+  },
+  {
+    "id": "intake-21546902945971994e",
+    "text": "使用 React 实现简历审核页面。",
+    "source": {
+      "kind": "user_resume_draft",
+      "reference": "upload://fixture#paragraph=15",
+      "label": "resume.txt",
+      "synthetic": true
+    },
+    "status": "confirmed",
+    "version": 1,
+    "disclosure": "private",
+    "tags": []
+  },
+  {
+    "id": "intake-94ad69e870c8ae091a",
+    "text": "专业技能",
+    "source": {
+      "kind": "user_resume_draft",
+      "reference": "upload://fixture#paragraph=16",
+      "label": "resume.txt",
+      "synthetic": true
+    },
+    "status": "confirmed",
+    "version": 1,
+    "disclosure": "private",
+    "tags": []
+  },
+  {
+    "id": "intake-b0205f4f47398f563a",
+    "text": "Python、SQL、Docker、React",
+    "source": {
+      "kind": "user_resume_draft",
+      "reference": "upload://fixture#paragraph=17",
+      "label": "resume.txt",
+      "synthetic": true
+    },
+    "status": "confirmed",
+    "version": 1,
+    "disclosure": "private",
+    "tags": []
+  },
+  {
+    "id": "intake-df22aef1539ea5bfba",
+    "text": "证书",
+    "source": {
+      "kind": "user_resume_draft",
+      "reference": "upload://fixture#paragraph=18",
+      "label": "resume.txt",
+      "synthetic": true
+    },
+    "status": "confirmed",
+    "version": 1,
+    "disclosure": "private",
+    "tags": []
+  },
+  {
+    "id": "intake-7c4bca2e5a7ae1ab24",
+    "text": "示例英语四级证书",
+    "source": {
+      "kind": "user_resume_draft",
+      "reference": "upload://fixture#paragraph=19",
+      "label": "resume.txt",
+      "synthetic": true
+    },
+    "status": "confirmed",
+    "version": 1,
+    "disclosure": "private",
+    "tags": []
+  },
+  {
+    "id": "intake-326a1f069d44d060f8",
+    "text": "自我评价",
+    "source": {
+      "kind": "user_resume_draft",
+      "reference": "upload://fixture#paragraph=20",
+      "label": "resume.txt",
+      "synthetic": true
+    },
+    "status": "confirmed",
+    "version": 1,
+    "disclosure": "private",
+    "tags": []
+  }
+]

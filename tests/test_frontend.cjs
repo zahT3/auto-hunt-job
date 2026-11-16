@@ -941,3 +941,59 @@ test('mokahr reads a same-origin iframe document',async()=>{
  const h=runBookmarklet('mokahr',{text:'壳页面',dom:{'iframe[src*="mokahr.com"]':[{contentDocument:inner}]}});
  await h.run();assert.equal(h.payload().extracted.job_title,'数据策略工程师');assert.equal(h.payload().extracted.location,'杭州');
 });
+
+// Résumé structure step: the sample structure holds one dated entry with two bullets and one unplaced line.
+const STRUCTURE_SAMPLE=`(()=>{const ref=(id,version=1)=>({id,version});const ok={span:null,confidence:'ok'};
+ const structure={version:0,status:'prefilled',confirmed_at:null,facts_digest:'x',unassigned:[ref('u1')],sections:[
+  {id:'s1',key:'work',title_fact:ref('t1'),entries:[
+   {id:'n1',status:'ok',head:ref('h1'),fields:{company:{span:[16,24],confidence:'uncertain'},title:{span:null,confidence:'uncertain'},start:{span:[0,7],confidence:'ok'},end:{span:[8,15],confidence:'ok'}},bullets:[ref('b1'),ref('b2')]}]}]};
+ const facts=[['t1','工作经历'],['h1','2021.07—2024.06 示例科技有限公司 <b>工程师</b>'],['b1','第一条'],['b2','第二条'],['u1','没有分组的一行']].map(([id,text])=>({id,version:1,text}));
+ structureWork={structure,base:0,facts:new Map(facts.map(f=>[f.id,f])),fragments:{h1:[{span:[0,7],text:'2021.07'},{span:[16,24],text:'示例科技有限公司'}]}};return structure;})()`;
+test('structure edits keep every fact in exactly one place and spans point only into the head text',()=>{
+ const h=harness();h.run('globalThis.s='+STRUCTURE_SAMPLE);
+ assert.equal(h.run('JSON.stringify(structureBlockers(s))'),JSON.stringify({uncertain:2,stale:0,unassigned:1}));
+ assert.equal(h.run("structureMoveFact(s,'u1','n1',1)"),true);assert.equal(h.run('s.unassigned.length'),0);assert.equal(h.run('s.sections[0].entries[0].bullets.length'),3);
+ assert.equal(h.run("structureMoveFact(s,'b1','unassigned',1)"),true);assert.equal(h.run("s.unassigned.map(r=>r.id).join()"),'b1');
+ assert.equal(h.run("structureMoveFact(s,'h1','unassigned',1)"),false,'a head line cannot be moved out');
+ assert.equal(h.run("structureSplit(s,'n1','b2')"),true);assert.equal(h.run('s.sections[0].entries.length'),2);
+ assert.equal(h.run('s.sections[0].entries[1].head.id'),'b2');assert.equal(h.run('s.sections[0].entries[1].id'),'n2');
+ assert.equal(h.run("Object.values(s.sections[0].entries[1].fields).every(f=>f.confidence==='uncertain'&&f.span===null)"),true);
+ assert.equal(h.run("structureMerge(s,'n2')"),true);assert.equal(h.run('s.sections[0].entries.length'),1);assert.equal(h.run('s.sections[0].entries[0].bullets.map(r=>r.id).join()'),'b2,u1');
+ assert.equal(h.run("structureMerge(s,'n1')"),false,'the first entry has nothing to merge into');
+ assert.equal(h.run("structureSetField(s,'n1','title',[26,35])&&s.sections[0].entries[0].fields.title.confidence"),'ok');
+ assert.equal(h.run("structureConfirmEntry(s,'n1');structureBlockers(s).uncertain"),0);
+});
+test('stale entry is adopted onto current fact versions but its fields stay open',()=>{
+ const h=harness();h.run('globalThis.s='+STRUCTURE_SAMPLE);
+ h.run("s.sections[0].entries[0].status='stale';structureWork.facts.get('b1').version=2;structureWork.facts.get('h1').version=3");
+ assert.equal(h.run('structureBlockers(s).stale'),1);
+ h.run("structureAdopt(s,'n1',new Map([...structureWork.facts].map(([id,f])=>[id,f.version])))");
+ assert.equal(h.run("s.sections[0].entries[0].status"),'ok');assert.equal(h.run('s.sections[0].entries[0].bullets[0].version'),2);assert.equal(h.run('s.sections[0].entries[0].head.version'),3);
+ assert.equal(h.run('structureBlockers(s).uncertain'),2);
+});
+test('structure page escapes fact text, marks uncertain fields and blocks confirmation until none are left',()=>{
+ const h=harness();h.run('globalThis.s='+STRUCTURE_SAMPLE);
+ let html=h.run('structurePageHtml()');
+ assert.match(html,/&lt;b&gt;工程师&lt;\/b&gt;/);assert.doesNotMatch(html,/<b>工程师/);
+ assert.match(html,/<mark class="ev ev-kw-related" title="公司">示例科技有限公司<\/mark>/);assert.match(html,/<mark class="ev ev-ok" title="开始">2021\.07<\/mark>/);
+ assert.match(html,/data-act="confirm" disabled/);assert.match(html,/待核对/);
+ h.run("structureConfirmEntry(s,'n1')");html=h.run('structurePageHtml()');
+ assert.doesNotMatch(html,/data-act="confirm" disabled/);assert.doesNotMatch(html,/class="badge warn">\d+ 项待核对/);
+});
+test('structure spans count code points, not UTF-16 units',()=>{
+ const h=harness();assert.equal(h.run("structureSlice('𠮷野家 示例科技',[4,8])"),'示例科技');
+});
+test('structure step mounts after fact confirmation, hides while a new draft awaits review, and confirms through structure_save',async()=>{
+ const h=harness();const structure=JSON.parse(JSON.stringify(h.run('JSON.parse(JSON.stringify('+STRUCTURE_SAMPLE+'))')));
+ h.state({candidate_draft:{id:'d',status:'needs_review',candidate:{facts:[]},profile:{}}});
+ h.run("globalThis.calls=[];action=async(name,payload)=>{calls.push([name,payload]);return null;}");
+ assert.equal(await h.run('mountStructure()'),false);assert.equal(h.node('#resume-structure').hidden,true);assert.equal(h.run('calls.length'),0);
+ h.state({candidate_draft:null});
+ h.run(`action=async(name,payload)=>{calls.push([name,payload]);return {result:name==='structure_get'?{structure:${JSON.stringify(structure)},facts:[{id:'h1',version:1,text:'2021.07 示例科技'}],fragments:{}}:{structure:Object.assign(payload.structure,{status:'confirmed',version:1})}};}`);
+ assert.equal(await h.run('mountStructure()'),true);assert.equal(h.node('#resume-structure').hidden,false);assert.match(h.node('#resume-structure').innerHTML,/确认简历结构/);
+ h.run("structureConfirmEntry(structureWork.structure,'n1')");
+ await h.run("structureClick({dataset:{act:'confirm'}})");
+ const saved=h.run('calls[calls.length-1]');assert.equal(saved[0],'structure_save');assert.equal(saved[1].confirm,true);assert.equal(saved[1].base_version,0);
+ assert.equal(h.run('structureWork.base'),1);
+ h.run("action=async()=>null;");assert.equal(await h.run('mountStructure()'),false);assert.equal(h.node('#resume-structure').hidden,true);
+});

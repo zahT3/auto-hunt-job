@@ -1,0 +1,299 @@
+{
+  "version": 1,
+  "status": "confirmed",
+  "confirmed_at": "2026-11-16T10:00:00+08:00",
+  "facts_digest": "be5083216c6faa0716f2d1bb1b52f3211ac3089b85ff5a359fb30dbc779ca17e",
+  "sections": [
+    {
+      "id": "s1",
+      "key": "education",
+      "title_fact": {
+        "id": "intake-1a0d419d52eb9480b2",
+        "version": 1
+      },
+      "entries": [
+        {
+          "id": "n1",
+          "status": "ok",
+          "head": {
+            "id": "intake-0e7a7ffd25aee24094",
+            "version": 1
+          },
+          "fields": {
+            "company": {
+              "span": [
+                16,
+                20
+              ],
+              "confidence": "ok"
+            },
+            "title": {
+              "span": [
+                30,
+                32
+              ],
+              "confidence": "ok"
+            },
+            "start": {
+              "span": [
+                0,
+                7
+              ],
+              "confidence": "ok"
+            },
+            "end": {
+              "span": [
+                8,
+                15
+              ],
+              "confidence": "ok"
+            }
+          },
+          "bullets": []
+        }
+      ]
+    },
+    {
+      "id": "s2",
+      "key": "work",
+      "title_fact": {
+        "id": "intake-dedc1de82e2b1460dd",
+        "version": 1
+      },
+      "entries": [
+        {
+          "id": "n2",
+          "status": "stale",
+          "head": {
+            "id": "intake-4862d40950ce14e4d0",
+            "version": 1
+          },
+          "fields": {
+            "company": {
+              "span": [
+                10,
+                18
+              ],
+              "confidence": "uncertain"
+            },
+            "title": {
+              "span": [
+                19,
+                26
+              ],
+              "confidence": "uncertain"
+            },
+            "start": {
+              "span": [
+                0,
+                7
+              ],
+              "confidence": "uncertain"
+            },
+            "end": {
+              "span": [
+                7,
+                9
+              ],
+              "confidence": "uncertain"
+            }
+          },
+          "bullets": [
+            {
+              "id": "intake-08a9269451bfff6103",
+              "version": 1
+            },
+            {
+              "id": "intake-7605b5d49c795ddda5",
+              "version": 1
+            }
+          ]
+        },
+        {
+          "id": "n3",
+          "status": "stale",
+          "head": null,
+          "fields": {
+            "company": {
+              "span": null,
+              "confidence": "uncertain"
+            },
+            "title": {
+              "span": null,
+              "confidence": "uncertain"
+            },
+            "start": {
+              "span": null,
+              "confidence": "uncertain"
+            },
+            "end": {
+              "span": null,
+              "confidence": "uncertain"
+            }
+          },
+          "bullets": [
+            {
+              "id": "intake-3ad2caf83fed6b969c",
+              "version": 1
+            }
+          ]
+        },
+        {
+          "id": "n4",
+          "status": "ok",
+          "head": {
+            "id": "intake-ac682758114b056f18",
+            "version": 1
+          },
+          "fields": {
+            "company": {
+              "span": [
+                16,
+                21
+              ],
+              "confidence": "ok"
+            },
+            "title": {
+              "span": [
+                31,
+                34
+              ],
+              "confidence": "ok"
+            },
+            "start": {
+              "span": [
+                0,
+                7
+              ],
+              "confidence": "ok"
+            },
+            "end": {
+              "span": [
+                8,
+                15
+              ],
+              "confidence": "ok"
+            }
+          },
+          "bullets": [
+            {
+              "id": "intake-df97a9a4e5c82104af",
+              "version": 1
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "s3",
+      "key": "project",
+      "title_fact": {
+        "id": "intake-6da510783817e81118",
+        "version": 1
+      },
+      "entries": [
+        {
+          "id": "n5",
+          "status": "ok",
+          "head": {
+            "id": "intake-a6d66422300d2d2893",
+            "version": 1
+          },
+          "fields": {
+            "company": {
+              "span": null,
+              "confidence": "ok"
+            },
+            "title": {
+              "span": null,
+              "confidence": "ok"
+            },
+            "start": {
+              "span": [
+                0,
+                7
+              ],
+              "confidence": "ok"
+            },
+            "end": {
+              "span": [
+                8,
+                15
+              ],
+              "confidence": "ok"
+            }
+          },
+          "bullets": [
+            {
+              "id": "intake-21546902945971994e",
+              "version": 1
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "s4",
+      "key": "skills",
+      "title_fact": {
+        "id": "intake-94ad69e870c8ae091a",
+        "version": 1
+      },
+      "entries": [
+        {
+          "id": "n6",
+          "status": "ok",
+          "head": null,
+          "fields": {},
+          "bullets": [
+            {
+              "id": "intake-b0205f4f47398f563a",
+              "version": 1
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "s5",
+      "key": "certificates",
+      "title_fact": {
+        "id": "intake-df22aef1539ea5bfba",
+        "version": 1
+      },
+      "entries": [
+        {
+          "id": "n7",
+          "status": "ok",
+          "head": null,
+          "fields": {},
+          "bullets": [
+            {
+              "id": "intake-7c4bca2e5a7ae1ab24",
+              "version": 1
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "s6",
+      "key": "summary",
+      "title_fact": {
+        "id": "intake-326a1f069d44d060f8",
+        "version": 1
+      },
+      "entries": []
+    }
+  ],
+  "unassigned": [
+    {
+      "id": "intake-47cd435c0ceb0101c5",
+      "version": 1
+    },
+    {
+      "id": "intake-1b087ebb38cbbf66db",
+      "version": 1
+    }
+  ]
+}

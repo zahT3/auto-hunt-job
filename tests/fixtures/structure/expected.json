@@ -1,0 +1,28 @@
+{
+  "unassigned": ["林示例", "邮箱：candidate@example.invalid"],
+  "sections": [
+    {"key": "education", "title": "教育背景", "entries": [
+      {"head": "2017.09-2021.06 示例大学 计算机科学与技术 本科",
+       "company": "示例大学", "title": "本科", "start": "2017.09", "end": "2021.06",
+       "uncertain": [], "bullets": []}]},
+    {"key": "work", "title": "工作经历", "entries": [
+      {"head": "2021年7月至今 示例科技有限公司 后端开发工程师",
+       "company": "示例科技有限公司", "title": "后端开发工程师", "start": "2021年7月", "end": "至今",
+       "uncertain": [], "bullets": ["负责内部检索服务的接口开发，使用 Python 和 SQL。", "使用 Docker 部署本地测试环境。"]},
+      {"head": "2019.07-2019.09 示例网络公司 开发实习生",
+       "company": "示例网络公司", "title": "开发实习生", "start": "2019.07", "end": "2019.09",
+       "uncertain": [], "bullets": ["参与前端页面的原型开发。"]},
+      {"head": "2020.01-2020.12 示例云公司 示例数据有限公司 工程师",
+       "company": "示例云公司", "title": "工程师", "start": "2020.01", "end": "2020.12",
+       "uncertain": ["company"], "bullets": ["整理合成数据集。"]}]},
+    {"key": "project", "title": "项目经历", "entries": [
+      {"head": "2022.03-2022.06 简历审核页（个人项目）",
+       "company": null, "title": null, "start": "2022.03", "end": "2022.06",
+       "uncertain": ["company", "title"], "bullets": ["使用 React 实现简历审核页面。"]}]},
+    {"key": "skills", "title": "专业技能", "entries": [
+      {"head": null, "bullets": ["Python、SQL、Docker、React"]}]},
+    {"key": "certificates", "title": "证书", "entries": [
+      {"head": null, "bullets": ["示例英语四级证书"]}]},
+    {"key": "summary", "title": "自我评价", "entries": []}
+  ]
+}
