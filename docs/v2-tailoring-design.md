@@ -8,7 +8,7 @@
 - 怎么保证不编造：定制版不是一份新写的文字，而是**原始事实上的一串修改**。每条修改写明引用哪些事实（id 和版本）、服务哪一条岗位要求。不引用事实的文字不能进入导出文件。
 - 不用模型也能用：规则路径只做三件事：同一职责内按相关度调序、同义词换成岗位原词（限一张很短的白名单）、列出缺口。AI 路径在这之上允许重写句子：改句式、调语序、合并或拆句、换成岗位原文的说法。事实里没有的数字、工具名、雇主学校项目名、职位、奖项证书一律被本地检查拒绝，审核放行不了；职责强度升级和否定变肯定标红，默认待审核。
 - 复用方式：按已定的决定，不用别的语言重写。MIT / Apache-2.0 的做法用 Python 移植并署名；非商用许可只当思路。实际能直接搬的**代码很少**，主要搬的是门槛的设计：Resume-Matcher 的修改应用闸门和校验（Apache-2.0）、ai-job-search 的审稿人分工和岗位文本扫描（MIT）。
-- 最大风险：现有「事实」是简历按段落切出来的一行行文字，没有「公司 / 职位 / 时间 / 要点」的结构。调序和删减需要条目结构。已定方案：规则还原，在审核界面纠正（第 4.3 节）。
+- 最大风险：现有「事实」是简历按段落切出来的一行行文字，没有「公司 / 职位 / 时间 / 要点」的结构。调序和删减需要条目结构。已定方案：确认事实时规则预填，用户纠正，存成「简历结构」，之后每个岗位复用（第 4.3 节）。
 
 ## 2. 调研
 
@@ -70,10 +70,7 @@
     "jd_digest": "…",
     "match_digest": "…"
   },
-  "skeleton": [
-    {"section": "work", "title_fact": "intake-…",
-     "blocks": [{"head": "intake-…", "lines": ["intake-…", "intake-…"]}]}
-  ],
+  "structure": {"version": 4},
   "edits": [Edit],
   "gaps": [Gap],
   "rejected_by_gate": [{"edit": {…}, "reason": "new_term"}],
@@ -109,19 +106,49 @@
 - 一条修改引用的事实被改过（`version` 变了）或不再是已确认状态，这条修改变为 `stale`，不进导出，界面提示「事实已变，需重新审核」。借自 Reactive-Resume 的 `expectedUpdatedAt`。
 - 导出时记下当时的版本号和文件哈希，文件名带版本：`<公司>-<岗位>-v3.pdf`。
 
-### 4.3 骨架：规则还原，审核时纠正
+### 4.3 简历结构：确认事实时预填，用户纠正
 
-事实是 `intake.analyze_resume` 按段落切出的行，每行带 `source.reference = upload://<sha>#page=1&paragraph=12`。没有条目结构。
+事实是 `intake.analyze_resume` 按段落切出的行，每行带 `source.reference = upload://<sha>#page=1&paragraph=12`，没有条目结构。调序和隐藏需要知道「哪些行属于同一段经历」，所以结构在**确认事实这一步**一次性建立，之后每个岗位的定制都复用，定制页和审核页不再还原结构。
 
-做法：规则从行序还原一个骨架，用户可在审核界面纠正。
+**数据。** 「简历结构」与 `facts` 分开存（Store 的 meta 表，键 `resume_structure`），所以事实本身不动：
 
+```json
+{"version": 4, "status": "prefilled | confirmed", "confirmed_at": "…",
+ "facts_digest": "…",
+ "sections": [{"id": "s1", "key": "work", "title_fact": {"id": "intake-…", "version": 2},
+   "entries": [{"id": "n3", "status": "ok | stale",
+     "head": {"id": "intake-…", "version": 2},
+     "fields": {"company": {"span": [0, 6], "confidence": "ok"},
+                "title": {"span": [8, 14], "confidence": "uncertain"},
+                "start": {"span": [16, 23], "confidence": "ok"},
+                "end": {"span": [24, 26], "confidence": "ok"}},
+     "bullets": [{"id": "intake-…", "version": 2}]}]}],
+ "unassigned": [{"id": "intake-…", "version": 2}]}
+```
+
+要点：
+- 每个条目引用条目头事实和其下要点行的 **事实 id + 版本**，不含自己写的文字。
+- 公司、职位、起止时间是条目头事实原文里的**片段位置**（`span`），不是另存的文字。用户纠正时只能在原文里重新选片段，或者留空，不能自由输入新文字，所以结构本身也不会引入原文里没有的内容。
+- `confidence` 记录规则对每个字段有多大把握，`uncertain` 的字段在界面高亮。
+- 没被放进任何条目的已确认事实进 `unassigned`，不进定制版。
+
+**预填规则**（`hunt/profile/structure.py` 的 `build`）：
 1. 章节标题：整行短（≤12 字）且命中章节词（教育、工作经历、项目经历、专业技能、证书、自我评价等）。思路来自 OpenResume 的「整行是章节标题」，规则自己写。
-2. 条目头：章节内含日期区间的行（`2021.07–2023.03`、`2021年7月至今`）。条目头到下一个条目头之间的行是一个块。
-3. 不确定（章节里没有日期行、行序被 PDF 多栏打乱）：该章节整体当一个块，只允许块内调序，不允许隐藏，并在界面标「结构不确定」。
+2. 条目头：章节内含日期区间的行（`2021.07–2023.03`、`2021年7月至今`）。从中切出起止时间；剩下的片段里，带公司后缀（公司、集团、有限、大学等）的当公司，带职位后缀（工程师、经理等）的当职位。切不出来或有多种切法的字段标 `uncertain`。
+3. 要点：条目头到下一个条目头之间的行。
+4. 章节里没有日期行、行序被多栏 PDF 打乱的：整个章节建成一个条目，字段全部标 `uncertain`，提示用户核对。
 
-纠正：审核界面里可以把一行拖到另一个块、拆开或合并块。纠正存进这一版的 `skeleton`，不改事实。骨架只引用事实 id，不含文字。
+**确认页上的界面**（见 12 节任务「简历结构」）：用户勾选要用的事实后，页面展示预填结构：章节、条目、条目头里切出的四个字段、要点行。每个条目可逐条确认或纠正（改片段、把行移到别的条目、拆分或合并条目）；`uncertain` 字段高亮，未处理完不能点「确认结构」。确认后 `status = confirmed`，`version + 1`。
 
-调序只在一个块内部发生，块与块之间的顺序不动（经历保持新到旧，career-ops 也强制这一点）。块头所在行不参与调序和隐藏。
+**版本与过期。**
+- 结构版本每次确认加一。定制版记录它所用的 `structure.version`。
+- 条目里引用的事实 `version` 变了：该条目变 `stale`，字段回到 `uncertain`。引用的事实被取消确认或删除：该引用移除，条目标 `stale`。
+- 新增的已确认事实不在结构里：进 `unassigned`，页面提示补一步。
+- 有 `stale` 条目或 `unassigned` 事实时，定制页顶部提示「简历结构需要核对」并链到确认页。定制仍可进行：`stale` 条目按原文原顺序放进定制版，不调序、不隐藏、不改写；`unassigned` 的事实不进定制版。结构出错一律回确认页改，审核页里不改结构。
+
+**旧数据迁移。** 已经确认过事实、还没有结构的候选人：第一次打开定制页或确认页时，程序调用 `build` 得到预填结构（`status = prefilled`，不会自动当作已确认），并引导到确认页的结构步骤。迁移不改任何事实。
+
+**使用规则。** 调序只在一个条目内部发生，条目之间的顺序不动（经历保持新到旧，career-ops 也强制这一点）。条目头行不参与调序和隐藏。
 
 ### 4.4 放在哪一层
 
@@ -129,7 +156,8 @@
 
 | 文件 | 层 | 内容 | 允许的依赖 |
 |---|---|---|---|
-| `hunt/profile/tailor.py` | profile | 骨架还原、规则路径、`apply_edits`、`trace` | 标准库 |
+| `hunt/profile/structure.py` | profile | 简历结构：`build` 预填、`validate`、`mark_stale`、`migrate` | 标准库 |
+| `hunt/profile/tailor.py` | profile | 规则路径、`apply_edits`、`trace`；把结构当作参数读，不导入 `structure` | 标准库 |
 | `hunt/profile/resume_render.py` | profile | Markdown / PDF / DOCX 写出、读回检查 | `profile.intake`、reportlab、pypdf |
 | `hunt/profile/claims.py` | profile | 改写后文字的事实核对（见 6.3） | 标准库 |
 | `hunt/ai/tailor.py` | ai | 起草者、审稿人、prompt、缓存 | `ai.llm`、`ai.orient`、`profile.*` |
@@ -144,7 +172,7 @@
 
 ### 5.1 规则路径（不用模型）
 
-输入：已确认事实、骨架（4.3）、`job_match` 的结果。输出：一组 `by: "rules"` 的修改和缺口。
+输入：已确认事实、已确认的简历结构（4.3）、`job_match` 的结果。输出：一组 `by: "rules"` 的修改和缺口。
 
 1. **相关度。** 每条事实服务几条岗位要求：关键词行里 `coverage == explicit` 且 `fact_ids` 含它；职责行 `status` 为 supported 或 related；硬条件行 `met`。这个数只用来排序，界面不显示，也不叫分数。
 2. **reorder。** 块内按相关度降序，同相关度保持原顺序。技能类的一行（「技能：Python、SQL、Docker」）按顿号拆开，把岗位点名的项提前，项的集合不变。
@@ -185,7 +213,7 @@ prompt 规则取自 Resume-Matcher 的真实性规则，译成中文并按我们
 
 ### 6.1 应用修改
 
-`apply_edits(facts, skeleton, edits)` 逐条过四道闸，移植自 Resume-Matcher 的 `apply_diffs`：
+`apply_edits(facts, structure, edits)` 逐条过四道闸，移植自 Resume-Matcher 的 `apply_diffs`：
 
 1. 操作在允许集合内（`reorder / hide / alias / rephrase`），目标是已确认事实。
 2. 不碰身份行：姓名、联系方式、公司名、学校、学位、日期所在的行不允许 `rephrase`，只允许 reorder 和 hide（黑名单思路来自 `_BLOCKED_FIELD_NAMES`）。
@@ -237,7 +265,7 @@ AI 可以重写句子，所以不再比对「字面重合度」，改为按断�
 
 左右两栏，窄屏上下叠放：
 
-- 左：已确认事实，按骨架分章节和块，原样显示。
+- 左：已确认事实，按简历结构分章节和条目，原样显示。结构有错时，页面给一个链接回确认页改，审核页里不拖动、不改结构。
 - 右：定制版，同样的章节和块。被修改的行显示逐字 diff（删除线和下划线）；hide 的行折叠成一行「已隐藏 1 条，展开」。
 - 每条被修改的行下方一行：操作类型、`对应岗位要求：Kubernetes`（点开跳到岗位原文引用并高亮）、`来源：intake-…（第 1 页第 12 段）`（点开显示事实原文）、接受 / 撤销按钮。
 - 右侧或下方一个窄栏「缺口」：未覆盖的关键词和未满足的硬条件，各带岗位引用和「补充事实」。没有分数、没有进度条。
@@ -312,12 +340,13 @@ AI 改写显示 before / after 和引用的事实，软检查命中的标红并�
 
 | CLI | `/api/action` | 说明 |
 |---|---|---|
+| `hunt structure [--set FILE]` | `structure_get` / `structure_save` | 读取预填或已确认的简历结构；保存用户确认的结构（任务 0） |
 | `hunt tailor JOB_ID [--ai]` | `tailor` | 生成新版本，返回完整结构 |
 | `hunt tailor_get JOB_ID [--version N]` | `tailor_get` | 读某一版 |
 | `hunt tailor_review JOB_ID --accept e1,e2 --reject e3` | `tailor_review` | 改修改状态 |
 | `hunt tailor_export JOB_ID --format pdf,docx,md [--version N]` | `tailor_export` | 导出并返回自检结果 |
 
-四个动作都加入 `RESULT_ACTIONS`。`--ai` 在没有同意时返回规则路径的结果加明确原因，退出码不变，由调用方读 `ai.used` 字段判断。外部 agent 可以不开界面完成整个流程；agent 不能绕过检查：`tailor_review` 接受一条 AI 改写前，服务端会重新跑 6.3。
+五个动作都加入 `RESULT_ACTIONS`。`--ai` 在没有同意时返回规则路径的结果加明确原因，退出码不变，由调用方读 `ai.used` 字段判断。外部 agent 可以不开界面完成整个流程；agent 不能绕过检查：`tailor_review` 接受一条 AI 改写前，服务端会重新跑 6.3。
 
 ## 11. 移植清单与署名
 
@@ -341,12 +370,23 @@ AI 改写显示 before / after 和引用的事实，软检查命中的标红并�
 
 ## 12. 实施拆分
 
-四个任务，文件范围互不重叠（`THIRD_PARTY_NOTICES.md` 只由任务 1 修改），都依赖第 4 节的数据结构作为共同合同。任务 4 最后合并。
+五个任务，文件范围互不重叠（`THIRD_PARTY_NOTICES.md` 只由任务 1 修改），都依赖第 4 节的数据结构作为共同合同，其中结构的 JSON（4.3）是任务 0 与任务 1 之间的合同。
+
+**并行与合并顺序**
+- 可同时开工：任务 0 的 profile 部分（`structure.py`）、任务 1、任务 2、任务 3。它们只通过 JSON 合同和夹具对接，互不导入。
+- 任务 0 的界面和 Store 部分与上面几个也不冲突，但要改 `store.py`、`workbench/resume.js` 和前端测试，先于任务 4 合并。
+- 合并顺序：任务 0、1、2、3 任意先后 → 任务 4 最后（它要读结构、调规则路径和 AI 路径，并在 `store.py`、`cli.py`、`style.css` 上接在任务 0 之后，避免冲突）。
+
+**任务 0：简历结构**
+- 文件：`hunt/profile/structure.py`、`hunt/app/structure.py`（Store 的结构存取和迁移，`StructureActions`）、`static/js/resume/structure.js`（确认页上的预填与纠正界面）、`static/js/workbench/resume.js`（只加一处挂载调用，见 14 节待确认）、`tests/test_structure.py`、`tests/fixtures/structure/*`、`tests/test_frontend.cjs`（只加结构相关用例）、字体子集（新增固定中文后重生成）
+- 内容：`build` 预填、`validate`、`mark_stale`、`migrate`；动作 `structure_get`、`structure_save`；确认页上的章节、条目、字段高亮与逐条确认；旧数据第一次使用时的预填迁移
+- 完成标准：合成简历夹具上 `build` 与手工标注的章节、条目、公司、职位、起止时间一致，拿不准的字段标 `uncertain`；`validate` 拒绝重复引用、不存在的事实、越界的 `span`；事实版本变化后 `mark_stale` 正确标记；已有确认事实且没有结构的候选人，第一次使用得到预填而不是已确认；`--demo` 下能走完预填、纠正、确认；`test_dependencies` 通过
+- 与其他任务的关系：任务 1 读取结构，但只依赖 4.3 的 JSON 合同；`structure.py` 与任务 1、2、3 互不导入，可并行。
 
 **任务 1：核心与规则路径**
 - 文件：`hunt/profile/tailor.py`、`tests/test_tailor.py`、`tests/fixtures/tailor/*`、`THIRD_PARTY_NOTICES.md`（本任务负责写全部条目）
-- 内容：骨架还原（`build_skeleton`）与校验（`validate_skeleton`）、规则路径五步、`apply_edits`、`check_result`、`trace`、同义词白名单
-- 完成标准：合成简历夹具上，`build_skeleton` 在夹具上与手工标注一致，`validate_skeleton` 拒绝重复引用和不存在的事实；规则路径生成的修改应用后 `trace` 通过；`apply_edits` 拒绝四类越权修改；`test_dependencies` 通过
+- 内容：规则路径五步（读取已确认的结构，结构以 4.3 的 JSON 为合同，开发时用夹具里的结构文件，不导入 `structure`）、`apply_edits`、`check_result`、`trace`、同义词白名单
+- 完成标准：合成简历夹具上，`stale` 条目原样通过、不被调序；规则路径生成的修改应用后 `trace` 通过；`apply_edits` 拒绝四类越权修改；`test_dependencies` 通过
 
 **任务 2：导出、字体与读回自检**
 - 文件：`hunt/profile/resume_render.py`、`hunt/data/fonts/*`（字体子集和 OFL 文本）、`scripts/build_pdf_font.sh`（及它调用的 Python 脚本）、`tests/test_resume_render.py`、`requirements.txt`、`setup.sh`（只加依赖失败提示）
@@ -365,15 +405,15 @@ AI 改写显示 before / after 和引用的事实，软检查命中的标红并�
 
 **任务 4：Store、CLI、接口文档、前端**
 - 文件：`hunt/app/tailor.py`、`hunt/app/store.py`（只加 mixin 和 `ACTIONS` 条目）、`hunt/app/cli.py`、`static/js/tailor/*`、`static/js/job/page.js`（只加入口按钮）、`static/style.css`、`docs/agent-mode.md`、`tests/test_frontend.cjs`、字体子集
-- 内容：SQLite 表、四个动作、导出目录、审核页（含骨架纠正）、键盘操作
-- 完成标准：`--demo` 下从岗位页走完「生成 → 逐条接受 → 导出 → 自检」；CLI 四个命令输出与 `agent-mode.md` 的结构一致；`node --test`、全量 `unittest`、`build_release.py --check` 通过
-- 合并顺序：任务 1–3 合并后再合并，接口以任务 1–3 的实际签名为准
+- 内容：SQLite 表、四个动作（`tailor`、`tailor_get`、`tailor_review`、`tailor_export`）、导出目录、审核页、键盘操作、结构未确认或过期时的提示和跳转
+- 完成标准：`--demo` 下从岗位页走完「生成 → 逐条接受 → 导出 → 自检」；CLI 命令输出与 `agent-mode.md` 的结构一致；`node --test`、全量 `unittest`、`build_release.py --check` 通过
+- 合并顺序：任务 0–3 合并后再合并，接口以它们的实际签名为准；在 `store.py`、`cli.py`、`style.css` 上基于任务 0 的结果
 
 **第二阶段（单独立项）**：求职信（`hunt/ai/cover.py` 及 UI），Rewoven 动效（`static/js/tailor/effect.js`）。
 
 ## 13. 风险
 
-- **骨架还原出错。** 行序、PDF 多栏、没有日期的经历都会让块边界错。缓解：不确定时只允许块内调序、不允许隐藏；审核界面允许纠正；导出前一定要用户看过。最坏结果是顺序不理想，不会引入新内容。
+- **预填错了而用户没注意。** 结构预填由规则得到，条目头和字段切分会错（行序、多栏 PDF、没有日期的经历）；用户一路点确认可能漏看。缓解：拿不准的字段高亮，存在高亮字段时不能点「确认结构」；字段只能选原文片段，不能自由输入，所以错也只是切错位置，不会引入原文没有的内容；事实变化后条目自动标过期。最坏结果是调序或隐藏落在错的条目上。
 - **AI 可以重写句子，核对是启发式。** 硬闸门按断言类别查，漏网的有：不在词表里的中文工具名、不带后缀的项目名、因果或范围的改动（「参与过」变「搭建了」之外的细微变化、「做过」变「精通」）。强度和否定只看常见词。挡不住全部语义改动，靠审核兜底：每条 AI 改写显示 before / after 和来源，默认待审核，软检查命中的标红。我们不会声称「保证无编造」。放宽改写后，用户逐条看的工作量和判断责任比保守方案更大。
 - **审稿人和起草者同一模型家族，错误可能相关。** 所以确定性检查才是依据，审稿人只是附加。
 - **PDF 字体覆盖。** GB2312 之外的字（生僻字、繁体、emoji）不在内置子集里，自检会报出并提示用 `HUNT_PDF_FONT`；体积上限 3 MB 是推测值，任务 2 要实测。
@@ -387,13 +427,17 @@ AI 改写显示 before / after 和引用的事实，软检查命中的标红并�
 
 已决定（用户）：
 
-1. 骨架：方案 A，规则还原，审核时纠正。
+1. 简历结构：方案 C，确认事实时规则预填、用户纠正，存成「简历结构」后每个岗位复用（4.3）。
 2. 改写尺度：放宽，允许 AI 重写句子；硬闸门不可放行，软检查标红，全部默认待审核（6.3）。
 3. DOCX：加 `python-docx`（8.4）。
 4. PDF 字体：随仓库发布 Noto Sans SC 的 GB2312 子集，体积单独预算（8.3）。
 5. 不限页数、不自动隐藏；英文简历放 v3；求职信放第二阶段；`spider.js` 作第二阶段的可选动效，只用我们自己的重写；自检措辞按本文 8.2。
 
-剩余待确认（实现时处理，不阻塞开工）：
+剩余待确认：
+
+0. **确认页在冻结目录里。** 确认事实的界面是 `static/js/workbench/resume.js`，后端是 `hunt/app/candidate.py` 的 `confirm_resume`，位于被冻结的工作台范围（只修 bug，不加功能）。设计里结构界面放在新模块 `static/js/resume/structure.js`，在 `resume.js` 里只加一处挂载调用，后端放在新的 `hunt/app/structure.py`，不改 `confirm_resume`。是否允许这一处改动？这是开工前要定的；不允许就只能把结构步骤放在定制页里，那就回到「在审核时才建结构」。
+
+实现时处理，不阻塞开工：
 
 1. 字体子集的实际体积是否在 3 MB 内（任务 2 实测）。
 2. `lxml` 的固定版本与许可证核对结果（任务 2）。
