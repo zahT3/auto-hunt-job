@@ -3,6 +3,7 @@ import { action } from "../shared/api.js";
 import { $, $$, esc, items, openDialog, sourceOf, textOf } from "../shared/dom.js";
 import { clearFeedback, notice, toast } from "../shared/feedback.js";
 import { busy, render, setBusy, setState, state } from "../shared/state.js";
+import { mountStructure } from "../resume/structure.js";
 import { profileQueries } from "./settings.js";
 
 export function renderProfile() {
@@ -62,6 +63,7 @@ export function factSourceDetail(fact) {
 export function renderResumeDraft() {
   const draft = state.candidate_draft,
     section = $("#resume-draft");
+  mountStructure();
   section.hidden = !draft;
   if (!draft) {
     section.innerHTML = "";
@@ -187,8 +189,8 @@ $("#resume-draft").addEventListener("submit", async (event) => {
     "正在确认本地事实…",
   );
   if (result) {
-    $("#resume-dialog").close();
     renderProfile();
-    toast("事实已确认并用于本地画像。可采用建议关键词后运行搜索。");
+    renderResumeDraft();
+    toast("事实已确认。请继续核对简历结构。");
   }
 });
