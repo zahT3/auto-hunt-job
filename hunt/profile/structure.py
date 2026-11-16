@@ -12,9 +12,9 @@ import re
 from ..base import digest
 
 FIELDS = ('company', 'title', 'start', 'end')
-SECTION_KEYS = ('education', 'work', 'internship', 'project', 'skills', 'certificates', 'awards', 'summary', 'other')
+SECTION_KEYS = ('basic', 'education', 'work', 'internship', 'project', 'skills', 'certificates', 'awards', 'summary', 'other')
 ENTRY_KEYS = ('education', 'work', 'internship', 'project')  # sections whose entries have a head line and fields
-KEY_LABELS = dict(education='教育', work='工作经历', internship='实习经历', project='项目经历', skills='技能', certificates='证书',
+KEY_LABELS = dict(basic='基本信息', education='教育', work='工作经历', internship='实习经历', project='项目经历', skills='技能', certificates='证书',
                   awards='奖项', summary='自我评价', other='其他')
 HEADINGS = {
     'education': ('教育背景', '教育经历', '学习经历', '学历', '教育'),
@@ -33,6 +33,11 @@ _WORD_KEY = dict(_WORDS)
 _PREFIX_OK = {w for w, _ in _WORDS if len(w) >= 4 or w == '学历'}
 _HEADING = re.compile(r'^\s*(?P<word>' + '|'.join(re.escape(w) for w, _ in _WORDS) + r')\s*(?P<colon>[:：]?)\s*(?P<rest>.*?)\s*$', re.S)
 MAX_HEADING = 12
+# Lines before the first heading that are identity, contact or summary facts (name, e-mail, phone, years of experience).
+_BASIC = re.compile(r'^\s*(?:姓名|名字|邮箱|电子邮箱|e-?mail|电话|手机号?|微信|联系方式|所在地|现居地?|城市|工作经验|工作年限|年龄|性别|出生年月|籍贯|求职意向|期望[^：:]{0,4})\s*[:：]', re.I)
+_BASIC_TAGS = {'identity', 'contact'}
+# A line inside an experience entry that states an absence about the person, not something they did: not a bullet.
+_SELF_NOTE = re.compile(r'^\s*(?:尚无|暂无|尚未|没有|无|不具备|缺乏|缺少)|不具备[^，。；;]{0,24}(?:经验|能力)')
 MAX_HEAD_LINE = 80
 
 _YM = r'\d{4}\s*年\s*\d{1,2}\s*月?|\d{4}\s*[./\-]\s*\d{1,2}'
@@ -161,12 +166,14 @@ def _new_entry(counter, head, key, text, force_uncertain):
 
 def build(facts, version=0):
     """Pre-fill a structure from the confirmed facts, in their order. status is `prefilled`, never `confirmed`."""
-    sections, unassigned, current = [], [], None
+    sections, unassigned, current, basic = [], [], None, []
     entry_counter = [0]
     for fact in confirmed(facts):
         text = fact.get('text') or ''
         found = _heading(text)
-        if found:
+        if found is None and current is None and (_BASIC.match(text) or _BASIC_TAGS & set(fact.get('tags') or [])):
+            basic.append(fact)
+        elif found:
             current = {'id': f's{len(sections) + 1}', 'key': found[0], 'title_fact': ref(fact), 'entries': [],
                        '_lines': [], '_prefix': fact if found[1] is not None else None}
             sections.append(current)
@@ -192,15 +199,24 @@ def build(facts, version=0):
                 section['entries'].append(entry)
             continue
         heads = {f['id'] for f in dated} | ({prefix['id']} if prefix else set())
-        entry = None
+        entry, run_open = None, False
         for fact in candidates:
             if fact['id'] in heads:
-                entry = _new_entry(entry_counter, fact, key, fact['text'], False)
+                entry, run_open = _new_entry(entry_counter, fact, key, fact['text'], False), True
                 section['entries'].append(entry)
             elif entry is None:
                 unassigned.append(ref(fact))
-            else:
+            elif run_open and not _SELF_NOTE.search(fact['text']):
                 entry['bullets'].append(ref(fact))
+            else:
+                # Only lines that follow the head and read like what the person did are bullets. A statement about the
+                # person ("尚无…经验") ends the run; it and anything after it wait in `unassigned` for the user.
+                run_open = False
+                unassigned.append(ref(fact))
+    if basic:
+        entry = _new_entry(entry_counter, None, 'basic', '', False)
+        entry['bullets'] = [ref(f) for f in basic]
+        sections.insert(0, {'id': 's0', 'key': 'basic', 'title_fact': None, 'entries': [entry]})
     return {'version': version, 'status': 'prefilled', 'confirmed_at': None, 'facts_digest': facts_digest(facts),
             'sections': sections, 'unassigned': unassigned}
 

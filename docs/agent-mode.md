@@ -192,7 +192,7 @@
 | `python -m hunt tailor JOB_ID [--ai]` | `tailor`（`job_id`、`ai`） | 生成新版本；版本从 1 起，只增不改 |
 | `python -m hunt tailor_get JOB_ID [--version N]` | `tailor_get`（`job_id`、`version`） | 读某一版，省略取最新 |
 | `python -m hunt tailor_review JOB_ID [--accept e1,e2] [--reject e3] [--pending e4]` | `tailor_review`（`job_id`、`accept`、`reject`、`pending`，各是修改 id 的数组） | 改最新版里修改的状态；旧版只读 |
-| `python -m hunt tailor_export JOB_ID [--format md,pdf,docx] [--version N]` | `tailor_export`（`job_id`、`formats`、`version`） | 写文件并读回自检 |
+| `python -m hunt tailor_export JOB_ID [--format md,pdf,docx] [--version N] [--with-private-basic]` | `tailor_export`（`job_id`、`formats`、`version`、`include_private_basic`） | 写文件并读回自检 |
 
 五个动作都在 `/api/action` 里，返回的状态多一个 `result`，内容和 CLI 输出相同（CLI 另有 `schema_version`）。出错时 CLI 退出码为 1。
 
@@ -239,7 +239,7 @@
 ```json
 {"schema_version": 1, "job_id": "...", "version": 1, "dir": "<数据目录>/tailored/<job_id>/v1", "ok": true,
  "notice": "这是用本工具自己的解析器重读，不代表任何招聘系统的实际结果。",
- "excluded_pending": 0, "trace_status": "pass", "trace_path": ".../trace.json",
+ "excluded_pending": 0, "withheld_basic": [], "trace_status": "pass", "trace_path": ".../trace.json",
  "files": {"pdf": {"path": "...", "sha256": "...", "size": 12345,
                    "check": {"ok": true, "missing_lines": [], "out_of_order": [], "section_order_ok": true, "page_count": 1, "pages_ok": true,
                              "warnings": [], "missing_chars": [],
@@ -247,6 +247,7 @@
  "errors": {"docx": "导出 DOCX 需要 python-docx：…"}}
 ```
 
+- 导出文件按结构的章节类型写标准章节名（教育背景、工作经历、实习经历、项目经历、专业技能……），条目头只出现一次。「基本信息」（姓名、邮箱、工作经验等）放在最上面，没有标题；只写披露范围是 `application` 的事实，私密的默认不写，列在结果的 `withheld_basic` 里（`document` 视图里是 `basic_withheld`）。`include_private_basic: true` 是用户这一次的明确选择，才会把它们写进本机文件。
 - 目录权限 0700、文件 0600；文件名是 `<公司>-<岗位>-v<版本>.<格式>`，同目录有 `trace.json`（每一行对应的事实 id、版本、修改 id）。
 - 导出前先跑 `trace`：有一行追溯不到已确认事实就不写任何文件并报错。待审核的修改不进导出，数量在 `excluded_pending`。
 - 读回自检用本工具自己的解析器，不代表任何招聘系统。自检不通过不阻止导出：`ok` 为 `false`，原因在各文件的 `check` 里。字体里没有的字写在 `missing_chars` 和 `warnings`（用 `HUNT_PDF_FONT` 指定完整字体后重新导出）；没装 `python-docx` 时只有 `errors.docx` 有提示，其余格式照常。

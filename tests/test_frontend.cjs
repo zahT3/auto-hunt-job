@@ -1053,3 +1053,13 @@ test('an empty structure shows why and a way back, and a failed export is shown 
  const failed=h.run(`tailorPageHtml({title:'后端'},${TAILOR_VIEW},false,null,'j1')`);
  assert.match(failed,/role="alert">简历结构里还没有可导出的条目[\s\S]*data-open-resume/);
 });
+test('education fields are called 学校 and 学历或专业, and the preview names each section once',()=>{
+ const h=harness();
+ assert.equal(h.run(`structureFieldLabel('education','company','公司')`),'学校');
+ assert.equal(h.run(`structureFieldLabel('education','title','职位')`),'学历或专业');
+ assert.equal(h.run(`structureFieldLabel('work','company','公司')`),'公司');
+ const view=`Object.assign(${TAILOR_VIEW},{basic_withheld:[{id:'f0',text:'姓名：林示例'},{id:'f1',text:'邮箱：x'}],rendered:{sections:[{id:'s0',key:'basic',title:'基本信息',lines:[{text:'姓名：林示例',kind:'text',fact_ids:[],edit_ids:[]}]},{id:'s1',key:'education',title:'教育背景',lines:[{text:'学历：本科',kind:'head',fact_ids:[],edit_ids:[]}]}]}})`;
+ const html=h.run(`tailorPageHtml({title:'后端'},${view},false,null,'j1')`);
+ assert.match(html,/tl-title">教育背景[\s\S]*学历：本科/);assert.equal((html.match(/学历：本科/g)||[]).length,1);
+ assert.match(html,/基本信息里有 2 条（姓名、邮箱）的披露范围是私密，默认不写进导出文件/);assert.match(html,/data-basic/);
+});

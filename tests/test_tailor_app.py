@@ -57,21 +57,67 @@ class GateTests(TailorAppCase):
 
 
 class EmptyStructureTests(unittest.TestCase):
-    def test_a_structure_without_entries_exports_nothing_and_says_why(self):
+    def prepared(self, tmp):
+        store = Store(Path(tmp) / 'demo')
+        self.addCleanup(store.prepare_pool.shutdown)
+        with store.tx() as c:
+            candidate = store.meta(c, 'candidate')
+            for f in candidate['facts']: f['disclosure'] = 'private'
+            store.setmeta(c, 'candidate', candidate)
+        got = store.structure_get()['structure']
+        self.assertEqual([s['key'] for s in got['sections']], ['basic'])  # the demo candidate has only a name and an e-mail
+        store.structure_save(dict(structure=got, base_version=got['version'], confirm=True))
+        job, _ = store.import_job(dict(title='后端工程师', company='某科技有限公司', jd=JD))
+        return store, job
+
+    def test_private_basic_info_alone_exports_nothing_and_says_why(self):
         with tempfile.TemporaryDirectory() as tmp:
-            store = Store(Path(tmp) / 'demo')
-            self.addCleanup(store.prepare_pool.shutdown)
-            got = store.structure_get()['structure']
-            self.assertFalse([e for sec in got['sections'] for e in sec['entries']])
-            store.structure_save(dict(structure=got, base_version=got['version'], confirm=True))
-            job, _ = store.import_job(dict(title='后端工程师', company='某科技有限公司', jd=JD))
+            store, job = self.prepared(tmp)
             made = store.action(dict(action='tailor', job_id=job['id']))['result']
-            self.assertTrue(made['empty'])
+            self.assertEqual(len(made['basic_withheld']), 2)
             out = store.action(dict(action='tailor_export', job_id=job['id']))['result']
             self.assertTrue(out['needs_structure'])
             self.assertEqual(out['code'], 'empty')
-            self.assertIn('确认页', out['reason'])
+            self.assertIn('私密', out['reason'])
             self.assertFalse((Path(tmp) / 'demo' / 'tailored' / job['id']).exists())
+
+    def test_the_user_may_write_private_basic_info_into_the_local_file(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            store, job = self.prepared(tmp)
+            store.action(dict(action='tailor', job_id=job['id']))
+            out = store.action(dict(action='tailor_export', job_id=job['id'], formats=['md'], include_private_basic=True))['result']
+            self.assertTrue(out['ok'], out)
+            self.assertEqual(out['withheld_basic'], [])
+            self.assertIn('姓名', Path(out['files']['md']['path']).read_text(encoding='utf-8'))
+
+
+class SyntheticResumeTests(unittest.TestCase):
+    def test_export_has_standard_titles_one_head_per_entry_and_basic_info_on_top(self):
+        examples = Path(__file__).parent.parent / 'examples' / 'resume.synthetic.txt'
+        with tempfile.TemporaryDirectory() as tmp:
+            store = Store(Path(tmp) / 'demo')
+            self.addCleanup(store.prepare_pool.shutdown)
+            from hunt.profile.intake import analyze_resume
+            facts = analyze_resume('resume.synthetic.txt', examples.read_bytes(), synthetic=True)['candidate']['facts']
+            for f in facts: f.update(status='confirmed', disclosure='application')
+            store.action(dict(action='candidate', candidate=dict(store.state()['candidate'], facts=facts)))
+            got = store.structure_get()['structure']
+            for sec in got['sections']:
+                for entry in sec['entries']:
+                    for field in entry['fields'].values(): field['confidence'] = 'ok'
+            store.structure_save(dict(structure=got, base_version=got['version'], confirm=True))
+            job, _ = store.import_job(dict(title='后端工程师', company='某科技有限公司', jd=JD))
+            store.action(dict(action='tailor', job_id=job['id']))
+            out = store.action(dict(action='tailor_export', job_id=job['id'], formats=['md']))['result']
+            text = Path(out['files']['md']['path']).read_text(encoding='utf-8')
+            lines = [l for l in text.splitlines() if l]
+            self.assertTrue(lines[0].startswith('姓名：') and lines[1].startswith('邮箱：') and lines[2].startswith('工作经验：'), lines[:4])
+            for title in ('## 教育背景', '## 工作经历', '## 实习经历'):
+                self.assertIn(title, lines)
+            for head in ('学历：本科', '工作经历：2021.07', '实习经历：2020.07'):
+                self.assertEqual(sum(l.startswith(head) for l in lines), 1, head)
+            self.assertNotIn('尚无交易所', text)
+            self.assertFalse([l for l in lines if l.startswith('## ') and '：' in l])
 
 
 class FlowTests(TailorAppCase):

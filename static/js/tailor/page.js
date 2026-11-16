@@ -23,6 +23,7 @@ const tailorErrors = new Map(); // job id -> {text, resume} of the last action t
 const tailorLoading = new Set();
 let tailorFocus = null;
 let tailorFormats = ["md", "pdf", "docx"];
+let tailorWithBasic = false;
 
 const FORMAT_NAMES = { md: "Markdown", pdf: "PDF", docx: "DOCX" };
 const STRUCTURE_STEP = {
@@ -86,7 +87,7 @@ function tailorPreviewHtml(rendered, hidden) {
   const sections = items(rendered?.sections)
     .map((s) =>
       items(s.lines).length
-        ? `<div class="tl-sec">${s.lines
+        ? `<div class="tl-sec">${s.title ? `<p class="tl-line tl-title">${esc(s.title)}</p>` : ""}${s.lines
             .map(
               (l) =>
                 `<p class="tl-line tl-${esc(l.kind)}${items(l.edit_ids).length ? " changed" : ""}">${esc(l.text)}</p>`,
@@ -202,7 +203,13 @@ function tailorFooterHtml(view, id) {
     )
     .join("");
   const pending = view.pending;
+  const held = items(view.basic_withheld);
+  const basic = held.length
+    ? `<p class="small-note tl-basic">基本信息里有 ${held.length} 条（${esc(held.map((h) => h.text.split(/[：:]/)[0]).join("、"))}）的披露范围是私密，默认不写进导出文件。` +
+      `<label class="tl-fmt"><input type="checkbox" data-basic ${tailorWithBasic ? "checked" : ""}> 这次写进导出文件（只写在本机文件里）</label></p>`
+    : "";
   return (
+    basic +
     `<div class="tl-foot"><p>${pending ? `${pending} 条待审核` : "没有待审核"}，` +
     `预检${ok ? "通过" : "没通过"}${result ? "" : "，改写后的行有疑点"}${view.stale ? `，${view.stale} 条事实已变` : ""}</p>` +
     `<fieldset class="tl-fmts"><legend>格式</legend>${formats}</fieldset>` +
@@ -357,7 +364,7 @@ document.addEventListener("click", (e) => {
   if (act === "tailor-generate") tailorRun("tailor", { ai: false }, "正在生成…");
   else if (act === "tailor-ai") tailorRun("tailor", { ai: true }, "正在请模型改写…");
   else if (act === "tailor-export")
-    tailorRun("tailor_export", { formats: tailorFormats }, "正在导出并读回检查…");
+    tailorRun("tailor_export", { formats: tailorFormats, include_private_basic: tailorWithBasic }, "正在导出并读回检查…");
   else if (act === "tailor-reload") tailorLoad(route().id);
   else if (act === "tailor-back") {
     e.preventDefault();
@@ -368,6 +375,11 @@ document.addEventListener("click", (e) => {
 document.addEventListener("change", (e) => {
   if (route().page !== "tailor") return;
   if (e.target.id === "tl-version") tailorLoad(route().id, Number(e.target.value));
+  if (e.target.dataset?.basic !== undefined) {
+    tailorWithBasic = e.target.checked;
+    render();
+    return;
+  }
   const fmt = e.target.dataset?.fmt;
   if (fmt) {
     tailorFormats = $$("[data-fmt]")

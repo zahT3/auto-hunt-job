@@ -34,7 +34,7 @@ class BuildTests(Case):
         self.assertEqual(built['status'], 'prefilled')
         self.assertIsNone(built['confirmed_at'])
         self.assertEqual([self.text[u['id']] for u in built['unassigned']], expected['unassigned'])
-        self.assertEqual([(s['key'], self.text[s['title_fact']['id']]) for s in built['sections']],
+        self.assertEqual([(s['key'], self.text[s['title_fact']['id']] if s['title_fact'] else None) for s in built['sections']],
                          [(s['key'], s['title']) for s in expected['sections']])
         for section, want_section in zip(built['sections'], expected['sections']):
             self.assertEqual(len(section['entries']), len(want_section['entries']), section['key'])
@@ -48,6 +48,24 @@ class BuildTests(Case):
                     self.assertEqual(self.piece(entry, name), want[name], (want['head'], name))
                 uncertain = [n for n, f in entry['fields'].items() if f['confidence'] == 'uncertain']
                 self.assertEqual(uncertain, want['uncertain'], want['head'])
+
+    def test_a_statement_about_the_person_is_not_a_bullet_but_a_negative_clause_inside_one_is(self):
+        row = lambda i, t: dict(id=i, text=t, status='confirmed', version=1)
+        facts = [row('a', '工作经历：2021.07—2024.06，示例科技，软件开发工程师。'), row('b', 'Agent 工具调用完成本地验证；未上线，无生产效果证据。'),
+                 row('c', '尚无交易所工作经历，不具备金融交易生产系统经验。'), row('d', '使用 Docker 运行本地服务。')]
+        built = S.build(facts)
+        (entry,) = built['sections'][0]['entries']
+        self.assertEqual([b['id'] for b in entry['bullets']], ['b'])
+        self.assertEqual([u['id'] for u in built['unassigned']], ['c', 'd'])
+
+    def test_identity_lines_before_the_first_heading_form_the_basic_section_and_nothing_else_does(self):
+        row = lambda i, t, **kw: dict(id=i, text=t, status='confirmed', version=1, **kw)
+        facts = [row('a', '林示例', tags=['identity']), row('b', '手机：13800000000'), row('c', '随便一句话'), row('d', '教育背景'), row('e', '邮箱：x@example.invalid')]
+        built = S.build(facts)
+        self.assertEqual(built['sections'][0]['key'], 'basic')
+        self.assertEqual([b['id'] for b in built['sections'][0]['entries'][0]['bullets']], ['a', 'b'])
+        self.assertEqual([u['id'] for u in built['unassigned']], ['c'])
+        S.validate(built, facts)
 
     def test_every_confirmed_fact_is_placed_exactly_once(self):
         built = S.build(self.facts)
@@ -107,12 +125,18 @@ class BuildTests(Case):
         for f in facts: f['status'] = 'confirmed'
         built = S.build(facts)
         S.validate(built, facts)
-        self.assertEqual([s['key'] for s in built['sections']], ['education', 'work', 'internship'])
+        self.assertEqual([s['key'] for s in built['sections']], ['basic', 'education', 'work', 'internship'])
         by_id = {f['id']: f['text'] for f in facts}
-        work = built['sections'][1]['entries'][0]
+        self.assertEqual([by_id[b['id']] for b in built['sections'][0]['entries'][0]['bullets']],
+                         ['姓名：林示例', '邮箱：candidate@example.invalid', '工作经验：3年'])
+        # The self-description after the internship head is not a bullet of it: it waits, unassigned, for the user.
+        note = '尚无交易所工作经历，不具备金融交易生产系统经验。'
+        self.assertEqual([by_id[u['id']] for u in built['unassigned']], ['合成候选人，仅用于开发验收，不能用于真实求职。', note])
+        self.assertEqual(built['sections'][3]['entries'][0]['bullets'], [])
+        work = built['sections'][2]['entries'][0]
         a, b = work['fields']['company']['span']
         self.assertEqual(by_id[work['head']['id']][a:b], '示例科技')
-        education = built['sections'][0]['entries'][0]
+        education = built['sections'][1]['entries'][0]
         self.assertTrue(all(f['confidence'] == 'uncertain' for f in education['fields'].values()))
 
 
@@ -288,7 +312,7 @@ class StoreTests(unittest.TestCase):
     def test_legacy_candidate_gets_a_prefilled_structure_on_first_use_and_it_is_stored(self):
         first = self.store.action(dict(action='structure_get'))['result']
         self.assertEqual((first['structure']['status'], first['structure']['version']), ('prefilled', 0))
-        self.assertEqual(len(first['facts']), len(first['structure']['unassigned']))
+        self.assertEqual(len(first['facts']) - 2, len(first['structure']['unassigned']))  # name and e-mail go to 基本信息
         with self.store.tx() as c:
             self.assertEqual(self.store.structure_stored(c), first['structure'])
         self.assertEqual(self.store.structure_get()['structure'], first['structure'])
@@ -310,7 +334,7 @@ class StoreTests(unittest.TestCase):
         self.assertTrue(saved['structure']['confirmed_at'])
         again = self.store.structure_get()
         self.assertEqual(again['structure'], saved['structure'])
-        self.assertEqual(again['open'], dict(uncertain=0, stale=0, unassigned=4))
+        self.assertEqual(again['open'], dict(uncertain=0, stale=0, unassigned=2))
 
     def test_save_rejects_stale_base_version_unbalanced_confirm_flag_and_forged_facts(self):
         self.confirm_example_resume()
@@ -332,7 +356,7 @@ class StoreTests(unittest.TestCase):
         self.store.structure_save(dict(structure=structure, base_version=0, confirm=True))
         with self.store.tx() as c:
             candidate = self.store.meta(c, 'candidate')
-            bullet = structure['sections'][1]['entries'][0]['bullets'][0]['id']
+            bullet = structure['sections'][2]['entries'][0]['bullets'][0]['id']
             next(f for f in candidate['facts'] if f['id'] == bullet)['version'] += 1
             self.store.setmeta(c, 'candidate', candidate)
         got = self.store.structure_get()

@@ -170,6 +170,7 @@ def parser():
     agent.append(commands.add_parser('tailor_export', help='agent 模式：导出定制简历并读回自检'))
     agent[-1].add_argument('job', metavar='JOB_ID')
     agent[-1].add_argument('--format', default='md,pdf,docx', metavar='LIST', help='格式，逗号分隔：md、pdf、docx')
+    agent[-1].add_argument('--with-private-basic', action='store_true', help='把披露范围是私密的基本信息（姓名、联系方式）也写进导出文件；默认不写')
     agent[-1].add_argument('--version', type=int, metavar='N', help='版本号；省略时取最新')
     hide = commands.add_parser('hide', help='"不想看"清单：搜索默认隐藏命中的公司、岗位或招聘者').add_subparsers(dest='sub', required=True)
     agent.append(hide.add_parser('add', help='加一条：KIND 是 company、title 或 recruiter，字段里含 VALUE 就隐藏'))
@@ -275,7 +276,7 @@ def agent_command(store, args):
         if args.command == 'tailor': payload['ai'] = args.ai
         if args.command in ('tailor_get', 'tailor_export') and args.version: payload['version'] = args.version
         if args.command == 'tailor_review': payload.update(accept=ids(args.accept), reject=ids(args.reject), pending=ids(args.pending))
-        if args.command == 'tailor_export': payload['formats'] = ids(args.format)
+        if args.command == 'tailor_export': payload.update(formats=ids(args.format), include_private_basic=args.with_private_basic)
         return dict(schema_version=1, **getattr(store, args.command)(payload))
     dirs = chosen(store)
     if args.direction is not None and args.direction not in [d['id'] for d in dirs]: raise Error('--direction 须是当前所选方向之一')

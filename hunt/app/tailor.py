@@ -19,6 +19,8 @@ REASONS = dict(
     stale='简历结构需要重新核对：有条目过期或字段待确认。',
     empty='简历结构里还没有可导出的条目，请先在确认页把事实分到条目里。',
 )
+SECTION_TITLES = dict(basic='基本信息', education='教育背景', work='工作经历', internship='实习经历', project='项目经历', skills='专业技能',
+                      certificates='证书', awards='奖项', summary='自我评价', other='其他')
 GATE_TEXT = dict(
     malformed='修改格式不对', op_not_allowed='操作不在允许范围内', not_confirmed='引用的事实未确认', stale_fact='引用的事实已变',
     duplicate_fact='重复引用同一条事实', unknown_target='这条事实不是可修改的要点', cross_entry='修改跨了多个条目',
@@ -167,15 +169,17 @@ class TailorActions:
         applied = tailor.apply_edits(facts, structure_now, edits)
         result = tailor.check_result(facts, structure_now, applied['rendered'], edits)
         proof = tailor.trace(facts, applied['rendered'], edits)
-        original = tailor.apply_edits(facts, structure_now, [])['rendered']
+        original = self._tailor_shape(tailor.apply_edits(facts, structure_now, [])['rendered'])
+        shaped = self._tailor_shape(applied['rendered'])
+        withheld = self._tailor_withheld(applied['rendered'], facts)
         by_id = {f['id']: f for f in facts}
         cited = {r['id'] for e in edits for r in e['fact_ids']}
         shown['checks'] = dict(shown.get('checks') or {}, trace=proof['status'], result='pass' if result['ok'] else 'fail')
         if versions is None:
             with self.tx() as c: versions = self._tailor_versions(c, doc['job_id'])
         ai_state, _ = self._tailor_ai_state(facts, doc.get('requirements') or [])
-        empty = not any(sec['lines'] for sec in applied['rendered']['sections'])
-        return dict(document=shown, empty=empty, rendered=applied['rendered'], original=original, applied=applied['applied'], hidden=applied['hidden'],
+        empty = not any(sec['lines'] for sec in shaped['sections'])
+        return dict(document=shown, empty=empty, basic_withheld=withheld, rendered=shaped, original=original, applied=applied['applied'], hidden=applied['hidden'],
                     rejected_in_view=[dict(edit_id=r['edit'].get('id'), reason=r['reason'], text=GATE_TEXT.get(r['reason'], r['reason']))
                                       for r in applied['rejected_by_gate']],
                     trace=dict(status=proof['status'], problems=proof['problems']), result=result,
@@ -259,9 +263,14 @@ class TailorActions:
         conditions = self._assist_inputs()['conditions']
         explain = lambda rows: ai_match.explain(m['structure'], rows, conditions)
         stem = re.sub(r'[\\/:*?"<>|\s]+', '_', f"{job.get('company') or '公司待确认'}-{job.get('title') or '岗位'}")[:MAX_FORMAT_STEMS] + f"-v{doc['version']}"
-        render = self._tailor_render(applied['rendered'])
-        if not any(s['lines'] or s['title'] for s in render['sections']):
-            return dict(needs_structure=True, **self._tailor_need('empty', current))
+        include = payload.get('include_private_basic', False)
+        if type(include) is not bool: raise Error('include_private_basic 必须是布尔值')
+        render = self._tailor_render(applied['rendered'], facts, include)
+        if not render['sections']:
+            need = self._tailor_need('empty', current)
+            if self._tailor_withheld(applied['rendered'], facts):
+                need['reason'] = '目前只有披露范围是私密的基本信息，导出文件没有内容：勾选「这次写进导出文件」，或先在确认页把事实分到条目里。'
+            return dict(needs_structure=True, **need)
         out_dir = self._tailor_dir(job_id, doc['version'])
         try:
             out = resume_render.export_all(render, out_dir, stem, formats=formats, version=doc['version'], job_id=job_id, explain=explain)
@@ -274,6 +283,7 @@ class TailorActions:
                    checks=dict(doc.get('checks') or {}, export='pass' if ok else 'fail'))
         with self.tx() as c: self._tailor_save(c, doc)
         return dict(job_id=job_id, version=doc['version'], dir=str(out_dir), ok=ok, notice=resume_render.NOTICE, excluded_pending=sum(e['status'] == 'pending' for e in edits),
+                    withheld_basic=[] if include else self._tailor_withheld(applied['rendered'], facts),
                     files=out['files'], errors=out['errors'], trace_path=out['trace_path'], trace_status=proof['status'])
 
     def _tailor_dir(self, job_id, version):
@@ -284,11 +294,25 @@ class TailorActions:
         return base / job_id / f'v{version}'
 
     @staticmethod
-    def _tailor_render(rendered):
-        """The tailor.py rendering as resume_render's input: a section's title line becomes the section title."""
+    def _tailor_shape(rendered):
+        """What the page draws: the section's standard name from its type, and no title line. A heading fact, or a prefix
+        line that is also the entry head, appears once (as the head), never again as a title."""
+        return dict(rendered, sections=[dict(s, title=SECTION_TITLES.get(s['key']), lines=[l for l in s['lines'] if l['kind'] != 'title'])
+                                        for s in rendered['sections']])
+
+    @staticmethod
+    def _tailor_withheld(rendered, facts):
+        """Basic-info lines whose disclosure scope is not `application`: the export leaves them out unless the user opts in."""
+        by_id = {f['id']: f for f in facts}
+        return [dict(id=l['fact_ids'][0]['id'], text=l['text']) for s in rendered['sections'] if s['key'] == 'basic'
+                for l in s['lines'] if l['fact_ids'] and by_id.get(l['fact_ids'][0]['id'], {}).get('disclosure') != 'application']
+
+    def _tailor_render(self, rendered, facts, include_private_basic=False):
+        """The tailor.py rendering as resume_render's input, standard section names, basic info first and without a title."""
+        hold = {w['id'] for w in self._tailor_withheld(rendered, facts)} if not include_private_basic else set()
         sections = []
-        for s in rendered['sections']:
-            lines = [dict(text=l['text'], kind=l['kind'], fact_ids=l['fact_ids'], edit_ids=l['edit_ids']) for l in s['lines']]
-            title = lines.pop(0)['text'] if lines and lines[0]['kind'] == 'title' else None
-            if title or lines: sections.append(dict(key=s['key'], title=title, lines=lines))
+        for s in self._tailor_shape(rendered)['sections']:
+            lines = [dict(text=l['text'], kind='text' if s['key'] == 'basic' else l['kind'], fact_ids=l['fact_ids'], edit_ids=l['edit_ids']) for l in s['lines']
+                     if not (s['key'] == 'basic' and l['fact_ids'] and l['fact_ids'][0]['id'] in hold)]
+            if lines: sections.append(dict(key=s['key'], title=None if s['key'] == 'basic' else s['title'], lines=lines))
         return dict(sections=sections)

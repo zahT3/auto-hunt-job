@@ -12,7 +12,16 @@ const STRUCTURE_FIELDS = [
   ["start", "开始"],
   ["end", "结束"],
 ];
+// The stored field names stay company / title; what they are called depends on the section.
+const STRUCTURE_FIELD_NAMES = {
+  education: { company: "学校", title: "学历或专业" },
+  project: { company: "项目", title: "角色" },
+};
+export function structureFieldLabel(sectionKey, name, fallback) {
+  return STRUCTURE_FIELD_NAMES[sectionKey]?.[name] || fallback;
+}
 const STRUCTURE_LABELS = {
+  basic: "基本信息",
   education: "教育",
   work: "工作经历",
   internship: "实习经历",
@@ -133,9 +142,9 @@ function structureText(id) {
   return structureWork.facts.get(id)?.text || "";
 }
 
-function structureHeadHtml(entry) {
+function structureHeadHtml(entry, sectionKey) {
   const chars = structureChars(structureText(entry.head?.id));
-  const marks = STRUCTURE_FIELDS.map(([name, label]) => ({ ...entry.fields[name], label }))
+  const marks = STRUCTURE_FIELDS.map(([name, label]) => ({ ...entry.fields[name], label: structureFieldLabel(sectionKey, name, label) }))
     .filter((f) => f.span)
     .sort((a, b) => a.span[0] - b.span[0]);
   let html = "",
@@ -150,7 +159,8 @@ function structureHeadHtml(entry) {
   return html + esc(chars.slice(at).join(""));
 }
 
-function structureFieldHtml(entry, [name, label]) {
+function structureFieldHtml(entry, [name, label], sectionKey) {
+  label = structureFieldLabel(sectionKey, name, label);
   const field = entry.fields[name],
     text = structureText(entry.head?.id),
     options = [...(structureWork.fragments[entry.head?.id] || [])];
@@ -199,9 +209,9 @@ function structureEntryHtml(structure, section, entry, index) {
       ? `<span class="badge warn">${open} 项待核对</span>`
       : '<span class="badge neutral">已核对</span>';
   const isEntry = STRUCTURE_ENTRY_KEYS.includes(section.key);
-  const head = entry.head ? `<p><strong>${structureHeadHtml(entry)}</strong> ${badge}</p>` : `<p><em>没有条目头</em> ${badge}</p>`;
+  const head = entry.head ? `<p><strong>${structureHeadHtml(entry, section.key)}</strong> ${badge}</p>` : `<p><em>没有条目头</em> ${badge}</p>`;
   const fields = isEntry
-    ? `<div class="form-pair">${STRUCTURE_FIELDS.map((f) => structureFieldHtml(entry, f)).join("")}</div>`
+    ? `<div class="form-pair">${STRUCTURE_FIELDS.map((f) => structureFieldHtml(entry, f, section.key)).join("")}</div>`
     : "";
   const buttons = [
     stale
@@ -232,7 +242,7 @@ export function structurePageHtml() {
     })
     .join("");
   const unassigned = structure.unassigned.length
-    ? `<h4>未分配的事实</h4><p class="small-note">这些事实不属于任何条目，定制简历时不会使用。</p><ul>` +
+    ? `<h4>未分配的事实 <span class="badge warn">待放入</span></h4><p class="small-note">这些事实不属于任何条目，定制简历时不会使用；拿不准的行也在这里，请看一眼要不要放进某个条目。</p><ul>` +
       structure.unassigned
         .map(
           (r) =>

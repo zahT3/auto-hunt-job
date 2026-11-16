@@ -433,7 +433,7 @@ def propose(facts, structure, match, line_limit=None):
     keywords = [(i, r) for i, r in enumerate((match or {}).get('keywords') or []) if r.get('coverage') == 'explicit']
     for sec in layout:
         for ent in sec['entries']:
-            if ent['stale'] or len(ent['bullets']) < 1:
+            if ent['stale'] or len(ent['bullets']) < 1 or sec['key'] in ('basic', 'header'):  # contact lines keep their order
                 continue
             for f in ent['bullets']:  # items of a one-line skill list
                 parts = _split_skills(f['text']) if f['id'] not in touched else None
