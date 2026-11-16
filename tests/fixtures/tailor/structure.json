@@ -1,0 +1,143 @@
+{
+ "version": 4,
+ "status": "confirmed",
+ "confirmed_at": "2026-11-16T10:00:00+08:00",
+ "facts_digest": "x",
+ "sections": [
+  {
+   "id": "s0",
+   "key": "header",
+   "title_fact": null,
+   "entries": [
+    {
+     "id": "n0",
+     "status": "ok",
+     "head": {
+      "id": "intake-f0",
+      "version": 1
+     },
+     "fields": {},
+     "bullets": [
+      {
+       "id": "intake-f1",
+       "version": 1
+      }
+     ]
+    }
+   ]
+  },
+  {
+   "id": "s1",
+   "key": "work",
+   "title_fact": {
+    "id": "intake-f2",
+    "version": 1
+   },
+   "entries": [
+    {
+     "id": "n1",
+     "status": "ok",
+     "head": {
+      "id": "intake-f3",
+      "version": 1
+     },
+     "fields": {
+      "company": {
+       "span": [
+        0,
+        6
+       ],
+       "confidence": "ok"
+      }
+     },
+     "bullets": [
+      {
+       "id": "intake-f4",
+       "version": 1
+      },
+      {
+       "id": "intake-f5",
+       "version": 1
+      },
+      {
+       "id": "intake-f6",
+       "version": 1
+      }
+     ]
+    },
+    {
+     "id": "n2",
+     "status": "stale",
+     "head": {
+      "id": "intake-f7",
+      "version": 1
+     },
+     "fields": {},
+     "bullets": [
+      {
+       "id": "intake-f8",
+       "version": 1
+      },
+      {
+       "id": "intake-f9",
+       "version": 1
+      }
+     ]
+    }
+   ]
+  },
+  {
+   "id": "s2",
+   "key": "skills",
+   "title_fact": {
+    "id": "intake-f10",
+    "version": 1
+   },
+   "entries": [
+    {
+     "id": "n3",
+     "status": "ok",
+     "head": null,
+     "fields": {},
+     "bullets": [
+      {
+       "id": "intake-f11",
+       "version": 1
+      }
+     ]
+    }
+   ]
+  },
+  {
+   "id": "s3",
+   "key": "education",
+   "title_fact": {
+    "id": "intake-f12",
+    "version": 1
+   },
+   "entries": [
+    {
+     "id": "n4",
+     "status": "ok",
+     "head": {
+      "id": "intake-f13",
+      "version": 1
+     },
+     "fields": {},
+     "bullets": [
+      {
+       "id": "intake-f14",
+       "version": 1
+      }
+     ]
+    }
+   ]
+  }
+ ],
+ "unassigned": [
+  {
+   "id": "intake-f15",
+   "version": 1
+  }
+ ]
+}
