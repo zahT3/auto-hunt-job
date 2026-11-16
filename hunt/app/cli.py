@@ -153,6 +153,24 @@ def parser():
     agent[-1].add_argument('job', metavar='JOB_ID')
     agent.append(commands.add_parser('nl_query', help='把一段找工作需求转成搜索参数，只返回参数，不执行搜索'))
     agent[-1].add_argument('text', metavar='TEXT')
+    agent.append(commands.add_parser('structure', help='agent 模式：读取简历结构；--set FILE 保存用户确认的结构'))
+    agent[-1].add_argument('--set', type=Path, metavar='FILE', dest='set_file', help='结构 JSON，或 {"structure": …, "base_version": N}；版本号以文件里的 version 为准')
+    agent[-1].add_argument('--confirm', action='store_true', help='与 --set 一起用：同时确认（字段不能还有待核对）')
+    agent.append(commands.add_parser('tailor', help='agent 模式：为一个岗位生成新版本的定制简历；--ai 先要有同意、key 和预算'))
+    agent[-1].add_argument('job', metavar='JOB_ID')
+    agent[-1].add_argument('--ai', action='store_true', help='再让模型改写措辞；条件不满足时退回规则路径，看 ai.used')
+    agent.append(commands.add_parser('tailor_get', help='agent 模式：读定制简历的某一版'))
+    agent[-1].add_argument('job', metavar='JOB_ID')
+    agent[-1].add_argument('--version', type=int, metavar='N', help='版本号；省略时取最新')
+    agent.append(commands.add_parser('tailor_review', help='agent 模式：改最新版里修改的状态'))
+    agent[-1].add_argument('job', metavar='JOB_ID')
+    agent[-1].add_argument('--accept', metavar='IDS', help='接受的修改 id，逗号分隔；AI 改写会重新过硬检查')
+    agent[-1].add_argument('--reject', metavar='IDS', help='撤销的修改 id，逗号分隔')
+    agent[-1].add_argument('--pending', metavar='IDS', help='改回待审核的修改 id，逗号分隔')
+    agent.append(commands.add_parser('tailor_export', help='agent 模式：导出定制简历并读回自检'))
+    agent[-1].add_argument('job', metavar='JOB_ID')
+    agent[-1].add_argument('--format', default='md,pdf,docx', metavar='LIST', help='格式，逗号分隔：md、pdf、docx')
+    agent[-1].add_argument('--version', type=int, metavar='N', help='版本号；省略时取最新')
     hide = commands.add_parser('hide', help='"不想看"清单：搜索默认隐藏命中的公司、岗位或招聘者').add_subparsers(dest='sub', required=True)
     agent.append(hide.add_parser('add', help='加一条：KIND 是 company、title 或 recruiter，字段里含 VALUE 就隐藏'))
     agent[-1].add_argument('kind', choices=['company', 'title', 'recruiter'], metavar='KIND')
@@ -243,6 +261,22 @@ def agent_command(store, args):
         return store.job_match(dict(job_id=args.job))
     if args.command == 'nl_query':
         return store.nl_query(dict(text=args.text))
+    if args.command == 'structure':
+        if not args.set_file:
+            return dict(schema_version=1, **store.structure_get())
+        data = read_json(args.set_file)
+        if isinstance(data, dict) and 'structure' not in data: data = dict(structure=data)
+        if not isinstance(data, dict) or not isinstance(data.get('structure'), dict): raise Error('结构文件须是结构对象，或含 structure 的对象')
+        data = dict(data, base_version=data.get('base_version', data['structure'].get('version')), confirm=args.confirm)
+        return dict(schema_version=1, **store.structure_save(data))
+    if args.command in ('tailor', 'tailor_get', 'tailor_review', 'tailor_export'):
+        ids = lambda text: [x.strip() for x in (text or '').split(',') if x.strip()]
+        payload = dict(job_id=args.job)
+        if args.command == 'tailor': payload['ai'] = args.ai
+        if args.command in ('tailor_get', 'tailor_export') and args.version: payload['version'] = args.version
+        if args.command == 'tailor_review': payload.update(accept=ids(args.accept), reject=ids(args.reject), pending=ids(args.pending))
+        if args.command == 'tailor_export': payload['formats'] = ids(args.format)
+        return dict(schema_version=1, **getattr(store, args.command)(payload))
     dirs = chosen(store)
     if args.direction is not None and args.direction not in [d['id'] for d in dirs]: raise Error('--direction 须是当前所选方向之一')
     state = store.state()
@@ -391,7 +425,7 @@ def main(argv=None):
                 store.hide_add(dict(kind=args.kind, value=args.value))
             print(json.dumps(dict(schema_version=1, **result), ensure_ascii=False, indent=2))
             return 0
-        if args.command in ('profile', 'directions', 'jobs', 'classify', 'summary', 'jd_extract', 'job_match', 'nl_query'):
+        if args.command in ('profile', 'directions', 'jobs', 'classify', 'summary', 'jd_extract', 'job_match', 'nl_query', 'structure', 'tailor', 'tailor_get', 'tailor_review', 'tailor_export'):
             print(json.dumps(agent_command(store, args), ensure_ascii=False, indent=2))
             return 0
         # Only the existing runner owns recovery and its OS lock. These local

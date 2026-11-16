@@ -997,3 +997,51 @@ test('structure step mounts after fact confirmation, hides while a new draft awa
  assert.equal(h.run('structureWork.base'),1);
  h.run("action=async()=>null;");assert.equal(await h.run('mountStructure()'),false);assert.equal(h.node('#resume-structure').hidden,true);
 });
+
+// 为这个岗位改简历
+const TAILOR_VIEW=`({document:{version:1,by:'rules',model:null,created_at:'2026-11-16T02:00:00Z',structure:{version:5},edits:[
+ {id:'e1',op:'reorder',by:'rules',status:'accepted',fact_ids:[{id:'f1',version:1},{id:'f2',version:1}],requirement:{type:'keyword',value:'Docker',jd_evidence:'熟悉 <Docker>',ref:'k2'},before:'甲\\n乙',after:'乙\\n甲',why:'相关的提前',checks:{flags:[],reviewer:null}},
+ {id:'a1',op:'rephrase',by:'ai',status:'pending',fact_ids:[{id:'f3',version:1}],requirement:{type:'keyword',value:'Python',jd_evidence:'熟练使用 Python',ref:'k1'},before:'参与后端开发',after:'负责后端开发',why:'x',checks:{flags:['strength_up'],reviewer:'overstated',reviewer_note:'参与被写成负责'}}],
+ gaps:[{type:'absent',requirement:'Redis',jd_evidence:'了解 Redis',related_terms:[],fact_ids:[],ref:'k4'}],
+ rejected_by_gate:[{edit:{after:'节省 90% 成本'},reason:'new_number',detail:[{code:'new_number',text:'90%'}]}],checks:{trace:'pass',result:'pass',export:null}},
+ rendered:{sections:[{id:'s1',key:'work',lines:[{text:'乙',kind:'bullet',fact_ids:[],edit_ids:['e1']},{text:'甲',kind:'bullet',fact_ids:[],edit_ids:['e1']}]}]},
+ original:{sections:[{id:'s1',key:'work',lines:[{text:'甲',kind:'bullet',fact_ids:[],edit_ids:[]}]}]},hidden:{},rejected_in_view:[],
+ facts:{f1:{id:'f1',version:1,text:'甲',reference:'upload://x#paragraph=1'},f3:{id:'f3',version:1,text:'参与后端开发',reference:null}},
+ pending:1,stale:0,latest:true,structure_changed:false,trace:{status:'pass',problems:[]},result:{ok:true,problems:[]},
+ versions:[{version:1,by:'rules',created_at:'2026-11-16T02:00:00Z',edits:2}],ai:{available:false,reason:'未获得向模型服务发送简历内容的同意，未使用 AI',estimate:null}})`;
+test('the tailoring page shows each edit with its source, marks soft flags, and keeps hard-gate rejects without an accept button',()=>{
+ const h=harness();
+ const html=h.run(`tailorPageHtml({title:'后端',company:'某公司'},${TAILOR_VIEW},false,null,'j1')`);
+ assert.match(html,/对应岗位要求：Docker，原文「熟悉 &lt;Docker&gt;」/);assert.doesNotMatch(html,/<Docker>/);
+ assert.match(html,/原顺序[\s\S]*新顺序/);
+ assert.match(html,/<del>参与<\/del>|<del>参<\/del>/);assert.match(html,/职责强度升级/);assert.match(html,/审稿人：说得比事实重/);
+ assert.match(html,/data-edit="a1" data-status="pending"/);assert.match(html,/待审核/);
+ assert.match(html,/data-tl="accept" data-id="e1" disabled/,'an accepted edit cannot be accepted again');
+ assert.match(html,/导出（不含 1 条待审核）/);
+ assert.match(html,/Redis[\s\S]*事实里没有[\s\S]*我有这项，去补充事实/);
+ assert.match(html,/被本地检查拒绝的提议（1）[\s\S]*出现了事实里没有的数字或量化：90%/);
+ assert.doesNotMatch(html,/data-tl="accept" data-id="new_number"/);
+ assert.match(html,/未获得向模型服务发送简历内容的同意/);assert.match(html,/data-act="tailor-ai" disabled/);
+});
+test('the tailoring page sends the user to the structure step instead of generating',()=>{
+ const h=harness();
+ for(const code of ['no_facts','no_structure','unconfirmed','stale']){
+  const html=h.run(`tailorPageHtml({title:'后端'},{needs_structure:true,code:'${code}',reason:'x',document:null},false,null,'j1')`);
+  assert.match(html,/data-open-resume/);assert.doesNotMatch(html,/data-act="tailor-generate"/);
+ }
+ const none=h.run(`tailorPageHtml({title:'后端'},{document:null,versions:[]},false,null,'j1')`);
+ assert.match(none,/data-act="tailor-generate"/);
+});
+test('the tailoring diff marks deleted and added words and the cursor stops at both ends',()=>{
+ const h=harness();
+ assert.equal(h.run(`JSON.stringify(tailorDiff('参与后端开发','负责后端开发'))`),JSON.stringify([{t:'del',s:'参与'},{t:'add',s:'负责'},{t:'same',s:'后端开发'}]));
+ assert.equal(h.run(`tailorDiffHtml('用 k8s 部署','用 Kubernetes 部署')`).includes('<ins>'),true);
+ assert.equal(h.run(`tailorMove(['e1','e2','e3'],null,1)`),'e1');
+ assert.equal(h.run(`tailorMove(['e1','e2','e3'],'e3',1)`),'e3');
+ assert.equal(h.run(`tailorMove(['e1','e2','e3'],'e1',-1)`),'e1');
+ assert.equal(h.run(`tailorMove([],null,1)`),null);
+});
+test('the job page offers the tailoring entry',()=>{
+ const h=harness();
+ assert.match(h.run(`jobPageHtml({id:'j9',title:'后端',jd:'x'},null,null)`),/href="#\/tailor\/j9"[^>]*>为这个岗位改简历/);
+});

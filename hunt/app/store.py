@@ -23,6 +23,7 @@ from .candidate import CandidateActions
 from .config import DEFAULT_CONFIG, validate_config
 from .search_run import SearchRun
 from .structure import StructureActions
+from .tailor import TailorActions
 from ..base import Error, digest, dumps, now
 from ..profile import directions
 from ..profile.profile import build_profile, synthetic_profile
@@ -34,7 +35,7 @@ def summary_only(raw):
     return isinstance(raw, dict) and raw.get('summary_only') is True
 
 
-class Store(WorkbenchActions, OrientActions, AiSettings, AssistActions, SearchRun, CandidateActions, StructureActions):
+class Store(WorkbenchActions, OrientActions, AiSettings, AssistActions, SearchRun, CandidateActions, StructureActions, TailorActions):
     llm_transport = None  # tests inject a fake; None means network.fetch
 
     def __init__(self, root, channel=None, executor=None):
@@ -320,6 +321,10 @@ ACTIONS = {
     'resume_confirm': lambda s, p: s.confirm_resume(p),
     'structure_get': lambda s, p: s.structure_get(p),
     'structure_save': lambda s, p: s.structure_save(p),
+    'tailor': lambda s, p: s.tailor(p),
+    'tailor_get': lambda s, p: s.tailor_get(p),
+    'tailor_review': lambda s, p: s.tailor_review(p),
+    'tailor_export': lambda s, p: s.tailor_export(p),
     'orient_questions': lambda s, p: s.orient_questions(),
     'orient_answer': lambda s, p: s.orient_answer(p),
     'directions_set': lambda s, p: s.directions_set(p),
@@ -345,4 +350,4 @@ ACTIONS = {
     'hide_list': lambda s, p: s.hide_list(),
 }
 # Actions whose answer is the point: the response carries it as `result` next to the state.
-RESULT_ACTIONS = {'structure_get', 'structure_save', 'jd_extract', 'job_match', 'nl_query', 'hide_add', 'hide_remove', 'hide_list'}
+RESULT_ACTIONS = {'structure_get', 'structure_save', 'tailor', 'tailor_get', 'tailor_review', 'tailor_export', 'jd_extract', 'job_match', 'nl_query', 'hide_add', 'hide_remove', 'hide_list'}

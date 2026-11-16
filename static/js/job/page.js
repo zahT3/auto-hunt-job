@@ -10,6 +10,7 @@ import { go, registerPage, route, setReturnTarget } from "../shell/router.js";
 import { jobById } from "../triage/actions.js";
 import { showJob } from "../workbench/queue.js";
 import { cachedMatch, loadMatch, matchMayUseModel } from "./match.js";
+import "../tailor/page.js";
 
 const HARD_KIND = {
   education: "学历",
@@ -272,6 +273,7 @@ export function jobPageHtml(job, g, m) {
     (posted ? `<p class="posted">${esc(posted)}</p>` : "") +
     `</div>${m ? headNote(m) : ""}</header>` +
     matchPart +
+    `<div class="actions"><a class="btn btn-primary" href="#/tailor/${esc(job.id)}">为这个岗位改简历</a></div>` +
     `<div class="sec-h"><h2>原文与批注</h2><span class="tally">${m ? (m.structure_by === "ai" ? "JD 结构由 AI 抽取；批注只引用已确认事实" : "JD 结构由本地规则抽取") : "还没有批注"}</span></div>` +
     `<div class="jd">${jdHtml(job, m)}</div>` +
     (m?.structure

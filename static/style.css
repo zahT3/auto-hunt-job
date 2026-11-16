@@ -4443,3 +4443,199 @@ mark.ev.on {
   align-items: center;
   gap: 8px 10px;
 }
+
+/* 为这个岗位改简历（#/tailor/<id>）：左边是逐条修改，右边是定制版，窄屏上下叠放 */
+.tl-tools {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--s3);
+  margin-top: var(--s4);
+}
+.tl-tools select {
+  font: inherit;
+  padding: var(--s1) var(--s2);
+  border: 1px solid var(--rule-2);
+  border-radius: var(--r2);
+  background: var(--paper);
+  color: var(--ink);
+}
+.tl-cols {
+  display: grid;
+  grid-template-columns: minmax(0, 1.2fr) minmax(0, 1fr);
+  gap: var(--s5);
+  align-items: start;
+}
+.tl-edits {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: var(--s3);
+}
+.tl-edit {
+  border: 1px solid var(--rule);
+  border-radius: var(--r3);
+  padding: var(--s3) var(--s4);
+  background: var(--paper);
+}
+.tl-edit.on {
+  border-color: var(--pen);
+  box-shadow: 0 0 0 1px var(--pen);
+}
+.tl-edit[data-status="rejected"] {
+  opacity: 0.72;
+}
+.tl-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--s2);
+  font-size: var(--fs-s);
+}
+.tl-op {
+  font-weight: 600;
+}
+.tl-by {
+  color: var(--ink-3);
+  font-size: var(--fs-xs);
+  border: 1px solid var(--rule-2);
+  border-radius: var(--r1);
+  padding: 0 var(--s1);
+}
+.tl-text,
+.tl-src {
+  margin: var(--s2) 0;
+  line-height: 1.75;
+}
+.tl-text del,
+.tl-preview del {
+  color: var(--bad);
+  text-decoration: line-through;
+}
+.tl-text ins {
+  background: var(--marker);
+  color: var(--on-marker);
+  text-decoration: underline;
+}
+.tl-order {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: var(--s3);
+  margin: var(--s2) 0;
+}
+.tl-order ol {
+  margin: 0;
+  padding-left: 1.4em;
+  line-height: 1.6;
+}
+.tl-cap {
+  font-size: var(--fs-xs);
+  color: var(--ink-3);
+}
+.tl-warn {
+  display: block;
+  color: var(--bad);
+  font-size: var(--fs-s);
+  margin: var(--s1) 0;
+}
+.tl-flag {
+  border: 1px solid var(--bad);
+  border-radius: var(--r1);
+  padding: 0 var(--s1);
+  margin-right: var(--s2);
+}
+.tl-actions {
+  display: flex;
+  gap: var(--s2);
+  margin-top: var(--s2);
+}
+.tl-preview {
+  border-left: 3px solid var(--rule-2);
+  padding-left: var(--s4);
+  margin: var(--s2) 0 var(--s4);
+}
+.tl-sec {
+  margin-bottom: var(--s3);
+}
+.tl-line {
+  margin: 2px 0;
+  line-height: 1.7;
+}
+.tl-line.tl-title {
+  font-weight: 600;
+}
+.tl-line.tl-bullet {
+  padding-left: 1em;
+  text-indent: -1em;
+}
+.tl-line.tl-bullet::before {
+  content: "• ";
+}
+.tl-line.changed {
+  background: var(--pen-soft);
+}
+.tl-gaps {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+  display: grid;
+  gap: var(--s2);
+}
+.tl-gaps li {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: var(--s2);
+}
+.tl-rejected {
+  margin-top: var(--s5);
+}
+.tl-foot {
+  position: sticky;
+  bottom: 0;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--s4);
+  margin-top: var(--s5);
+  padding: var(--s3) 0;
+  background: var(--paper);
+  border-top: 1px solid var(--rule);
+}
+.tl-fmts {
+  border: 0;
+  padding: 0;
+  margin: 0;
+  display: flex;
+  gap: var(--s3);
+}
+.tl-fmts legend {
+  float: left;
+  padding: 0;
+  margin-right: var(--s2);
+  color: var(--ink-3);
+  font-size: var(--fs-s);
+}
+.tl-files {
+  list-style: none;
+  padding: 0;
+  display: grid;
+  gap: var(--s3);
+}
+.tl-files .sub {
+  display: block;
+  word-break: break-all;
+}
+.tl-edit:focus-visible {
+  outline: 2px solid var(--pen);
+  outline-offset: 2px;
+}
+@media (max-width: 760px) {
+  .tl-cols {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .tl-order {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}

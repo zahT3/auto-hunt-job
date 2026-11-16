@@ -179,3 +179,75 @@
 - `direction` 只会是你已选定的方向 id 或 `null`：`search` 按归类结果筛方向，岗位只会归到已选方向里。需求里提到的方向不在已选方向里时，`direction` 为 `null`，`notes` 里说明，只靠 `q` 搜。
 - 命令只返回参数，`executed` 永远是 `false`。给用户看、让用户改，确认后再交给 `search`。`search` 目前只接受一个城市，交给它时先取 `city` 的第一个；它改成接受城市列表以后可以原样传。
 - 用模型需要新的同意类别"搜索需求"（`search_query`）：`python -m hunt ai consent --kind search_query`。模型的回答必须恰好是这四个键且值合法，否则按规则转换。
+
+## 为一个岗位改简历
+
+定制版不是新写的文字，而是已确认事实上的一串修改。每条修改写明引用哪些事实（id 和版本）、服务哪条岗位要求；不引用事实的文字进不了导出文件。设计见 [v2-tailoring-design.md](v2-tailoring-design.md)。
+
+前提是简历结构已确认：`structure` 命令读出预填结构，用户在网页确认页纠正并确认后才能生成。结构还是预填、有过期条目或有待核对的字段时，`tailor` 不生成，返回 `needs_structure`。
+
+| 命令 | 动作 | 作用 |
+|---|---|---|
+| `python -m hunt structure [--set FILE [--confirm]]` | `structure_get` / `structure_save` | 读结构；`--set` 保存结构（文件是结构对象，或 `{"structure": …, "base_version": N}`），`--confirm` 同时确认，字段不能还有待核对 |
+| `python -m hunt tailor JOB_ID [--ai]` | `tailor`（`job_id`、`ai`） | 生成新版本；版本从 1 起，只增不改 |
+| `python -m hunt tailor_get JOB_ID [--version N]` | `tailor_get`（`job_id`、`version`） | 读某一版，省略取最新 |
+| `python -m hunt tailor_review JOB_ID [--accept e1,e2] [--reject e3] [--pending e4]` | `tailor_review`（`job_id`、`accept`、`reject`、`pending`，各是修改 id 的数组） | 改最新版里修改的状态；旧版只读 |
+| `python -m hunt tailor_export JOB_ID [--format md,pdf,docx] [--version N]` | `tailor_export`（`job_id`、`formats`、`version`） | 写文件并读回自检 |
+
+五个动作都在 `/api/action` 里，返回的状态多一个 `result`，内容和 CLI 输出相同（CLI 另有 `schema_version`）。出错时 CLI 退出码为 1。
+
+### tailor、tailor_get、tailor_review 的结果
+
+```json
+{"schema_version": 1,
+ "document": {"schema_version": 1, "id": "tl-<job_id>-v1", "job_id": "...", "version": 1, "created_at": "...",
+              "by": "rules 或 ai", "model": null,
+              "base": {"facts": [{"id": "intake-f4", "version": 1}], "jd_digest": "...", "match_digest": "..."},
+              "structure": {"version": 5},
+              "edits": [{"id": "e1", "op": "reorder", "fact_ids": [{"id": "intake-f6", "version": 1}],
+                         "requirement": {"type": "keyword", "value": "Docker", "jd_evidence": "...", "ref": "k2"},
+                         "before": "...", "after": "...", "why": "...", "by": "rules",
+                         "status": "accepted", "checks": {"hard": "pass", "flags": [], "reviewer": null}}],
+              "gaps": [{"type": "absent", "requirement": "Redis", "jd_evidence": "...", "related_terms": [], "fact_ids": [], "ref": "k4"}],
+              "rejected_by_gate": [{"edit": {}, "reason": "new_number", "detail": []}],
+              "checks": {"trace": "pass", "result": "pass", "export": null},
+              "requirements": [{"ref": "k2", "type": "keyword", "value": "Docker", "jd_evidence": "..."}]},
+ "rendered": {"structure_version": 5, "sections": [{"id": "s1", "key": "work", "lines": [{"text": "...", "kind": "head | bullet | title", "fact_ids": [], "edit_ids": []}]}]},
+ "original": {"同": "rendered，但不含任何修改"},
+ "applied": ["e1"], "hidden": {}, "rejected_in_view": [{"edit_id": "e2", "reason": "conflict", "text": "..."}],
+ "trace": {"status": "pass", "problems": []}, "result": {"ok": true, "problems": []},
+ "facts": {"intake-f6": {"id": "intake-f6", "version": 1, "text": "...", "reference": "upload://…#paragraph=7"}},
+ "pending": 0, "stale": 0, "structure_changed": false, "latest": true,
+ "versions": [{"version": 1, "by": "rules", "created_at": "...", "edits": 3}],
+ "ai": {"available": false, "reason": "未获得向模型服务发送简历内容的同意，未使用 AI",
+        "estimate": {"host": "...", "model": "...", "facts": 14, "requirements": 5, "worst_cny": 0.04, "text": "将向 … 发送 …"},
+        "requested": false, "used": false, "spent": 0.0, "notes": [], "cached": false},
+ "needs_structure": false}
+```
+
+- `op`：`reorder`（同一条目内调序，或一行技能里点名的项提前）、`alias`（换成岗位原词，只限很短的同义白名单）、`hide`（只在超出页数上限时）、`rephrase`（只有 AI 路径）。规则路径的修改默认 `accepted`，AI 路径的默认 `pending`。
+- `status`：`accepted`、`pending`、`rejected`、`stale`。引用的事实改过或不再是已确认状态，修改变 `stale`，不进导出，要重新生成。
+- `checks.flags` 有 `strength_up`（职责强度升级）、`negation_dropped`（否定变肯定）、`close_to_jd`（贴近岗位原句）：命中的默认待审核，界面标红。`checks.reviewer` 是 AI 审稿人的结论（`ok`、`unsupported`、`overstated`、`off_topic`），只能降级，不能改文字。
+- `rejected_by_gate`：被本地硬检查拒绝的提议（新数字、新工具名、新雇主等），不能接受；要用这些内容，先把它补充为已确认事实。
+- `gaps`：岗位有、事实里没有的词和未满足的硬条件，只是列出，不会写进简历。
+- `--ai` 需要「简历」和「岗位原文」两类同意、当前主机的 key 和预算。不满足时退回规则路径，退出码不变，看 `ai.used`（`false`）和 `ai.reason`。AI 路径最多两次模型调用，结果按岗位摘要、事实摘要、模型缓存。
+- `tailor_review` 接受一条 AI 改写前，服务端会重新跑硬检查；规则路径的修改接受前过四道闸（`apply_edits`）。没过就报错，状态不变。
+- 结构没确认时：`{"needs_structure": true, "code": "no_facts | no_structure | unconfirmed | stale", "reason": "...", "structure_status": "prefilled", "open": {"uncertain": 0, "stale": 0, "unassigned": 0}}`，不生成。
+
+### tailor_export 的结果
+
+```json
+{"schema_version": 1, "job_id": "...", "version": 1, "dir": "<数据目录>/tailored/<job_id>/v1", "ok": true,
+ "notice": "这是用本工具自己的解析器重读，不代表任何招聘系统的实际结果。",
+ "excluded_pending": 0, "trace_status": "pass", "trace_path": ".../trace.json",
+ "files": {"pdf": {"path": "...", "sha256": "...", "size": 12345,
+                   "check": {"ok": true, "missing_lines": [], "out_of_order": [], "section_order_ok": true, "page_count": 1, "pages_ok": true,
+                             "warnings": [], "missing_chars": [],
+                             "keyword_coverage": [{"keyword": "Python", "before": "原词", "after": "原词", "changed": false}]}}},
+ "errors": {"docx": "导出 DOCX 需要 python-docx：…"}}
+```
+
+- 目录权限 0700、文件 0600；文件名是 `<公司>-<岗位>-v<版本>.<格式>`，同目录有 `trace.json`（每一行对应的事实 id、版本、修改 id）。
+- 导出前先跑 `trace`：有一行追溯不到已确认事实就不写任何文件并报错。待审核的修改不进导出，数量在 `excluded_pending`。
+- 读回自检用本工具自己的解析器，不代表任何招聘系统。自检不通过不阻止导出：`ok` 为 `false`，原因在各文件的 `check` 里。字体里没有的字写在 `missing_chars` 和 `warnings`（用 `HUNT_PDF_FONT` 指定完整字体后重新导出）；没装 `python-docx` 时只有 `errors.docx` 有提示，其余格式照常。
+- `keyword_coverage` 是岗位关键词在导出文件里「原词、相近、没有」的清单，不汇总成百分比。

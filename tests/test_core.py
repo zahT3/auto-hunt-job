@@ -560,7 +560,7 @@ class ActionTableTests(CoreCase):
                                         'orient_answer', 'directions_set', 'classify', 'entry_verify', 'entry_finish', 'entry_cancel',
                                         'import', 'prepare', 'triage', 'review_materials', 'review', 'execute', 'control', 'config', 'candidate', 'event',
                                         'jd_extract', 'job_match', 'nl_query', 'hide_add', 'hide_remove', 'hide_list',
-                                        'structure_get', 'structure_save'})
+                                        'structure_get', 'structure_save', 'tailor', 'tailor_get', 'tailor_review', 'tailor_export'})
 
     def test_unknown_or_malformed_action_names_are_refused(self):
         for name in (None, 'drop', ['run'], {'action': 'run'}, 3):
