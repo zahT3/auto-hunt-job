@@ -56,6 +56,24 @@ class GateTests(TailorAppCase):
         self.assertEqual(result['code'], 'stale')
 
 
+class EmptyStructureTests(unittest.TestCase):
+    def test_a_structure_without_entries_exports_nothing_and_says_why(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            store = Store(Path(tmp) / 'demo')
+            self.addCleanup(store.prepare_pool.shutdown)
+            got = store.structure_get()['structure']
+            self.assertFalse([e for sec in got['sections'] for e in sec['entries']])
+            store.structure_save(dict(structure=got, base_version=got['version'], confirm=True))
+            job, _ = store.import_job(dict(title='后端工程师', company='某科技有限公司', jd=JD))
+            made = store.action(dict(action='tailor', job_id=job['id']))['result']
+            self.assertTrue(made['empty'])
+            out = store.action(dict(action='tailor_export', job_id=job['id']))['result']
+            self.assertTrue(out['needs_structure'])
+            self.assertEqual(out['code'], 'empty')
+            self.assertIn('确认页', out['reason'])
+            self.assertFalse((Path(tmp) / 'demo' / 'tailored' / job['id']).exists())
+
+
 class FlowTests(TailorAppCase):
     def setUp(self):
         super().setUp()

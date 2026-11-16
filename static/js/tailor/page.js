@@ -19,6 +19,7 @@ import {
 const tailorViews = new Map(); // job id -> the last tailor_get / tailor / tailor_review result
 const tailorExports = new Map(); // job id -> the last tailor_export result
 const tailorNotes = new Map(); // job id -> why the AI path did not run, after a generate
+const tailorErrors = new Map(); // job id -> {text, resume} of the last action that failed, shown at the export bar
 const tailorLoading = new Set();
 let tailorFocus = null;
 let tailorFormats = ["md", "pdf", "docx"];
@@ -76,6 +77,11 @@ function tailorEditHtml(view, edit, latest) {
 }
 
 function tailorPreviewHtml(rendered, hidden) {
+  if (!items(rendered?.sections).some((s) => items(s.lines).length))
+    return (
+      `<p class="warning-box" role="status">简历结构里还没有条目，所以没有可排版的内容。到确认页把事实分到条目里。` +
+      `<button class="linkish" type="button" data-open-resume>去核对简历结构</button></p>`
+    );
   const hiddenCount = Object.keys(hidden || {}).length;
   const sections = items(rendered?.sections)
     .map((s) =>
@@ -179,6 +185,13 @@ function tailorToolbarHtml(view, id) {
   );
 }
 
+function tailorErrorHtml(id) {
+  const e = tailorErrors.get(id);
+  return e
+    ? `<p class="warning-box" role="alert">${esc(e.text)}${e.resume ? ' <button class="linkish" type="button" data-open-resume>去核对简历结构</button>' : ""}</p>`
+    : "";
+}
+
 function tailorFooterHtml(view, id) {
   const ok = view.trace?.status === "pass";
   const result = view.result?.ok;
@@ -193,7 +206,7 @@ function tailorFooterHtml(view, id) {
     `<div class="tl-foot"><p>${pending ? `${pending} 条待审核` : "没有待审核"}，` +
     `预检${ok ? "通过" : "没通过"}${result ? "" : "，改写后的行有疑点"}${view.stale ? `，${view.stale} 条事实已变` : ""}</p>` +
     `<fieldset class="tl-fmts"><legend>格式</legend>${formats}</fieldset>` +
-    `<button class="btn btn-primary" type="button" data-act="tailor-export" ${ok && tailorFormats.length && view.latest !== false ? "" : "disabled"}>${pending ? `导出（不含 ${pending} 条待审核）` : "导出"}</button></div>`
+    `<button class="btn btn-primary" type="button" data-act="tailor-export" ${ok && tailorFormats.length && view.latest !== false && !view.empty ? "" : "disabled"}>${pending ? `导出（不含 ${pending} 条待审核）` : "导出"}</button></div>`
   );
 }
 
@@ -234,6 +247,7 @@ export function tailorPageHtml(job, view, loading, exported, id) {
     `<div class="sec-h"><h2>缺口</h2><span class="tally">岗位有、事实里没有，不会写进简历</span></div>${tailorGapsHtml(doc)}</section></div>` +
     tailorRejectedHtml(view) +
     tailorFooterHtml(view, id) +
+    tailorErrorHtml(id) +
     tailorExportHtml(exported)
   );
 }
@@ -254,7 +268,19 @@ async function tailorLoad(id, version) {
 async function tailorRun(name, payload, label) {
   const id = route().id;
   const data = await action(name, { job_id: id, ...payload }, label);
-  if (!data?.result) return null;
+  if (!data?.result) {
+    // action() already put the message in #notice; keep it next to the export bar too, so it cannot be missed.
+    if (data === null && !busy) tailorErrors.set(id, { text: $("#notice")?.textContent || "操作没有完成。", resume: false });
+    render();
+    return null;
+  }
+  if (data.result.needs_structure) {
+    tailorErrors.set(id, { text: data.result.reason, resume: true });
+    if (name === "tailor") tailorViews.set(id, data.result);
+    render();
+    return null;
+  }
+  tailorErrors.delete(id);
   if (name === "tailor") {
     const ai = data.result.ai || {};
     tailorNotes.set(id, ai.requested && !ai.used ? `没有用 AI：${ai.reason || "条件不满足"}，这一版只用了规则路径。` : "");

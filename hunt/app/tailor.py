@@ -17,6 +17,7 @@ REASONS = dict(
     no_structure='还没有简历结构，先在确认页核对。',
     unconfirmed='简历结构还没有确认，先在确认页核对。',
     stale='简历结构需要重新核对：有条目过期或字段待确认。',
+    empty='简历结构里还没有可导出的条目，请先在确认页把事实分到条目里。',
 )
 GATE_TEXT = dict(
     malformed='修改格式不对', op_not_allowed='操作不在允许范围内', not_confirmed='引用的事实未确认', stale_fact='引用的事实已变',
@@ -173,7 +174,8 @@ class TailorActions:
         if versions is None:
             with self.tx() as c: versions = self._tailor_versions(c, doc['job_id'])
         ai_state, _ = self._tailor_ai_state(facts, doc.get('requirements') or [])
-        return dict(document=shown, rendered=applied['rendered'], original=original, applied=applied['applied'], hidden=applied['hidden'],
+        empty = not any(sec['lines'] for sec in applied['rendered']['sections'])
+        return dict(document=shown, empty=empty, rendered=applied['rendered'], original=original, applied=applied['applied'], hidden=applied['hidden'],
                     rejected_in_view=[dict(edit_id=r['edit'].get('id'), reason=r['reason'], text=GATE_TEXT.get(r['reason'], r['reason']))
                                       for r in applied['rejected_by_gate']],
                     trace=dict(status=proof['status'], problems=proof['problems']), result=result,
@@ -256,10 +258,15 @@ class TailorActions:
         m = self.job_match(dict(job_id=job_id))
         conditions = self._assist_inputs()['conditions']
         explain = lambda rows: ai_match.explain(m['structure'], rows, conditions)
-        out_dir = self._tailor_dir(job_id, doc['version'])
         stem = re.sub(r'[\\/:*?"<>|\s]+', '_', f"{job.get('company') or '公司待确认'}-{job.get('title') or '岗位'}")[:MAX_FORMAT_STEMS] + f"-v{doc['version']}"
         render = self._tailor_render(applied['rendered'])
-        out = resume_render.export_all(render, out_dir, stem, formats=formats, version=doc['version'], job_id=job_id, explain=explain)
+        if not any(s['lines'] or s['title'] for s in render['sections']):
+            return dict(needs_structure=True, **self._tailor_need('empty', current))
+        out_dir = self._tailor_dir(job_id, doc['version'])
+        try:
+            out = resume_render.export_all(render, out_dir, stem, formats=formats, version=doc['version'], job_id=job_id, explain=explain)
+        except (ValueError, OSError) as exc:
+            raise Error('导出失败：' + str(exc)) from exc
         ok = bool(out['files']) and all(f['check']['ok'] for f in out['files'].values()) and not out['errors']
         record = dict(at=now(), formats=list(formats), dir=str(out_dir),
                       files={k: dict(path=v['path'], sha256=v['sha256'], size=v['size'], ok=v['check']['ok']) for k, v in out['files'].items()})

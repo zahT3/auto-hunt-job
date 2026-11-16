@@ -1045,3 +1045,11 @@ test('the job page offers the tailoring entry',()=>{
  const h=harness();
  assert.match(h.run(`jobPageHtml({id:'j9',title:'后端',jd:'x'},null,null)`),/href="#\/tailor\/j9"[^>]*>为这个岗位改简历/);
 });
+test('an empty structure shows why and a way back, and a failed export is shown at the export bar',()=>{
+ const h=harness();
+ const html=h.run(`tailorPageHtml({title:'后端'},Object.assign(${TAILOR_VIEW},{empty:true,rendered:{sections:[]}}),false,null,'j1')`);
+ assert.match(html,/简历结构里还没有条目[\s\S]*data-open-resume/);assert.match(html,/data-act="tailor-export" disabled/);
+ h.run(`tailorErrors.set('j1',{text:'简历结构里还没有可导出的条目',resume:true})`);
+ const failed=h.run(`tailorPageHtml({title:'后端'},${TAILOR_VIEW},false,null,'j1')`);
+ assert.match(failed,/role="alert">简历结构里还没有可导出的条目[\s\S]*data-open-resume/);
+});
