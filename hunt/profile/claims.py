@@ -135,6 +135,8 @@ def _numbers(after, facts):
         num, unit = m.group(1), m.group(2) or ''
         if unit and (num + unit) in facts.measured:
             continue
+        if unit == '年' and re.fullmatch(r'(?:19|20)\d\d', num) and num in facts.numbers:
+            continue  # the same year, written 2021.03 in the fact
         if not unit and num in facts.numbers:
             continue
         out.append(_hard('new_number', re.sub(r'\s+', '', m.group(0))))

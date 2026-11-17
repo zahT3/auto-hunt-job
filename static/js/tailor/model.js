@@ -135,5 +135,5 @@ export function tailorWarnings(edit) {
 export function tailorHardText(rejected) {
   const first = items(rejected.detail)[0];
   const code = first?.code || rejected.reason;
-  return (TAILOR_HARD_GATE[code] || code) + (first?.text ? `：${first.text}` : "");
+  return (TAILOR_HARD_GATE[code] || rejected.text || code) + (first?.text ? `：${first.text}` : "");
 }

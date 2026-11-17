@@ -37,7 +37,9 @@ MAX_HEADING = 12
 _BASIC = re.compile(r'^\s*(?:姓名|名字|邮箱|电子邮箱|e-?mail|电话|手机号?|微信|联系方式|所在地|现居地?|城市|工作经验|工作年限|年龄|性别|出生年月|籍贯|求职意向|期望[^：:]{0,4})\s*[:：]', re.I)
 _BASIC_TAGS = {'identity', 'contact'}
 # A line inside an experience entry that states an absence about the person, not something they did: not a bullet.
-_SELF_NOTE = re.compile(r'^\s*(?:尚无|暂无|尚未|没有|无|不具备|缺乏|缺少)|不具备[^，。；;]{0,24}(?:经验|能力)')
+# It must name what is absent (经验, 经历, 能力, 背景); 无人机 / 无线 / 无缝 and the like are ordinary work.
+_SELF_NOTE = re.compile(r'^\s*(?:尚无|暂无|尚未|没有|无(?![人线缝锡损纸感源])|不具备|缺乏|缺少)[^，。；;]{0,24}(?:经验|经历|能力|背景)'
+                        r'|不具备[^，。；;]{0,24}(?:经验|能力)')
 MAX_HEAD_LINE = 80
 
 _YM = r'\d{4}\s*年\s*\d{1,2}\s*月?|\d{4}\s*[./\-]\s*\d{1,2}'

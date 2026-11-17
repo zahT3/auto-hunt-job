@@ -228,13 +228,15 @@
 - `op`：`reorder`（同一条目内调序，或一行技能里点名的项提前）、`alias`（换成岗位原词，只限很短的同义白名单）、`hide`（只在超出页数上限时）、`rephrase`（只有 AI 路径）。规则路径的修改默认 `accepted`，AI 路径的默认 `pending`。
 - `status`：`accepted`、`pending`、`rejected`、`stale`。引用的事实改过或不再是已确认状态，修改变 `stale`，不进导出，要重新生成。
 - `checks.flags` 有 `strength_up`（职责强度升级）、`negation_dropped`（否定变肯定）、`close_to_jd`（贴近岗位原句）：命中的默认待审核，界面标红。`checks.reviewer` 是 AI 审稿人的结论（`ok`、`unsupported`、`overstated`、`off_topic`），只能降级，不能改文字。
-- `rejected_by_gate`：被本地硬检查拒绝的提议（新数字、新工具名、新雇主等），不能接受；要用这些内容，先把它补充为已确认事实。
+- `rejected_by_gate`：被本地硬检查拒绝的提议（新数字、新工具名、新雇主等），不能接受；要用这些内容，先把它补充为已确认事实。 AI 改写入库前还要过 `apply_edits` 的四道闸，没过的也在这里，`reason` 是闸的代码（如 `unknown_target`、`cross_entry`），`text` 是中文说明。
 - `gaps`：岗位有、事实里没有的词和未满足的硬条件，只是列出，不会写进简历。
-- `--ai` 需要「简历」和「岗位原文」两类同意、当前主机的 key 和预算。不满足时退回规则路径，退出码不变，看 `ai.used`（`false`）和 `ai.reason`。AI 路径最多两次模型调用，结果按岗位摘要、事实摘要、模型缓存。
+- `--ai` 需要「简历」和「岗位原文」两类同意、当前主机的 key 和预算。只发送结构里可改写的要点，条目头、身份行和未分配的事实不发送。不满足时退回规则路径，退出码不变，看 `ai.used`（`false`）和 `ai.reason`。AI 路径最多两次模型调用，结果按岗位摘要、事实摘要、模型缓存。
 - `tailor_review` 接受一条 AI 改写前，服务端会重新跑硬检查；规则路径的修改接受前过四道闸（`apply_edits`）。没过就报错，状态不变。
 - 结构没确认时：`{"needs_structure": true, "code": "no_facts | no_structure | unconfirmed | stale", "reason": "...", "structure_status": "prefilled", "open": {"uncertain": 0, "stale": 0, "unassigned": 0}}`，不生成。
 
 ### tailor_export 的结果
+
+导出前先过两项检查：每一行都能追溯到已确认事实（`trace`），以及改写后的行不超过原文 1.5 倍、没有新数字（`check_result`）。任一项没过就报错，不写文件。
 
 ```json
 {"schema_version": 1, "job_id": "...", "version": 1, "dir": "<数据目录>/tailored/<job_id>/v1", "ok": true,

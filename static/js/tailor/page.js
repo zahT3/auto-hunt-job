@@ -293,8 +293,10 @@ async function tailorRun(name, payload, label) {
     tailorNotes.set(id, ai.requested && !ai.used ? `没有用 AI：${ai.reason || "条件不满足"}，这一版只用了规则路径。` : "");
     tailorExports.delete(id);
   }
-  if (name === "tailor_export") tailorExports.set(id, data.result);
-  else tailorViews.set(id, data.result);
+  if (name === "tailor_export") {
+    tailorExports.set(id, data.result);
+    tailorWithBasic = false;
+  } else tailorViews.set(id, data.result);
   render();
   return data.result;
 }
@@ -325,6 +327,7 @@ registerPage("tailor", {
   title: "改简历",
   enter(id) {
     tailorFocus = null;
+    tailorWithBasic = false; // the opt-in is per job and per export
     tailorLoad(id);
   },
   render: renderTailor,

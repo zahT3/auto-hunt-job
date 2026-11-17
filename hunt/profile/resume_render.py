@@ -101,6 +101,10 @@ def missing_chars(render, font=None):
 
 # --- writers ---------------------------------------------------------------------------------------------------
 
+# A fact that starts like a heading, list item or quote is escaped so Markdown shows it as written.
+_MD_MARKER = re.compile(r'^(\d*)([#>+*\-]|(?<=\d)[.)])(?=\s)')
+
+
 def render_markdown(render):
     out = []
     if render.get('title'):
@@ -110,8 +114,13 @@ def render_markdown(render):
         if section.get('title'):
             out.append('## ' + section['title'])
             out.append('')
+        previous = None
         for line in section.get('lines') or []:
-            out.append(('- ' if line.get('kind') == 'bullet' else '') + line['text'])
+            bullet = line.get('kind') == 'bullet'
+            if out and out[-1] and not (bullet and previous):
+                out.append('')  # every text line is its own paragraph; only bullets sit together
+            out.append(('- ' if bullet else '') + _MD_MARKER.sub(r'\1\\\2', line['text']))
+            previous = bullet
     return ('\n'.join(out) + '\n').encode('utf-8')
 
 
@@ -179,7 +188,8 @@ def build_trace(render, version=None, job_id=None, files=None, checks=None):
 
 def _plain_markdown(content):
     text = content.decode('utf-8')
-    return '\n'.join(re.sub(r'^(?:#+\s+|-\s+)', '', row) for row in text.splitlines()).encode('utf-8')
+    rows = (re.sub(r'^(?:#+\s+|-\s+)', '', row) for row in text.splitlines())
+    return '\n'.join(re.sub(r'^(\d*)\\([#>+*\-.)])', r'\1\2', row) for row in rows).encode('utf-8')
 
 
 def check_export(render, filename, content, max_pages=MAX_PAGES, font=None, explain=None):

@@ -112,6 +112,17 @@ def _targets(layout):
     return out
 
 
+def editable(facts, structure):
+    """The confirmed facts an alias or rephrase may target: bullets of valid entries that are not identity lines."""
+    return [f for sec in _layout(facts, structure) for ent in sec['entries'] if not ent['stale']
+            for f in ent['bullets'] if not _is_identity(f, sec['key'])]
+
+
+def gate(facts, structure, edit):
+    """Reason `apply_edits` would refuse this edit on its own, or None."""
+    return _gate(edit, _confirmed(facts), _targets(_layout(facts, structure)))
+
+
 def _is_identity(fact, section_key):
     text = fact['text']
     return (section_key in ('education', 'header', 'basic') or bool(set(fact.get('tags') or []) & {'identity', 'contact'})
@@ -312,7 +323,9 @@ def check_result(facts, structure, rendered, edits=()):
                 continue
             if source and len(_nfkc(line['text'])) > GROWTH * len(_nfkc(source)):
                 problems.append(dict(code='growth', line=line['text'], detail='改写后的行超过原文的 1.5 倍'))
-            new = _numbers(line['text']) - _numbers(source)
+            digits = set(re.findall(r'\d+', _nfkc(source)))
+            # a year the facts write as 2021.03 may be written 2021年
+            new = {n for n in _numbers(line['text']) - _numbers(source) if not (re.fullmatch(r'(?:19|20)\d\d年', n) and n[:4] in digits)}
             if new:
                 problems.append(dict(code='new_number', line=line['text'], detail='原文没有的数字或量词：' + '、'.join(sorted(new))))
     return dict(ok=not problems, problems=problems)

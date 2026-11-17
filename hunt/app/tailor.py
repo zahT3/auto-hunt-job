@@ -94,13 +94,14 @@ class TailorActions:
             if r.get('status') in ('supported', 'related'): rows.append(dict(ref=f'd{i}', type='duty', value=r.get('requirement'), jd_evidence=r.get('jd_evidence')))
         return [r for r in rows if isinstance(r['value'], str) and r['value']]
 
-    def _tailor_ai_state(self, facts, requirements):
+    def _tailor_ai_state(self, facts, requirements, structure_now):
         a = self._assist_inputs()
         mode, why = orient.model_mode(a['consent'], a['settings'], a['key'], facts)
         if mode and not llm.consent_ok(a['consent'], a['settings'], 'job_text'):
             mode, why = None, '未获得向模型服务发送岗位内容的同意，未使用 AI'
         names = orient.candidate_names(a['candidate'])
-        estimate = ai_tailor.estimate(facts, requirements, names, a['settings'], a['consent']) if requirements and facts else None
+        sendable = tailor.editable(facts, structure_now) if structure_now else []
+        estimate = ai_tailor.estimate(sendable, requirements, names, a['settings'], a['consent']) if requirements and sendable else None
         return dict(available=bool(mode), reason=why, estimate=estimate), a
 
     # ---- tailor ----
@@ -124,15 +125,25 @@ class TailorActions:
         doc = tailor.build(job_id, version, facts, current, m, jd_digest=jd_digest, created_at=now())
         doc['requirements'] = requirements
         report = dict(requested=ai, used=False, reason=None, spent=0.0, notes=[], cached=False)
-        if ai:
+        # Only lines an edit may change go to the model: no entry heads, identity lines or facts outside the structure.
+        sendable = tailor.editable(facts, current)
+        if ai and not sendable:
+            report.update(reason='简历结构里没有可改写的要点，未使用 AI')
+        elif ai:
             a = self._assist_inputs()
             lines = [l.strip() for l in str(job.get('jd') or '').splitlines() if l.strip()]
-            out = ai_tailor.generate(facts, requirements, orient.candidate_names(a['candidate']), a['settings'], a['key'], a['consent'], a['meter'],
+            out = ai_tailor.generate(sendable, requirements, orient.candidate_names(a['candidate']), a['settings'], a['key'], a['consent'], a['meter'],
                                      root=self.root, transport=a['transport'], jd_digest=jd_digest, jd_lines=lines)
             report.update(used=out['by'] == 'ai', reason=out.get('reason'), spent=out.get('spent', 0.0), notes=out.get('notes') or [],
                           cached=bool(out.get('cached')))
             if out['by'] == 'ai':
-                doc['edits'] += out['edits']
+                for edit in out['edits']:  # a rewrite the gates would refuse must not wait as a pending edit
+                    refused = tailor.gate(facts, current, edit)
+                    if refused:
+                        edit.update(status='rejected', checks=dict(edit['checks'], hard='fail'))
+                        out['rejected_by_gate'].append(dict(edit=edit, reason=refused, detail=[], text=GATE_TEXT.get(refused, refused)))
+                    else:
+                        doc['edits'].append(edit)
                 doc['rejected_by_gate'] += out['rejected_by_gate']
                 doc.update(by='ai', model=out.get('model'))
         if current and structure.open_items(current)['unassigned']:
@@ -177,7 +188,7 @@ class TailorActions:
         shown['checks'] = dict(shown.get('checks') or {}, trace=proof['status'], result='pass' if result['ok'] else 'fail')
         if versions is None:
             with self.tx() as c: versions = self._tailor_versions(c, doc['job_id'])
-        ai_state, _ = self._tailor_ai_state(facts, doc.get('requirements') or [])
+        ai_state, _ = self._tailor_ai_state(facts, doc.get('requirements') or [], structure_now)
         empty = not any(sec['lines'] for sec in shaped['sections'])
         return dict(document=shown, empty=empty, basic_withheld=withheld, rendered=shaped, original=original, applied=applied['applied'], hidden=applied['hidden'],
                     rejected_in_view=[dict(edit_id=r['edit'].get('id'), reason=r['reason'], text=GATE_TEXT.get(r['reason'], r['reason']))
@@ -259,6 +270,10 @@ class TailorActions:
         applied = tailor.apply_edits(facts, current, edits)
         proof = tailor.trace(facts, applied['rendered'], edits)
         if proof['status'] != 'pass': raise Error('导出前检查没通过，没有写任何文件：' + '；'.join(f"{p['code']}：{p.get('line', '')}" for p in proof['problems'][:3]))
+        result = tailor.check_result(facts, current, applied['rendered'], edits)
+        if not result['ok']:
+            raise Error('导出前检查没通过，没有写任何文件。撤销对应的修改后再导出：' + '；'.join(
+                f"{p['detail']}（{p['line']}）" if p.get('line') else p['detail'] for p in result['problems'][:3]))
         m = self.job_match(dict(job_id=job_id))
         conditions = self._assist_inputs()['conditions']
         explain = lambda rows: ai_match.explain(m['structure'], rows, conditions)
