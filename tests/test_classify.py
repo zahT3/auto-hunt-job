@@ -71,6 +71,28 @@ class RulesTests(unittest.TestCase):
         record['direction']['by'] = 'user'
         self.assertFalse(classify.stale(record, [ident]))
 
+    def test_exclusions_require_evidence_of_a_different_role(self):
+        direction = dict(id='ai-product-manager')
+        cases = [
+            ('搜索运营（AI 方向）- 服务产品', '执行内容审核', None),
+            ('AI 产品解决方案 - 智能服务', '支持售前，对商业化结果负责', None),
+            ('AI 产品解决方案 - 智能服务', '定义核心需求，负责产品迭代', direction['id']),
+            ('商业系统 AI 产品经理', '和运营团队合作，对商业化结果负责', direction['id']),
+        ]
+        for title, body, expected in cases:
+            with self.subTest(title=title, body=body):
+                record = job(1, title, body)
+                classify.classify_jobs([record], [direction], {}, None, None, None)
+                self.assertEqual(record['direction']['id'], expected)
+
+    def test_model_cannot_restore_excluded_direction_in_mixed_search(self):
+        record = job(1, '搜索运营（AI方向）- 示例产品')
+        dirs = [dict(id='ai-product-manager'), dict(id='product-manager')]
+        model = FakeModel({'job01': 'ai-product-manager'})
+        classify.classify_jobs([record], dirs, SETTINGS, KEY, CONSENT, meter(5), transport=model)
+        self.assertEqual(len(model.bodies), 1)
+        self.assertNotEqual(record['direction']['id'], 'ai-product-manager')
+
     def test_title_hits_are_assigned_by_rules_and_misses_are_other_without_calling_a_model(self):
         model = FakeModel()
         jobs = [job(1, '高级后端开发工程师'), job(2, '前端开发工程师'), job(3, '中餐厨师')]

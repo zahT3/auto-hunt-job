@@ -46,7 +46,8 @@
         "算法",
         "广告"
       ],
-      "source": "career-ops-china"
+      "source": "career-ops-china",
+      "probe_limit": 2
     },
     {
       "id": "bytedance",
@@ -60,7 +61,8 @@
         "数据",
         "推荐"
       ],
-      "source": "career-ops-china"
+      "source": "career-ops-china",
+      "probe_limit": 1
     },
     {
       "id": "deepseek",
@@ -71,7 +73,8 @@
         "AI",
         "Agent"
       ],
-      "source": "catalog"
+      "source": "catalog",
+      "model_company": true
     },
     {
       "id": "dify",
@@ -93,7 +96,8 @@
         "AI",
         "Agent"
       ],
-      "source": "catalog"
+      "source": "catalog",
+      "model_company": true
     },
     {
       "id": "stepfun",
@@ -104,7 +108,8 @@
         "AI",
         "Agent"
       ],
-      "source": "catalog"
+      "source": "catalog",
+      "model_company": true
     },
     {
       "id": "cobo",
@@ -156,7 +161,8 @@
         "AI",
         "Agent"
       ],
-      "source": "catalog"
+      "source": "catalog",
+      "model_company": true
     },
     {
       "id": "huawei",
@@ -322,7 +328,8 @@
         "内容",
         "社区"
       ],
-      "source": "curated"
+      "source": "curated",
+      "role_first": true
     },
     {
       "id": "talent-baidu-com-external-baidu-social-h",
@@ -441,7 +448,8 @@
         "AI",
         "大模型"
       ],
-      "source": "career-ops-china"
+      "source": "career-ops-china",
+      "model_company": true
     },
     {
       "id": "baichuan-ai-com-careers",
@@ -464,7 +472,8 @@
         "AI",
         "大模型"
       ],
-      "source": "career-ops-china"
+      "source": "career-ops-china",
+      "model_company": true
     },
     {
       "id": "modelbest-cn-careers",
@@ -642,7 +651,8 @@
         "数据",
         "数据库"
       ],
-      "source": "career-ops-china"
+      "source": "career-ops-china",
+      "model_company": true
     },
     {
       "id": "langboat-com-careers",

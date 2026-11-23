@@ -74,8 +74,7 @@ class MeituanTests(unittest.TestCase):
             titles = ['多模态工单设计师', '多模态工单产品经理'] if keyword == '多模态' else []
             return page_of([dict(post(i), name=t) for i, t in enumerate(titles)], len(titles))
         result = run(search, keywords=['AI 产品经理'], sweep=True)
-        self.assertIn('多模态', queries)
-        self.assertIn('MaaS', queries)
+        self.assertEqual(list(dict.fromkeys(queries)), ['AI 产品经理', 'AI产品', '多模态'])
         self.assertNotIn('产品经理', queries)
         self.assertEqual([j['title'] for j in result['jobs']], ['多模态工单产品经理'])
 

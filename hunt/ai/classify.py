@@ -20,7 +20,7 @@ import unicodedata
 from collections import Counter
 
 from ..profile import directions
-from ..search.query import AI_PRODUCT, MODEL_COMPANIES, ai_product_title
+from ..search.query import recall_evidence, recall_rules
 from . import jd, llm
 from ..net import network
 
@@ -38,8 +38,9 @@ def basis(job, ids=None):
     parts = [job.get('title'), job.get('jd')]
     if ids is None:
         ids = (job.get('direction') or {}).get('dirs') or []
-    if AI_PRODUCT in ids and ai_product_title(job.get('title'), job.get('company')):
-        parts.append([AI_PRODUCT, job.get('company') in MODEL_COMPANIES])
+    evidence = recall_evidence(job, ids)
+    if evidence:
+        parts.append(evidence)
     text = json.dumps(parts, ensure_ascii=False)
     return hashlib.sha256(text.encode('utf-8')).hexdigest()[:16]
 
@@ -63,12 +64,18 @@ def _names(dirs):
 
 def _rules(job, allowed, families, names):
     """(direction dict, unclear) from the rules alone."""
-    scores = directions.rule_match(job.get('title'), job.get('jd'), allowed)
+    evidence = recall_evidence(job, allowed)
+    eligible = [i for i in allowed if evidence.get(i) != 'excluded']
+    if allowed and not eligible:
+        return dict(id=None, by='rules', score=0.0, reason='岗位职责符合所选方向的排除条件'), False
+    scores = directions.rule_match(job.get('title'), job.get('jd'), eligible)
     top = scores[0] if scores else (None, 0.0)
-    if AI_PRODUCT in allowed and ai_product_title(job.get('title'), job.get('company')) and (
-            top[1] < THRESHOLD or top[0] == 'product-manager'):
-        reason = '大模型公司的产品岗' if job.get('company') in MODEL_COMPANIES else '标题同时写明 AI 方向和产品职责'
-        return dict(id=AI_PRODUCT, by='rules', score=directions.TITLE_BASE, reason=reason), False
+    alternatives = [i for i in evidence if i in eligible and (
+        top[1] < THRESHOLD or top[0] == recall_rules()[i].general)]
+    if alternatives:
+        ident = alternatives[0]
+        reason = '公司类型和标题职责符合方向规则' if evidence[ident] == 'company' else '标题同时命中方向主题和岗位职责'
+        return dict(id=ident, by='rules', score=directions.TITLE_BASE, reason=reason), len(alternatives) > 1
     tied = len(scores) > 1 and scores[1][1] == top[1]
     if top[1] >= THRESHOLD:
         reason = '标题命中「%s」（规则分 %.2f）' % (names[top[0]], top[1]) + ('，与其他方向并列' if tied else '')
@@ -139,6 +146,8 @@ def classify_jobs(jobs, dirs, settings, key, consent, meter, batch=20, transport
                 continue
             for job in part:
                 ident = answer[job['id']]
+                if ident and recall_evidence(job, [ident]).get(ident) == 'excluded':
+                    continue
                 job['direction'].update(id=ident, by='ai', unclear=False, reason='模型判断' + ('属于「%s」' % names[ident] if ident else '不属于所选方向'))
                 by_ai += 1
         note = '已用 AI 归类 %d 个规则不明确的岗位，约花费 %.4f 元' % (by_ai, meter.spent)

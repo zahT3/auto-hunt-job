@@ -55,7 +55,13 @@ class NontechSeedTests(unittest.TestCase):
         # Changed on purpose (2026-10-27): six seeds moved to their Moka/Feishu tenants (builder.SEED_URLS), and
         # 小鹏/蔚来 gained the AI tag so an AI-direction sweep counts them as relevant.
         # 四家启用专用读取器，京东改为社招列表；2026-11-15 小米改走自己的飞书租户 xiaomi.jobs.f.mioffice.cn、米哈游接 ats.openout.mihoyo.com，二者去掉 needs_adapter。
-        original = json.dumps(companies.load_seeds()[:53], ensure_ascii=False, sort_keys=True).encode()
+        seeds = companies.load_seeds()
+        options = {'model_company', 'probe_limit', 'role_first'}
+        for seed_row in seeds:
+            prior = {k: v for k, v in seed_row.items() if k not in options}
+            self.assertEqual(builder.with_recall_options(prior), seed_row)
+        prior_rows = [{k: v for k, v in r.items() if k not in options} for r in seeds[:53]]
+        original = json.dumps(prior_rows, ensure_ascii=False, sort_keys=True).encode()
         self.assertEqual(hashlib.sha256(original).hexdigest(),
                          '95637284a2e89fd9409a3b9e89f9e57ec39c0500d8199a433ed3b4815a308ce6')
 

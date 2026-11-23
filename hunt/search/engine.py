@@ -13,7 +13,8 @@ from contextlib import nullcontext
 from urllib.parse import urlsplit
 from ..net.network import fetch, FetchError, TransientFetchError
 from .sources import Context, route
-from .query import MODEL_COMPANIES, ai_product_title, expanded_terms, is_ai_pm_term, matches, search_terms
+from .query import expanded_terms, matches, recall_rules, search_rule, search_terms
+from .seeds import seed_for
 from .parse import SourceError, now
 
 DEFAULT_BOARDS = [
@@ -144,31 +145,12 @@ def host_key(source):
     return host or 'kind:%s' % kind
 
 
-def _source_queries(source, terms, sweep):
-    """Extra remote probes run only with a local title check before the provider spends a job slot."""
-    if not sweep or not any(is_ai_pm_term(t) for t in terms) or not all(ai_product_title(t) for t in terms):
-        return terms
-    kind, company = source.get('kind'), source.get('company')
-    if kind in ('mokahr', 'feishu') and (company in MODEL_COMPANIES or company == '知乎'):
-        # Small model-company boards and Zhihu's small product listing can be searched by role alone.
-        return list(dict.fromkeys(['产品', *terms]))
-    if kind in ('xiaohongshu', 'didi'):
-        # These adapters scan a list and apply their terms to title + JD before calling keep(job).
-        return list(dict.fromkeys([*terms, '产品']))
-    if source.get('broad', True) and kind in ('tencent', 'meituan', 'alibaba', 'feishu', 'jd', 'netease'):
-        probes = ['MaaS', '多模态', 'AI产品', 'Agent产品']
-        if kind == 'jd':
-            # JD's literal matching misses qualifiers inside a phrase such as “AI 助手产品经理”.
-            probes.append('产品经理')
-        return list(dict.fromkeys([*terms, *probes]))
-    return terms
-
-
 def discover(config, profile=None, transport=None, *, browser_profile_root=None, browser_headless=False, should_continue=None, on_source=None, clock=time.monotonic, known=None):
     """`known(job)` is True for a job already stored; a sweep spends its entry checks only on the others."""
     terms = search_terms(config, profile)
     if not terms: raise ValueError('没有搜索词：请先确定方向或填写搜索关键词')
     sweep, started_at = sweep_limits(config), now()
+    rule = search_rule(terms) if sweep else None
     timing = dict(reached=False)
     if sweep:
         deadline = clock() + sweep['deadline_seconds']
@@ -241,11 +223,18 @@ def discover(config, profile=None, transport=None, *, browser_profile_root=None,
                 # In a sweep, a broad platform's remote keyword search must also match the terms locally (by title, as the
                 # job is named) before it takes a job slot; a company's own board, and any search outside a sweep, is
                 # trusted as before. Sources configured without the flag count as broad.
-                queries = _source_queries(source, terms, sweep)
+                seed = seed_for(sid, source.get('company'))
+                metadata = {**seed, **source}
+                # A stored seed id follows future seed updates. Persist only custom flag overrides.
+                flags = {r.company_flag: source[r.company_flag] for r in recall_rules().values()
+                         if r.company_flag in source and source[r.company_flag] != seed.get(r.company_flag)}
+                queries = rule.source_queries(terms, metadata, provider.probe_mode) if rule else terms
                 if queries != terms:
                     report['queries'] = queries
+                if rule and (queries != terms or source.get('broad', True)):
                     def keep(job):
-                        return ai_product_title(job['title'], source.get('company')) or matches(job['title'], terms)
+                        return not rule.rejects(job['title'], job.get('jd')) and (
+                            rule.title_evidence(job['title'], metadata) or matches(job['title'], terms))
                 elif sweep and source.get('broad', True):
                     keep = lambda job: matches(job['title'], terms)
                 else:
@@ -260,7 +249,7 @@ def discover(config, profile=None, transport=None, *, browser_profile_root=None,
                             report['truncated'] = True
                             break
                         seen.add(key); taken[0] += 1
-                    item.setdefault('raw', {})['discovery'] = dict(source_id=sid, queries=queries, mode=report['mode'], checked_at=report['checked_at'])
+                    item.setdefault('raw', {})['discovery'] = dict(source_id=sid, queries=queries, mode=report['mode'], checked_at=report['checked_at'], **flags)
                     # A login-gated platform's job page only answers a logged-in browser; a plain read of it proves nothing
                     # (猎聘 gave identity_mismatch every time) and adds requests from this IP.
                     if inline_checks and kind not in LOGIN_GATED:

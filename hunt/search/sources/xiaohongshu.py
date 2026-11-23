@@ -97,4 +97,4 @@ def fetch(entry, ctx):
         if page == ctx.pages: ctx.report['truncated'] = True
 
 
-PROVIDER = register(Provider('xiaohongshu', fetch, detect))
+PROVIDER = register(Provider('xiaohongshu', fetch, detect, probe_mode='local'))

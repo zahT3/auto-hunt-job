@@ -1,11 +1,15 @@
 """Search terms: what a search may send, the inspectable recall aliases, and the local matches() filter.
 
-Shared by the sources, the search engine and the AI orientation; it imports only hunt.search.parse.
+Shared by the sources, the search engine and the AI orientation.
 """
+import functools
+import json
 import re
 import unicodedata
+from pathlib import Path
 
 from .parse import plain
+from .seeds import job_source
 
 
 def search_terms(config, profile=None):
@@ -25,31 +29,79 @@ def search_terms(config, profile=None):
     return result
 
 
-# Exact employer names used by the official seeds. An AI tag alone says nothing about other business lines.
-MODEL_COMPANIES = frozenset({'DeepSeek', 'MiniMax', '旷视', '智谱 AI', 'Kimi / 月之暗面', '阶跃星辰', '零一万物'})
-AI_PRODUCT = 'ai-product-manager'
-_AI_TOPIC = re.compile(r'大模型|世界模型|多模态|智能体|人工智能|机器学习|'
-                       r'(?<![a-z0-9])(?:ai|aigc|agent|maas|llm)(?![a-z0-9])', re.I)
-# A camel-case compound such as CodeAgent, while "reagent" is not an AI signal.
-_AGENT_SUFFIX = re.compile(r'(?<=[a-z])Agent(?![a-zA-Z0-9])')
-_PRODUCT_ROLE = re.compile(r'产品(?:经理|专家|(?:技术|业务)?负责人|策划|解决方案|通用岗位|岗)|'
-                           r'产品(?=$|[\s（(【/·—-])|\bproduct\s+(?:manager|owner)\b', re.I)
-_OTHER_ROLE = re.compile(r'工程师|设计师|品牌视觉|交互设计|视觉设计|分析师|架构师|产品\s*运营|运营(?:经理|专员)|'
-                         r'\b(?:engineer|designer|analyst|operations)\b', re.I)
-# These markers only limit the new social-recruiting expansion.
-_CAMPUS = re.compile(r'实习|校招|校园招聘|应届|20\d{2}\s*届|\bintern(?:ship)?\b', re.I)
+class RecallRule:
+    """Optional direction-specific search vocabulary and rules, loaded from the curated table."""
+    def __init__(self, row):
+        config = row['recall']
+        self.id = row['id']
+        self.name = ''.join(row['name'].split()).casefold()
+        self.terms = {''.join(s.split()).casefold() for s in [row['name'], *row['titles']]}
+        self.probes = config['remote_probes']
+        self.role_probe = config['role_probe']
+        self.literal_probe = config['literal_role_probe']
+        self.company_flag = config.get('waive_topic_if')
+        self.general = config.get('specialize')
+        self.topics = config['topics']
+        self.roles = [re.compile(p, re.I) for p in config['role_patterns']]
+        self.skip = [re.compile(p, re.I) for p in config.get('skip_patterns', ())]
+        self.reject = [(re.compile(r['title'], re.I), re.compile(r['body'], re.I) if 'body' in r else None)
+                       for r in config.get('reject', ())]
+
+    def rejects(self, title, jd=''):
+        text = unicodedata.normalize('NFKC', title or '')
+        return any(t.search(text) and (b is None or b.search(jd or '')) for t, b in self.reject)
+
+    def title_evidence(self, title, source):
+        text = unicodedata.normalize('NFKC', title or '').strip()
+        if not any(p.search(text) for p in self.roles) or any(p.search(text) for p in self.skip):
+            return None
+        if source.get(self.company_flag) is True:
+            return 'company'
+        # Separate camel-case tokens before applying ASCII word boundaries (DemoAgent vs reagent).
+        words = re.sub(r'(?<=[a-z])(?=[A-Z][a-z])', ' ', text)
+        if _found(self.topics, words):
+            return 'title'
+        return None
+
+    def source_queries(self, terms, source, mode):
+        if mode == 'local' or (mode and (source.get(self.company_flag) is True or source.get('role_first') is True)):
+            return list(dict.fromkeys([self.role_probe, *terms]))
+        if not source.get('broad', True):
+            return terms
+        if mode == 'literal':
+            return list(dict.fromkeys([*terms, self.literal_probe]))
+        if mode == 'remote':
+            limit = source.get('probe_limit', len(self.probes))
+            extra = [p for p in self.probes if p not in terms]
+            if type(limit) is not int or limit < 0:
+                limit = len(extra)
+            return [*terms, *extra[:limit]]
+        return terms
 
 
-def ai_product_title(title, company=None):
-    """Title evidence shared by discovery and rules. A body mention cannot supply the missing role."""
-    title = unicodedata.normalize('NFKC', str(title or '')).strip()
-    if _OTHER_ROLE.search(title) or _CAMPUS.search(title) or not _PRODUCT_ROLE.search(title):
-        return False
-    return company in MODEL_COMPANIES or bool(_AI_TOPIC.search(title) or _AGENT_SUFFIX.search(title))
+@functools.lru_cache(maxsize=1)
+def recall_rules():
+    path = Path(__file__).resolve().parents[1] / 'data' / 'directions.cn.json'
+    rows = json.loads(path.read_text(encoding='utf-8'))['directions']
+    return {r['id']: RecallRule(r) for r in rows if 'recall' in r}
 
 
-def is_ai_pm_term(term):
-    return ''.join(term.split()).casefold() == 'ai产品经理'
+def search_rule(terms):
+    keys = {''.join(t.split()).casefold() for t in terms}
+    return next((r for r in recall_rules().values() if r.name in keys and keys <= r.terms), None)
+
+
+def recall_evidence(job, allowed):
+    """Only configured directions can contribute a title match or an explicit rule exclusion."""
+    found = {}
+    for ident, rule in recall_rules().items():
+        if ident not in allowed:
+            continue
+        title = job.get('title')
+        evidence = 'excluded' if rule.rejects(title, job.get('jd')) else rule.title_evidence(title, job_source(job))
+        if evidence:
+            found[ident] = evidence
+    return found
 
 
 ROLE_ALIASES = [
@@ -127,7 +179,10 @@ def matches(text, terms):
     if not terms: return False
     text = plain(text)
     for term, words in expanded_terms(terms).items():
-        if is_ai_pm_term(term) and ai_product_title(text): return True
+        key = ''.join(term.split()).casefold()
+        if any(rule.name == key and rule.title_evidence(text, {}) and not rule.rejects(text)
+               for rule in recall_rules().values()):
+            return True
         segments = _segments(term)
         if len(segments) < 2:
             if _found(words, text): return True
