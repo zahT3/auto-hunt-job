@@ -136,7 +136,6 @@ STATUS = dict.fromkeys((
     'siliconflow-cn-zh-cn-about',
     'infini-ai-com-careers',
     '4paradigm-com-about-jobs-html',
-    'ctrip',
     'dji',
     'lixiang',
     'pingcap-com-careers',
@@ -146,8 +145,7 @@ STATUS = dict.fromkeys((
 ), 'needs_adapter')
 # Why a seed stays needs_adapter after a real probe; written to the row as status_note.
 STATUS_NOTES = {
-    "ctrip": "2026-11-15 实测：job.ctrip.com、careers.ctrip.com 的 TLS 握手在本机超时（curl 28），在内置浏览器里 job.ctrip.com 返回空页面，未能看到岗位接口",
-    "zhaopin-kuaishou-cn-recruit-e": "2026-11-15 实测：社招列表 GET /recruit/e/api/v1/open/positions/simple 不带 cookie 返回 HTTP 400（code 1），换 Referer 返回 code -1；官网页面自己能读，差别推测在会话 cookie 或请求头（未验证），按规则不带 cookie、不伪装"
+    "zhaopin-kuaishou-cn-recruit-e": "社招列表接口要求请求签名，不带签名返回 HTTP 400。书签收件箱可用。"
 }
 # 2026-10-27 benchmark: these seeds pointed at marketing pages while the jobs sit on a Moka or Feishu tenant the
 # readers already support (found from each official careers page). Applied to seed rows only; hunt/catalog.py keeps its URLs.

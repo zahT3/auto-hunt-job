@@ -1,0 +1,16 @@
+{
+  "retCode": "201",
+  "retValue": {
+    "total": 1,
+    "recruitJobAdList": [
+      {
+        "fromId": "MJ037863",
+        "jobTitle": "后台产品经理(MJ037863)",
+        "cityName": "Shanghai",
+        "publishDate": "2026-11-16",
+        "duty": null,
+        "requirements": "职位描述\n<ol><li>负责邮轮相关产品的方案设计与落地，覆盖商品、商家、订单及履约等业务场景，持续完善用户与业务人员的使用体验。</li></ol>"
+      }
+    ]
+  }
+}

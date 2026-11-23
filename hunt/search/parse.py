@@ -102,6 +102,10 @@ def now():
 
 
 def job_fragment(parts):
+    if parts.scheme == 'https' and parts.hostname == 'job.ctrip.com' and parts.path in ('', '/', '/index.html'):
+        route = parts.fragment.partition('?')[0]
+        if re.fullmatch(r'/experienced/job-detail/[A-Za-z0-9_-]+', route):
+            return route
     # Moka's hash router encodes the receiver's job identity; ordinary anchors
     # remain irrelevant to URL identity and are discarded as before.
     if parts.hostname in ('app.mokahr.com', 'hire-r1.mokahr.com') and re.fullmatch(r'/jobs?(?:[/?.][A-Za-z0-9_/?=&%.,-]*)?', parts.fragment):

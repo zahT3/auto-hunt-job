@@ -25,7 +25,8 @@
 | 来源类型 | 接口与读取范围 | 依据页面 | 许可或条款 | 下架办法 |
 | --- | --- | --- | --- | --- |
 | 单家大厂公开接口：腾讯、阿里、美团、京东、网易、小红书、滴滴、米哈游 | 各自招聘站的公开岗位列表接口，只读、不带 cookie（`tencent.py`、`alibaba.py`、`meituan.py`、`jd.py`、`netease.py`、`xiaohongshu.py`、`didi.py`、`mihoyo.py`；米哈游的列表不支持关键词，整表分页后本地过滤，只对命中的岗位读详情） | careers.tencent.com、talent.alibaba.com、zhaopin.meituan.com、zhaopin.jd.com、hr.163.com、job.xiaohongshu.com、talent.didiglobal.com、jobs.mihoyo.com（接口主机 ats.openout.mihoyo.com） | 未声明 | 在 `companies.cn.json` 把对应 `provider` 的种子 `status` 设为 `dead`；用户自己在 `discovery_sources` 里加的，直接删该条 |
-| 快手、携程（尚未接入） | 快手社招列表 `zhaopin.kuaishou.cn/recruit/e/api/v1/open/positions/simple` 不带 cookie 返回 HTTP 400；携程 `job.ctrip.com`、`careers.ctrip.com` 本机 TLS 握手超时，未见到接口。种子 `status: needs_adapter`，原因见 `status_note` | zhaopin.kuaishou.cn、job.ctrip.com | 未声明 | 无读取器，无需下架 |
+| 携程 | 官网社招列表通过 `POST /api/hrrecruit/getJobAd` 按关键词分页，返回正文、城市和官网发布日期。详情链接使用 `fromId`。站点若重定向到验证主机，读取器停止并报告请求失败 | [携程社会招聘](https://job.ctrip.com/#/experienced/jobList) | 未声明 | 在种子生成脚本中将 `ctrip` 标为 `dead` 并重新生成 `companies.cn.json`，手动配置的来源从 `discovery_sources` 删除 |
+| 快手 | 社招列表 `/recruit/e/api/v1/open/positions/simple` 要求请求签名，不带签名返回 HTTP 400。种子保留 `needs_adapter`，书签收件箱可用 | [快手社会招聘](https://zhaopin.kuaishou.cn/recruit/e/#/official/social-recruitment/) | 未声明 | 自动读取已停用。已导入的岗位可在本地岗位库删除 |
 | 飞书招聘租户（含字节跳动、小米） | `jobs.bytedance.com`、`*.jobs.feishu.cn` 租户和小米的 `xiaomi.jobs.f.mioffice.cn` 的公开 JSON（`feishu.py`） | 各租户招聘首页，如 jobs.bytedance.com、xiaomi.jobs.f.mioffice.cn | 未声明 | 同上，按种子逐个设 `status: dead` |
 | Moka 租户 | `app.mokahr.com`、`hire-r1.mokahr.com` 租户的公开岗位接口（`mokahr.py`）；加密响应需可选依赖 | 各租户 `app.mokahr.com/social-recruitment/...` 或 `/apply/...` 页面 | 未声明 | 同上；平台方要求停用时，把所有 `provider: mokahr` 种子设为 `dead` |
 | 北森租户 | `*.zhiye.com` 的公开岗位列表接口（`beisen.py`） | 各租户 `/social` 页面 | 未声明 | 同上 |
