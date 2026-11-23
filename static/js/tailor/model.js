@@ -16,6 +16,7 @@ export const TAILOR_STATUS = {
 };
 export const TAILOR_FLAGS = {
   strength_up: "职责强度升级",
+  scope_expanded: "范围扩大",
   negation_dropped: "否定变肯定",
   close_to_jd: "贴近岗位原句",
 };

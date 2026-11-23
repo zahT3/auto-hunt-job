@@ -61,11 +61,12 @@ _NAMED_SLOTS = (
 _LATIN = re.compile(r'[A-Za-z][A-Za-z0-9]*(?:[+#]+|[.\-][A-Za-z0-9+#]+)*')
 UNITS = r'(?:%|倍|万|亿|个月|年|人|家|次|名|项|个|天|周|月|小时|\+)'
 _DIGITS = re.compile(r'(?<![A-Za-z])(?:top\s*)?(\d+(?:\.\d+)?)\s*(' + UNITS + r')?', re.I)
+_CN_UNIT = r'(?:个小时|小时|个月|整套|[年月周天人家次倍万亿名项个套成份单条])'
 _CN_NUM = re.compile(r'百分之[零一二三四五六七八九十百]+|第[一二三四五六七八九十百\d]+名'
-                     r'|(?:[一二两三四五六七八九十百千万]*[十百千万]余|数[十百千万]|上[百千万])(?:个月|小时|[万亿年人家次倍名项个套份单天周月])?'
-                     r'|翻倍|成倍|[零〇一二两三四五六七八九十百千万亿]+(?:个月|年|人|家|次|倍|万|亿|名|项|个|套|成)'
-                     r'|(?:多|数|几)(?:年|个月|万|亿|倍|次)')
-_CN_EXEMPT = {'一个', '一项', '一套', '两个', '两项'}
+                     rf'|(?:[一二两三四五六七八九十百千万]*[十百千万]余|数[十百千万]|上[百千万]){_CN_UNIT}?'
+                     rf'|翻倍|成倍|[零〇一二两三四五六七八九十百千万亿]+{_CN_UNIT}'
+                     r'|(?:多|数|几)(?:个小时|小时|个月|[年万亿倍次天周份单条])')
+_CN_EXEMPT = {'一个', '一项'}  # Can introduce an indefinite noun, like the article "a".
 _URL = re.compile(r'https?://|www\.|[\w.+-]+@[\w-]+\.[\w.]+|\b[a-z0-9-]+\.(?:com|cn|io|net|org|dev|app|me|co)\b', re.I)
 _PHONE = re.compile(r'(?<!\d)1[3-9]\d{9}(?!\d)|(?<!\d)\d{3,4}-\d{7,8}(?!\d)')
 _SKILL_RES = {label: re.compile(pattern, re.I) for label, pattern in _SKILLS.items()}
@@ -91,11 +92,15 @@ def _group_of(term, synonyms):
     return next((g for g in synonyms if any(_fold(m) == key for m in g)), ())
 
 
+def _quantity_key(token):
+    return token.replace('整套', '套').replace('个小时', '小时')
+
+
 class _Facts:
     """The cited facts as one searchable text, with the tokens the checks compare against."""
     def __init__(self, texts):
         self.texts = texts
-        self.text = _tight('\n'.join(texts))
+        self.text = '\n'.join(_tight(t) for t in texts)  # a claim must not span two separate facts
         self.raw = _fold('\n'.join(texts))
         self.latin = {_trim(t) for t in _LATIN.findall(self.raw)}
         self.numbers = set()
@@ -104,7 +109,7 @@ class _Facts:
             self.numbers.update([m.group(1)] + m.group(1).split('.'))
             if m.group(2):
                 self.measured.add(m.group(1) + m.group(2))
-        self.cn_numbers = {m.group(0) for m in _CN_NUM.finditer(self.text)}
+        self.cn_numbers = {_quantity_key(m.group(0)) for m in _CN_NUM.finditer(self.text)}
 
     def has(self, term):
         t = _tight(term)
@@ -124,7 +129,7 @@ def _trim(token):
 
 def _name_before(text, start, floor):
     """The name-like stretch right before a suffix at `start`, without leading verbs and filler words."""
-    chunk = BREAK.split(text[max(floor, start - 8):start])[-1]
+    chunk = BREAK.split(text[floor:start])[-1]
     cut = True
     while cut and chunk:
         cut = False
@@ -152,7 +157,7 @@ def _numbers(after, facts):
         out.append(_hard('new_number', re.sub(r'\s+', '', m.group(0))))
     for m in _CN_NUM.finditer(_tight(after)):
         token = m.group(0)
-        if token not in _CN_EXEMPT and token not in facts.cn_numbers:
+        if token not in _CN_EXEMPT and _quantity_key(token) not in facts.cn_numbers:
             out.append(_hard('new_number', token))
     return out
 
@@ -183,11 +188,12 @@ def _terms(after, facts, requirement, synonyms):
 
 def _named(after, facts):
     out, prev_end, folded = [], 0, _fold(after)
-    for m in _ORG.finditer(folded):
-        name = _name_before(folded, m.start(), prev_end)
+    compact = re.sub(r'[^\S\n]+', '', folded)
+    for m in _ORG.finditer(compact):
+        name = _name_before(compact, m.start(), prev_end) + m.group(0)
         prev_end = m.end()
-        if (name and name.replace(' ', '') not in facts.text) or m.group(0) not in facts.text:
-            out.append(_hard(ORG[m.group(0)], name + m.group(0)))
+        if name not in facts.text:
+            out.append(_hard(ORG[m.group(0)], name))
     for pattern in _QUOTES:
         for m in pattern.finditer(after):
             if _tight(m.group(1)) not in facts.text:
@@ -202,7 +208,7 @@ def _named(after, facts):
 def _titles(after, facts):
     out, folded, prev_end = [], _fold(after), 0
     for m in _TITLE.finditer(folded):
-        name = _name_before(folded, m.start(), prev_end)
+        name = _name_before(folded, m.start(), max(prev_end, m.start() - 8))
         prev_end = m.end()
         if (name + m.group(0)) not in facts.text and not (not name and m.group(0) in facts.text):
             out.append(_hard('new_title', name + m.group(0)))
@@ -212,7 +218,7 @@ def _titles(after, facts):
 def _awards(after, facts):
     out, folded, prev_end = [], _fold(after), 0
     for m in _AWARD.finditer(folded):
-        name = _name_before(folded, m.start(), prev_end)
+        name = _name_before(folded, m.start(), max(prev_end, m.start() - 8))
         prev_end = m.end()
         if m.group(0) not in facts.text or (name and name not in facts.text):
             out.append(_hard('new_award', name + m.group(0)))

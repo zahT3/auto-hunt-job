@@ -64,6 +64,31 @@ class DraftSafety(Case):
             with self.subTest(quantity=quantity):
                 self.refused(rephrase('参与订单核对，' + quantity, ids=['a']), 'new_number')
 
+    def test_duration_and_classifier_need_evidence(self):
+        for before, after in [
+            ('参与项目开发，完成需求整理。', f'参与项目开发，{duration}完成需求整理。')
+            for duration in ('十天', '两周', '三小时', '一个小时')
+        ] + [
+            ('参与接口开发，完成需求整理。', '参与两个接口开发，完成需求整理。'),
+            ('参与项目开发，完成需求整理。', '参与项目开发，完成两项需求整理。'),
+            ('参与项目开发，整理文档。', '参与项目开发，整理一套文档。'),
+            ('参与项目开发，整理文档。', '参与项目开发，整理四份文档。'),
+            ('参与项目开发，处理业务。', '参与项目开发，处理五单业务。'),
+            ('参与项目开发，整理需求。', '参与项目开发，整理六条需求。'),
+        ]:
+            with self.subTest(after=after):
+                self.refused(rephrase(after, ids=['a']), 'new_number', facts=[fact('a', before)])
+
+    def test_cited_or_indefinite_quantities_survive_rephrasing(self):
+        for original, rewritten in [('十天整理完需求', '十天整理完需求'), ('整理两个接口', '整理两个接口'),
+                                    ('整理两项需求', '整理两项需求'), ('整理一整套文档', '整理一套文档'),
+                                    ('整理接口', '整理一个接口'), ('整理需求', '整理一项需求')]:
+            with self.subTest(rewritten=rewritten):
+                before = f'参与项目开发，{original}'
+                after = f'{rewritten}，参与项目开发'
+                out = self.generate(rephrase(after, ids=['a']), facts=[fact('a', before)])
+                self.assertEqual([e['after'] for e in out['edits']], [after])
+
     def test_technical_terms(self):
         for tool in ('rEdIs', 'Redis7.2', '云端Redis缓存', '容器编排', 'TypeScript'):
             with self.subTest(tool=tool):
@@ -84,6 +109,25 @@ class DraftSafety(Case):
             with self.subTest(name=name):
                 facts = [fact('a', '参与对账项目')] + FACTS[1:]
                 self.refused(rephrase('参与对账项目，' + name, ids=['a']), code, facts=facts)
+
+    def test_named_suffix_must_belong_to_the_same_name(self):
+        for suffix, code in [('公司', 'new_employer'), ('大学', 'new_school'), ('项目', 'new_project')]:
+            with self.subTest(suffix=suffix):
+                kind = '公司项目' if suffix == '公司' else suffix
+                facts = [fact('a', f'参与星河{kind}，与远山团队协作完成需求整理。')]
+                self.refused(rephrase(f'参与远山{kind}，协作完成需求整理。', ids=['a']), code, facts=facts)
+                after = f'协作完成需求整理，参与星河{kind}。'
+                out = self.generate(rephrase(after, ids=['a']), facts=facts)
+                self.assertEqual([e['after'] for e in out['edits']], [after])
+
+    def test_name_cannot_be_assembled_across_cited_facts(self):
+        facts = [fact('a', '参与需求整理，协作方为远山'), fact('b', '公司安排需求评审')]
+        self.refused(rephrase('参与远山 公司需求评审', ids=['a', 'b']), 'new_employer', facts=facts)
+
+    def test_long_name_is_checked_through_its_first_character(self):
+        facts = [fact('a', '参与星河区域软件技术服务中心公司项目，完成需求整理')]
+        self.refused(rephrase('参与远山区域软件技术服务中心公司项目，完成需求整理', ids=['a']),
+                     'new_employer', facts=facts)
 
     def test_strength_scope_and_polarity(self):
         for new, flag, ident in [('负责订单核对', 'strength_up', 'a'), ('主导订单核对', 'strength_up', 'a'),
