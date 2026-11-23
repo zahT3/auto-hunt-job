@@ -114,4 +114,4 @@ def fetch(entry, ctx):
     return paged_jobs(ctx, fetch_page, lambda row: _job(row, company), _row_id, PAGE_SIZE)
 
 
-PROVIDER = register(Provider('meituan', fetch, detect))
+PROVIDER = register(Provider('meituan', fetch, detect, probe_mode='remote'))

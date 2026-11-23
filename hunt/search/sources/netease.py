@@ -58,4 +58,4 @@ def fetch(entry, ctx):
     return paged_jobs(ctx, fetch_page, lambda row: _job(row, entry.get('company') or '网易'), _row_id, PAGE_SIZE)
 
 
-PROVIDER = register(Provider('netease', fetch, detect))
+PROVIDER = register(Provider('netease', fetch, detect, probe_mode='remote'))

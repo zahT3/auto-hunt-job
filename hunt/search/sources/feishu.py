@@ -115,4 +115,4 @@ def fetch(entry, ctx):
     return paged_jobs(ctx, fetch_page, lambda row: _job(row, origin, company), _row_id, PAGE_SIZE)
 
 
-PROVIDER = register(Provider('feishu', fetch, detect))
+PROVIDER = register(Provider('feishu', fetch, detect, probe_mode='remote'))

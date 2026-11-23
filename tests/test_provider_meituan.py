@@ -66,6 +66,18 @@ class MeituanTests(unittest.TestCase):
         self.assertNotIn('部门', second['jd'])
         self.assertEqual(second['published_at'], '2026-06-24')
 
+    def test_ai_pm_supplemental_queries_keep_only_relevant_titles(self):
+        queries = []
+        def search(url, **kwargs):
+            keyword = json.loads(kwargs['data'])['keywords']
+            queries.append(keyword)
+            titles = ['多模态工单设计师', '多模态工单产品经理'] if keyword == '多模态' else []
+            return page_of([dict(post(i), name=t) for i, t in enumerate(titles)], len(titles))
+        result = run(search, keywords=['AI 产品经理'], sweep=True)
+        self.assertEqual(list(dict.fromkeys(queries)), ['AI 产品经理', 'AI产品', '多模态'])
+        self.assertNotIn('产品经理', queries)
+        self.assertEqual([j['title'] for j in result['jobs']], ['多模态工单产品经理'])
+
     def test_body_uses_nested_page(self):
         server = Server(1)
         run(server)

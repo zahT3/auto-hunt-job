@@ -13,7 +13,8 @@ from contextlib import nullcontext
 from urllib.parse import urlsplit
 from ..net.network import fetch, FetchError, TransientFetchError
 from .sources import Context, route
-from .query import search_terms, expanded_terms, matches
+from .query import expanded_terms, matches, recall_rules, search_rule, search_terms
+from .seeds import seed_for
 from .parse import SourceError, now
 
 DEFAULT_BOARDS = [
@@ -149,6 +150,7 @@ def discover(config, profile=None, transport=None, *, browser_profile_root=None,
     terms = search_terms(config, profile)
     if not terms: raise ValueError('没有搜索词：请先确定方向或填写搜索关键词')
     sweep, started_at = sweep_limits(config), now()
+    rule = search_rule(terms) if sweep else None
     timing = dict(reached=False)
     if sweep:
         deadline = clock() + sweep['deadline_seconds']
@@ -221,8 +223,23 @@ def discover(config, profile=None, transport=None, *, browser_profile_root=None,
                 # In a sweep, a broad platform's remote keyword search must also match the terms locally (by title, as the
                 # job is named) before it takes a job slot; a company's own board, and any search outside a sweep, is
                 # trusted as before. Sources configured without the flag count as broad.
-                keep = (lambda job: matches(job['title'], terms)) if sweep and source.get('broad', True) else None
-                generator = provider.fetch(source, Context(read, terms, quota, pages, report, renderer, keep=keep))
+                seed = seed_for(sid, source.get('company'))
+                metadata = {**seed, **source}
+                # A stored seed id follows future seed updates. Persist only custom flag overrides.
+                flags = {r.company_flag: source[r.company_flag] for r in recall_rules().values()
+                         if r.company_flag in source and source[r.company_flag] != seed.get(r.company_flag)}
+                queries = rule.source_queries(terms, metadata, provider.probe_mode) if rule else terms
+                if queries != terms:
+                    report['queries'] = queries
+                if rule and (queries != terms or source.get('broad', True)):
+                    def keep(job):
+                        return not rule.rejects(job['title'], job.get('jd')) and (
+                            rule.title_evidence(job['title'], metadata) or matches(job['title'], terms))
+                elif sweep and source.get('broad', True):
+                    keep = lambda job: matches(job['title'], terms)
+                else:
+                    keep = None
+                generator = provider.fetch(source, Context(read, queries, quota, pages, report, renderer, keep=keep))
                 for item in generator:
                     key = (item['channel'], item['platform_id'])
                     with lock:
@@ -232,7 +249,7 @@ def discover(config, profile=None, transport=None, *, browser_profile_root=None,
                             report['truncated'] = True
                             break
                         seen.add(key); taken[0] += 1
-                    item.setdefault('raw', {})['discovery'] = dict(source_id=sid, queries=terms, mode=report['mode'], checked_at=report['checked_at'])
+                    item.setdefault('raw', {})['discovery'] = dict(source_id=sid, queries=queries, mode=report['mode'], checked_at=report['checked_at'], **flags)
                     # A login-gated platform's job page only answers a logged-in browser; a plain read of it proves nothing
                     # (猎聘 gave identity_mismatch every time) and adds requests from this IP.
                     if inline_checks and kind not in LOGIN_GATED:

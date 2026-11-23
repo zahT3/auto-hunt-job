@@ -1,11 +1,10 @@
 """Company seed list: which employers a sweep scans, plus employers met while importing jobs."""
-import functools
 import json
 import re
-from pathlib import Path
 from urllib.parse import urlsplit, urlunsplit
 
-DATA = Path(__file__).resolve().parents[2] / 'data' / 'companies.cn.json'
+from ..seeds import DATA, seed_rows
+
 # 按关键词（远端或本地）搜索整个多业务雇主的读取器优先，避免被标签排序挤出扫描范围。
 KEYWORD_PROVIDERS = ('tencent', 'alibaba', 'meituan', 'feishu', 'xiaohongshu', 'didi', 'jd', 'netease', 'ctrip')
 MAX_ENCOUNTERED = 2000
@@ -20,13 +19,8 @@ AGGREGATOR_CHANNELS = ('boss', 'liepin', 'websearch', 'import')
 FLAGGED = ('dead', 'needs_adapter')
 
 
-@functools.lru_cache(maxsize=4)
-def _read(path):
-    return tuple(json.loads(path.read_text(encoding='utf-8'))['companies'])
-
-
 def load_seeds():
-    return list(_read(DATA))
+    return list(seed_rows(DATA))
 
 
 def _split(url):
@@ -49,6 +43,7 @@ def _entry(seed, tier=1):
     # broad: a big multi-business platform whose remote keyword search returns loose matches, so a sweep re-checks them
     # locally; a single company's own board (every role there is the company's) is taken as the search returns it.
     common = dict(id=seed['id'], company=seed['name'], tier=tier, broad='大厂' in seed.get('tags', ()))
+    common.update({k: seed[k] for k in ('model_company', 'role_first', 'probe_limit') if k in seed})
     provider = seed.get('provider')
     if provider: return dict(common, kind=provider, careers_url=seed['careers_url'])
     return dict(common, kind='website', url=seed['careers_url'])

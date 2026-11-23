@@ -217,6 +217,25 @@ def _key(url):
     return (parts.hostname or '').lower(), parts.path.rstrip('/')
 
 
+# Per-board recall options. A company flag waives the topic only for directions that opt into it.
+RECALL_OPTIONS = {
+    'deepseek': {'model_company': True},
+    'kimi': {'model_company': True},
+    'stepfun': {'model_company': True},
+    'minimax': {'model_company': True},
+    'zhipuai-cn-joinus': {'model_company': True},
+    '01-ai-careers': {'model_company': True},
+    'megvii-com-join-us': {'model_company': True},
+    'zhihu': {'role_first': True},
+    'bytedance': {'probe_limit': 1},
+    'meituan': {'probe_limit': 2},
+}
+
+
+def with_recall_options(seed):
+    return dict(seed, **RECALL_OPTIONS.get(seed['id'], {}))
+
+
 def build(rows):
     from hunt.search.sources.catalog import CATALOG
     from hunt.search.sources import route
@@ -243,6 +262,7 @@ def build(rows):
                           tags=_tags(row['section'], row['name'], row.get('notes', '')), source='career-ops-china'))
     seeds.extend(dict(s) for s in NONTECH)
     seeds = [dict(s, careers_url=SEED_URLS[s['id']], provider=provider_of(SEED_URLS[s['id']])) if s['id'] in SEED_URLS else s for s in seeds]
+    seeds = [with_recall_options(s) for s in seeds]
     seeds = [dict(s, status=STATUS[s['id']]) if s['id'] in STATUS else s for s in seeds]
     return [dict(s, status_note=STATUS_NOTES[s['id']]) if s['id'] in STATUS_NOTES else s for s in seeds]
 

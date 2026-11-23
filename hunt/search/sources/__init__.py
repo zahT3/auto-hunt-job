@@ -30,6 +30,7 @@ class Provider:
     id: str
     fetch: Callable[[dict, Context], Iterator[dict]]
     detect: Callable[[dict], Optional[dict]] = _no_detect
+    probe_mode: str = ''  # remote, literal or local; empty for readers without direction probes
 
 
 REGISTRY: dict = {}

@@ -4,7 +4,9 @@ import unittest
 from pathlib import Path
 from unittest.mock import patch
 
+from hunt.ai import classify
 from hunt.app.store import Store
+from hunt.search.query import RecallRule, recall_rules
 from hunt.base import Error
 from hunt.search.engine import discover
 from hunt.search.sources import Provider, REGISTRY, register
@@ -41,6 +43,31 @@ def run_discover(config, prov, **kwargs):
 
 
 class SweepDiscoveryTests(unittest.TestCase):
+    def test_new_direction_probes_and_classifies_a_custom_board_from_metadata(self):
+        direction = dict(id='sound-review', name='声学评审', titles=['音频评审'])
+        rule = RecallRule(dict(direction, recall=dict(
+            topics=['声学'], role_patterns=['评审'], remote_probes=['音质', '音轨'],
+            role_probe='评审', literal_role_probe='评审师', waive_topic_if='audio_studio')))
+        queries = []
+        def fetch(source, ctx):
+            queries.extend(ctx.terms)
+            for n, title in enumerate(['画面设计', '交付评审']):
+                row = dict(job(source['id'], n), title=title)
+                if ctx.keep(row):
+                    yield row
+        source = dict(id='sample-board', kind='sweep-test', audio_studio=True)
+        with patch.dict(recall_rules(), {direction['id']: rule}):
+            result = run_discover(dict(keywords=[direction['name']], sweep=True, discovery_sources=[source]),
+                                  Provider('sweep-test', fetch, probe_mode='remote'))
+            self.assertEqual(queries, ['评审', '声学评审'])
+            self.assertEqual([r['title'] for r in result['jobs']], ['交付评审'])
+            record = result['jobs'][0]
+            classify.classify_jobs([record], [direction], {}, None, None, None)
+            self.assertEqual(record['direction']['id'], direction['id'])
+            record['raw']['discovery']['audio_studio'] = False
+            self.assertTrue(classify.stale(record, [direction['id']]))
+            self.assertEqual(rule.source_queries(['声学评审'], {'probe_limit': 1}, 'remote'), ['声学评审', '音质'])
+
     def test_sweep_defaults(self):
         result = run_discover(dict(sweep=True, discovery_sources=sources('a')), provider(dict(a=1)))
         self.assertEqual(result['sweep'], dict(max_companies=300, max_jobs=1500, requests=3000, deadline_seconds=600, prepare=50, max_pages=20, workers=4))

@@ -142,4 +142,4 @@ def fetch(entry, ctx):
     return paged_jobs(ctx, fetch_page, lambda row: _job(row, tenant, company), _row_id, MAX_LIMIT)
 
 
-PROVIDER = register(Provider('mokahr', fetch, detect))
+PROVIDER = register(Provider('mokahr', fetch, detect, probe_mode='remote'))

@@ -18,7 +18,7 @@ class TableTests(unittest.TestCase):
         self.assertEqual(len({r['id'] for r in rows}), len(rows))
         self.assertEqual(len({r['name'] for r in rows}), len(rows))
         for r in rows:
-            self.assertEqual(set(r), {'id', 'name', 'family', 'keywords', 'titles', 'en'}, r['id'])
+            self.assertEqual(set(r) - {'recall'}, {'id', 'name', 'family', 'keywords', 'titles', 'en'}, r['id'])
             self.assertTrue(r['id'] and r['name'] and r['family'])
             for key in ('keywords', 'titles', 'en'):
                 self.assertIsInstance(r[key], list)

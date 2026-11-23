@@ -64,6 +64,30 @@ class MokahrTests(unittest.TestCase):
         patch = mock.patch('hunt.search.sources.mokahr.PAUSE', 0)
         patch.start(); self.addCleanup(patch.stop)
 
+    def test_ai_pm_sweep_probes_role_then_checks_title_before_quota(self):
+        titles = ['订阅产品运营', '商业产品设计师', '订阅留存产品', '多模态检索产品专家']
+        for company, expected in [('阶跃星辰', titles[2:]), ('知乎', titles[3:])]:
+            with self.subTest(company=company):
+                queries = []
+                def search(url, **kwargs):
+                    term = json.loads(kwargs['data'])['keyword']
+                    queries.append(term)
+                    return plain([dict(job(i), title=t) for i, t in enumerate(titles)] if term == '产品' else [])
+                source = dict(kind='mokahr', careers_url=TENANT, broad=False, company=company)
+                result = run(search, discovery_sources=[source], keywords=['AI 产品经理'], sweep=True, sweep_max_jobs=2)
+                self.assertEqual(queries, ['产品', 'AI 产品经理'])
+                self.assertEqual([j['title'] for j in result['jobs']], expected)
+                self.assertEqual(result['sources'][0]['filtered'], len(titles) - len(expected))
+                self.assertEqual(result['queries'], ['AI 产品经理'])
+
+    def test_mixed_search_preserves_the_other_terms_and_board_results(self):
+        server = Server(1, plain)
+        terms = ['AI 产品经理', '财务']
+        result = run(server, discovery_sources=[dict(kind='mokahr', careers_url=TENANT, broad=False, company='旷视')],
+                     keywords=terms, sweep=True)
+        self.assertEqual([json.loads(kw['data'])['keyword'] for _, kw in server.calls], terms)
+        self.assertEqual(len(result['jobs']), 1)
+
     def test_decrypts_envelope(self):
         raw = sealed([job(1), job(2)])
         result = run(lambda url, **kw: raw)

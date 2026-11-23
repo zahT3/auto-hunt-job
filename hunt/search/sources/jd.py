@@ -68,4 +68,4 @@ def fetch(entry, ctx):
     return paged_jobs(searched, fetch_page, lambda row: _job(row, entry.get('company') or '京东'), _row_id, PAGE_SIZE)
 
 
-PROVIDER = register(Provider('jd', fetch, detect))
+PROVIDER = register(Provider('jd', fetch, detect, probe_mode='literal'))
