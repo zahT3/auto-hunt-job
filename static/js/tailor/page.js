@@ -31,6 +31,7 @@ const STRUCTURE_STEP = {
   no_structure: ["还没有简历结构", "先在确认页核对简历结构，之后每个岗位都复用它。", "去核对简历结构"],
   unconfirmed: ["简历结构还没有确认", "预填的结构要先在确认页核对并确认，才能为岗位改简历。", "去核对简历结构"],
   stale: ["简历结构需要重新核对", "有条目过期或字段待确认，先在确认页处理。", "去核对简历结构"],
+  structure_changed: ["简历结构已更新", "简历结构在生成这一版之后改过，请重新生成。", "重新生成"],
 };
 
 const tailorEdits = (view) => items(view?.document?.edits);
@@ -226,9 +227,10 @@ export function tailorPageHtml(job, view, loading, exported, id) {
     return `<article class="detail tailor">${head}<div class="empty flush" aria-busy="true"><h2>正在读取…</h2></div></article>`;
   if (view?.needs_structure) {
     const [title, text, button] = STRUCTURE_STEP[view.code] || STRUCTURE_STEP.unconfirmed;
+    const next = view.code === "structure_changed" ? 'data-act="tailor-generate"' : "data-open-resume";
     return (
       `<article class="detail tailor">${head}<div class="empty flush"><h2>${esc(title)}</h2><p>${esc(text)}</p>` +
-      `<button class="btn btn-primary" type="button" data-open-resume>${button}</button> ` +
+      `<button class="btn btn-primary" type="button" ${next}>${button}</button> ` +
       `<button class="btn" type="button" data-act="tailor-reload">已处理，重新检查</button></div></article>`
     );
   }
@@ -282,8 +284,8 @@ async function tailorRun(name, payload, label) {
     return null;
   }
   if (data.result.needs_structure) {
-    tailorErrors.set(id, { text: data.result.reason, resume: true });
-    if (name === "tailor") tailorViews.set(id, data.result);
+    if (name === "tailor" || data.result.code === "structure_changed") tailorViews.set(id, data.result);
+    else tailorErrors.set(id, { text: data.result.reason, resume: true });
     render();
     return null;
   }
@@ -308,7 +310,7 @@ async function tailorDecide(kind, id) {
   if (!edit || busy || view.latest === false) return;
   tailorFocus = id;
   const list = kind === "accept" ? { accept: [id] } : { reject: [id] };
-  const result = await tailorRun("tailor_review", list, "正在检查…");
+  const result = await tailorRun("tailor_review", { version: view.document.version, ...list }, "正在检查…");
   if (result) tailorExports.delete(job);
   $(`#tl-e-${CSS.escape(id)}`)?.focus({ preventScroll: true });
 }
@@ -345,14 +347,22 @@ document.addEventListener(
     const key = e.key;
     const step = { j: 1, ArrowDown: 1, k: -1, ArrowUp: -1 }[key];
     if (step) tailorMoveFocus(step);
-    else if (key === "a" || key === "u") tailorDecide(key === "a" ? "accept" : "reject", tailorFocus);
-    else return;
+    else if (key === "a" || key === "u") {
+      const card = document.activeElement?.closest?.("[data-edit]");
+      tailorDecide(key === "a" ? "accept" : "reject", card?.dataset.edit ?? tailorFocus);
+    } else return;
     // Capture phase: the shell's own `u` (undo a triage choice) and j/k must not also run on this page.
     e.preventDefault();
     e.stopPropagation();
   },
   true,
 );
+
+document.addEventListener("focusin", (e) => {
+  if (route().page !== "tailor") return;
+  const card = e.target.closest("[data-edit]");
+  if (card) tailorFocus = card.dataset.edit;
+});
 
 document.addEventListener("click", (e) => {
   if (route().page !== "tailor") return;
@@ -366,9 +376,10 @@ document.addEventListener("click", (e) => {
   const act = e.target.closest("[data-act]")?.dataset.act;
   if (act === "tailor-generate") tailorRun("tailor", { ai: false }, "正在生成…");
   else if (act === "tailor-ai") tailorRun("tailor", { ai: true }, "正在请模型改写…");
-  else if (act === "tailor-export")
-    tailorRun("tailor_export", { formats: tailorFormats, include_private_basic: tailorWithBasic }, "正在导出并读回检查…");
-  else if (act === "tailor-reload") tailorLoad(route().id);
+  else if (act === "tailor-export") {
+    const version = tailorViews.get(route().id)?.document?.version;
+    if (version) tailorRun("tailor_export", { version, formats: tailorFormats, include_private_basic: tailorWithBasic }, "正在导出并读回检查…");
+  } else if (act === "tailor-reload") tailorLoad(route().id);
   else if (act === "tailor-back") {
     e.preventDefault();
     go("job/" + route().id);

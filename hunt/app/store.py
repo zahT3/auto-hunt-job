@@ -47,6 +47,7 @@ class Store(WorkbenchActions, OrientActions, AiSettings, AssistActions, SearchRu
         self.start_lock = threading.Lock()
         self.search_thread = None
         self.entry_lock = threading.Lock()
+        self.tailor_lock = threading.Lock()
         self.entry_verifications = {}
         self.entry_signals = {}
         # One worker: materials are prepared one at a time so a burst of choices cannot pile up on the SQLite writer.

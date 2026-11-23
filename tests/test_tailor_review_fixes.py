@@ -1,7 +1,10 @@
 """Regressions from the 2026-11 review of per-job tailoring. Synthetic data only."""
 import json
+import threading
 import unittest
+from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
+from unittest.mock import patch
 
 from hunt.base import Error
 from hunt.profile import claims, resume_render as rr, structure as S, tailor
@@ -112,6 +115,110 @@ class ExportGateTests(TailorAppCase):
             self.act('tailor_export', job_id=self.job['id'], formats=['md'])
         self.assertIn('1.5 倍', str(ctx.exception))
         self.assertFalse((self.store.root / 'tailored').exists())
+
+
+class DisclosureTests(TailorAppCase):
+    def test_private_contact_facts_in_work_are_withheld_unless_opted_in(self):
+        texts = ['工作经历', '示例科技有限公司 后端工程师 2021.03-2023.06', '参与服务开发',
+                 'demo@example.com', '138 0000 4321', 'https://example.org/demo', '现居：示例城市',
+                 '合成身份', '合成联系账号', 'published@example.com']
+        facts = [dict(id=f'f{i}', text=text, version=1, status='confirmed', disclosure='private')
+                 for i, text in enumerate(texts)]
+        facts[7]['tags'] = ['identity']
+        facts[8]['tags'] = ['contact']
+        facts[9]['disclosure'] = 'application'
+        with self.store.tx() as c:
+            candidate = self.store.meta(c, 'candidate')
+            self.store.setmeta(c, 'candidate', dict(candidate, facts=facts))
+        self.confirm_structure()
+        made = self.act('tailor', job_id=self.job['id'])
+        self.assertEqual([s['key'] for s in made['rendered']['sections']], ['work'])
+        self.assertEqual({w['text'] for w in made['basic_withheld']}, set(texts[3:9]))
+        for include in (False, True):
+            with self.subTest(include=include):
+                out = self.act('tailor_export', job_id=self.job['id'], formats=['md'], include_private_basic=include)
+                self.assertTrue(out['ok'], out)
+                self.assertEqual(out['withheld_basic'], [] if include else made['basic_withheld'])
+                md = Path(out['files']['md']['path']).read_text(encoding='utf-8')
+                self.assertIn(texts[2], md)
+                self.assertIn(texts[9], md)
+                for private in texts[3:9]:
+                    self.assertEqual(private in md, include, private)
+
+    def test_a_private_second_reference_withholds_the_whole_rewritten_line(self):
+        facts = [dict(id='a', text='开发服务'), dict(id='b', text='姓名：示例')]
+        line = dict(kind='bullet', text='合并行', fact_ids=[dict(id='a'), dict(id='b')], edit_ids=['e'])
+        rendered = dict(sections=[dict(key='work', lines=[line])])
+        self.assertEqual(self.store._tailor_withheld(rendered, facts), [facts[1]])
+        self.assertEqual(self.store._tailor_render(rendered, facts)['sections'], [])
+
+
+class VersionAndConcurrencyTests(TailorAppCase):
+    def setUp(self):
+        super().setUp()
+        self.confirm_structure()
+        self.job_id = self.job['id']
+        self.doc = self.act('tailor', job_id=self.job_id)['document']
+
+    def test_review_of_displayed_old_version_leaves_latest_version_untouched(self):
+        second = self.act('tailor', job_id=self.job_id)['document']
+        with self.assertRaisesRegex(Error, '旧版本只读'):
+            self.act('tailor_review', job_id=self.job_id, version=self.doc['version'], reject=[self.doc['edits'][0]['id']])
+        self.assertEqual(self.act('tailor_get', job_id=self.job_id)['document']['edits'], second['edits'])
+        out = self.act('tailor_export', job_id=self.job_id, version=self.doc['version'], formats=['md'])
+        self.assertEqual(Path(out['dir']).name, 'v1')
+
+    def test_reconfirmed_structure_requires_a_new_version_before_export(self):
+        st = self.store.structure_get()['structure']
+        entry = next(e for s in st['sections'] if s['key'] == 'work' for e in s['entries'] if e['bullets'])
+        st['unassigned'].append(entry['bullets'].pop())
+        self.store.structure_save(dict(structure=st, base_version=st['version'], confirm=True))
+        out = self.act('tailor_export', job_id=self.job_id, version=1, formats=['md'])
+        self.assertTrue(out['needs_structure'])
+        self.assertEqual(out['code'], 'structure_changed')
+        self.assertEqual(out['reason'], '简历结构在生成这一版之后改过，请重新生成')
+        self.assertFalse((self.store.root / 'tailored').exists())
+        self.act('tailor', job_id=self.job_id)
+        self.assertTrue(self.act('tailor_export', job_id=self.job_id, version=2, formats=['md'])['ok'])
+
+    def test_simultaneous_reviews_exports_and_generations_preserve_each_write(self):
+        first, second = [e['id'] for e in self.doc['edits'][:2]]
+
+        def simultaneous(actions):
+            start = threading.Barrier(len(actions))
+
+            def run(action):
+                name, payload = action
+                start.wait(timeout=5)
+                return self.act(name, job_id=self.job_id, **payload)
+
+            with ThreadPoolExecutor(max_workers=len(actions)) as pool:
+                return list(pool.map(run, actions))
+
+        simultaneous([('tailor_review', dict(version=1, reject=[eid])) for eid in (first, second)] +
+                     [('tailor_export', dict(version=1, formats=['md']))] * 2)
+        stored = self.act('tailor_get', job_id=self.job_id)['document']
+        self.assertEqual([e['status'] for e in stored['edits'][:2]], ['rejected', 'rejected'])
+        self.assertEqual(len(stored['exports']), 2)
+        versions = simultaneous([('tailor', {}), ('tailor', {})])
+        self.assertEqual(sorted(v['document']['version'] for v in versions), [2, 3])
+
+    def test_export_updates_only_export_metadata_on_the_stored_document(self):
+        export = rr.export_all
+
+        def record_external_decision(*args, **kwargs):
+            with self.store.tx() as c:
+                doc = self.store._tailor_load(c, self.job_id, 1)
+                doc['edits'][0]['status'] = 'rejected'
+                self.store._tailor_save(c, doc)
+            return export(*args, **kwargs)
+
+        with patch.object(rr, 'export_all', side_effect=record_external_decision):
+            self.act('tailor_export', job_id=self.job_id, version=1, formats=['md'])
+        stored = self.act('tailor_get', job_id=self.job_id)['document']
+        self.assertEqual(stored['edits'][0]['status'], 'rejected')
+        self.assertEqual(len(stored['exports']), 1)
+        self.assertEqual(stored['checks']['export'], 'pass')
 
 
 if __name__ == '__main__':
