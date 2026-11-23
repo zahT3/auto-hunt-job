@@ -19,6 +19,19 @@
 
 出错时退出码为 1，输出 `{"schema_version": 1, "error": "中文原因"}`。
 
+## 大范围搜索的 run 结果
+
+启用 `sweep` 且有多个来源时，首轮给每个来源一页的读取额度。按词检索的来源保留各关键词的第一页，本地筛选仍用全部搜索词。首轮结束后，相关来源优先使用剩余时间和预算续翻。续翻会从第一页重读，`requests` 和 `pages` 包含重读，`returned` 只计实际保留的不同岗位。
+
+每条 `run.sources[]` 记录增加两个布尔字段。旧记录可能没有这两个字段。
+
+| 字段 | 含义 |
+|---|---|
+| `first_page_read` | 读取器至少记下了一页（`pages > 0`）。空页也算。官网入口页也可能计入，是否找到岗位看 `returned`。 |
+| `continuation_deadline` | 已读页之后的工作或待执行的续翻因本轮截止而停止。此时 `status` 为 `cancelled`，`truncated` 为 `true`。用户停止、请求额度用尽或仅达到页数上限时，此字段为 `false`。 |
+
+如果截止时首轮还没轮到该来源，它的 `status` 为 `cancelled`，`truncated` 为 `true`，上述两个字段均为 `false`。已完成的来源保留各自状态，即使整轮的 `deadline_reached` 为 `true`。
+
 ## search 的输出
 
 `python -m hunt search "AI 产品经理" --city 深圳 --json` 输出：

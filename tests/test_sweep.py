@@ -1,15 +1,17 @@
 """Sweep mode: bounded wide search with fair shares, a deadline and partial preparation."""
 import tempfile
+import threading
 import unittest
 from pathlib import Path
 from unittest.mock import patch
 
 from hunt.ai import classify
 from hunt.app.store import Store
+from hunt.net.network import TransientFetchError
 from hunt.search.query import RecallRule, recall_rules
 from hunt.base import Error
 from hunt.search.engine import discover
-from hunt.search.sources import Provider, REGISTRY, register
+from hunt.search.sources import Provider, REGISTRY, paged_jobs, register
 from hunt.search.parse import normalize, SourceError
 
 
@@ -153,6 +155,44 @@ class SweepDiscoveryTests(unittest.TestCase):
         self.assertEqual(by['rest']['requests'], 19)
         self.assertEqual(result['requests'], 30)
 
+    def test_retry_cannot_consume_a_waiting_sources_only_request(self):
+        calls = []
+        def transport(name):
+            calls.append(name)
+            if name == 'big':
+                raise TransientFetchError('timed out')
+        def fetch(entry, ctx):
+            ctx.read(entry['id'])
+            ctx.report['pages'] += 1
+            yield job(entry['id'], 0)
+        with patch.dict(REGISTRY):
+            register(Provider('sweep-test', fetch))
+            result = discover(dict(keywords=['AI'], sweep=True, sweep_requests=3, sweep_max_jobs=1,
+                                   discovery_sources=sources('big', 'small', 'last')), transport=transport)
+        self.assertEqual(calls, ['big', 'small', 'last'])
+        big, small, last = result['sources']
+        self.assertEqual((big['status'], big['first_page_read'], big['retries']), ('fetch_error', False, 0))
+        self.assertEqual((small['returned'], last['returned'], last['first_page_read']), (1, 0, True))
+        self.assertTrue(last['truncated'])
+        self.assertFalse(last['continuation_deadline'])
+
+    def test_retry_backoff_that_crosses_deadline_sends_no_request(self):
+        calls = []
+        now = [0.0]
+        def transport(url):
+            calls.append(url)
+            raise TransientFetchError('timed out')
+        def advance(_):
+            now[0] = 31
+        with patch.dict(REGISTRY), patch('hunt.search.engine.time.sleep', side_effect=advance):
+            register(provider({'a': 1}, lambda entry, ctx: ctx.read('list')))
+            result = discover(dict(keywords=['AI'], sweep=True, sweep_deadline_seconds=30,
+                                   discovery_sources=sources('a')), transport=transport, clock=lambda: now[0])
+        self.assertEqual(calls, ['list'])
+        report = result['sources'][0]
+        self.assertEqual((report['status'], report['truncated'], report['retries']), ('cancelled', True, 0))
+        self.assertFalse(report['first_page_read'] or report['continuation_deadline'])
+
     def test_deadline_stops_new_requests(self):
         now = [0.0]
         def hook(entry, ctx):
@@ -164,6 +204,7 @@ class SweepDiscoveryTests(unittest.TestCase):
         self.assertEqual([j['company'] for j in result['jobs']], ['a', 'a'])
         self.assertTrue(result['deadline_reached'])
         self.assertTrue(result['sources'][1]['truncated'])
+        self.assertFalse(result['sources'][1]['first_page_read'] or result['sources'][1]['continuation_deadline'])
 
     def test_deadline_mid_source_blocks_read_and_keeps_fetched_jobs(self):
         now = [0.0]
@@ -218,20 +259,88 @@ class SweepDiscoveryTests(unittest.TestCase):
         self.assertEqual(result['jobs'][30]['platform_id'], 's1-0')
         self.assertEqual({r['source_id']: r['returned'] for r in result['sources']}['big'], 57)
 
-    def test_relevant_top_up_runs_before_the_unrelated_tail(self):
-        now = [0.0]
-        def hook(entry, ctx):
-            if entry['name'].startswith('t'): now[0] += 200  # slow, empty, unrelated sources
-        rows = sources('big', 's1', 't1', 't2', 't3', 't4')
-        for row in rows: row['tier'] = 0 if row['name'] == 'big' else 1 if row['name'] == 's1' else 2
-        result = run_discover(dict(sweep=True, sweep_max_jobs=1000, sweep_deadline_seconds=600, discovery_sources=rows),
-                              provider(dict(big=700, s1=3), hook), clock=lambda: now[0])
-        reports = {r['source_id']: r for r in result['sources']}
-        self.assertEqual(reports['big']['passes'], 2)
-        self.assertEqual(reports['big']['returned'], 700)  # first pass 500 (1000 over 2 relevant), top-up the rest
-        self.assertEqual([r['source_id'] for r in result['sources']], ['big', 's1', 't1', 't2', 't3', 't4'])
-        self.assertEqual(reports['t4']['status'], 'cancelled')  # the deadline cut the tail, not the top-up
+    def test_first_pages_across_tiers_precede_deep_paging_at_deadline(self):
+        big = ['large%d' % i for i in range(3)]
+        small = ['small%d' % i for i in range(20)]
+        entries = sources(*big, *small)
+        for entry in entries:
+            entry.update(url='https://%s.example.test' % entry['id'], tier=0 if entry['id'] in big else 2)
+        lock, calls = threading.Lock(), []
+        elapsed = 0
+
+        def transport(url):
+            nonlocal elapsed
+            name, page = url.split('/')
+            page = int(page)
+            with lock:
+                calls.append((name, page))
+                elapsed += 1 if page == 1 else 30
+            return range(4 if name in big else 1)
+
+        def clock():
+            with lock:
+                return elapsed
+
+        def fetch(entry, ctx):
+            name = entry['id']
+            for page in range(1, ctx.pages + 1):
+                rows = ctx.read('%s/%d' % (name, page))
+                ctx.report['pages'] += 1
+                ctx.report['fetched'] += len(rows)
+                for n in rows:
+                    yield job(name, 4 * (page - 1) + n)
+                if name in small:
+                    return
+            ctx.report['truncated'] = True
+
+        with patch.dict(REGISTRY):
+            register(Provider('sweep-test', fetch))
+            result = discover(dict(sweep=True, sweep_workers=4, sweep_deadline_seconds=30,
+                                   keywords=['AI'], discovery_sources=entries), transport=transport, clock=clock)
+        first_deep = next(i for i, (_, page) in enumerate(calls) if page > 1)
+        self.assertEqual({name for name, _ in calls[:first_deep]}, set(big + small))
+        returned = {j['platform_id'] for j in result['jobs']}
+        self.assertTrue({n + '-0' for n in small} <= returned)
+        self.assertTrue({name + '-' + str(n) for name in big for n in range(4)} <= returned)
         self.assertTrue(result['deadline_reached'])
+        for r in result['sources']:
+            self.assertTrue(r['first_page_read'])
+            cut = r['source_id'] in big
+            self.assertEqual((r['status'], r['truncated'], r['continuation_deadline']),
+                             ('cancelled' if cut else 'ok', cut, cut))
+
+    def test_keyword_first_pages_keep_all_matches_before_continuation(self):
+        calls = []
+        def fetch(entry, ctx):
+            def fetch_page(term, page):
+                ctx.read(term)
+                calls.append((entry['id'], term, page))
+                n = 10 * ctx.terms.index(term) + page
+                return [n], 2
+            return paged_jobs(ctx, fetch_page, lambda n: job(entry['id'], n), str, 1)
+
+        result = run_discover(dict(keywords=['AI', 'backend'], sweep=True, discovery_sources=sources('a', 'b')),
+                              Provider('sweep-test', fetch))
+        self.assertEqual(calls[:4], [('a', 'AI', 1), ('a', 'backend', 1), ('b', 'AI', 1), ('b', 'backend', 1)])
+        self.assertEqual([j['platform_id'] for j in result['jobs']],
+                         ['a-1', 'a-11', 'b-1', 'b-11', 'a-2', 'a-12', 'b-2', 'b-12'])
+        self.assertTrue(all(r['first_page_read'] and not r['truncated'] for r in result['sources']))
+        self.assertEqual(result['requests'], len(calls))
+
+    def test_filtered_first_page_still_gets_continuation(self):
+        def fetch(entry, ctx):
+            for page in range(1, min(2, ctx.pages) + 1):
+                ctx.read(entry['id'])
+                ctx.report['pages'] += 1
+                ctx.report['fetched'] += 1
+                if page == 2:
+                    yield job(entry['id'], page)
+            ctx.report['truncated'] = ctx.pages < 2
+
+        result = run_discover(dict(sweep=True, discovery_sources=sources('a', 'b')), Provider('sweep-test', fetch))
+        self.assertEqual([j['platform_id'] for j in result['jobs']], ['a-2', 'b-2'])
+        for report in result['sources']:
+            self.assertEqual((report['passes'], report['truncated'], report['continuation_deadline']), (2, False, False))
 
     def test_second_pass_ends_untruncated_when_source_runs_dry(self):
         result = run_discover(dict(sweep=True, sweep_max_jobs=60, discovery_sources=sources('big', 's1', 's2')),
@@ -258,12 +367,16 @@ class SweepDiscoveryTests(unittest.TestCase):
         now, calls = [0.0], []
         def hook(entry, ctx):
             calls.append(entry['name'])
+            ctx.read(entry['name'])
+            ctx.report['pages'] += 1
             if entry['name'] == 's2': now[0] = 1000.0
         result = run_discover(dict(sweep=True, sweep_max_jobs=60, discovery_sources=sources('big', 's1', 's2')),
                               provider(dict(big=None, s1=3, s2=3), hook), clock=lambda: now[0])
         self.assertEqual(calls, ['big', 's1', 's2'])
         self.assertEqual(result['sources'][0]['returned'], 20)
         self.assertEqual(result['sources'][0]['passes'], 1)
+        self.assertTrue(result['sources'][0]['continuation_deadline'])
+        self.assertEqual(result['sources'][0]['status'], 'cancelled')
         self.assertTrue(result['deadline_reached'])
 
     def test_non_sweep_has_no_second_pass(self):
@@ -398,6 +511,8 @@ class SweepRunTests(unittest.TestCase):
         self.assertEqual(result['status'], 'partial')
         self.assertTrue(result['deadline_reached'])
         self.assertEqual(result['imported'], 2)
+        queued = result['sources'][1]
+        self.assertEqual((queued['status'], queued['first_page_read'], queued['continuation_deadline']), ('cancelled', False, False))
 
     def test_run_caps_imports_at_sweep_max_jobs(self):
         with patch('hunt.search.engine.discover', side_effect=lambda config, **kw: dict(
