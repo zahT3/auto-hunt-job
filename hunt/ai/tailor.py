@@ -25,7 +25,8 @@ from ..profile import claims, redact
 from . import llm, orient
 
 PROMPT_VERSION = 1
-MAX_EDITS, MAX_AFTER, MAX_WHY = 24, 600, 200
+MAX_EDITS, MAX_WHY = 24, 200
+MAX_AFTER = claims.MAX_AFTER
 FACT_CHARS, FACTS_TOTAL, REQ_CHARS, MAX_REQUIREMENTS = 600, 12000, 300, 60
 DRAFT_TOKENS, REVIEW_TOKENS = 3000, 1500
 VERDICTS = ('ok', 'unsupported', 'overstated', 'off_topic')
@@ -59,7 +60,6 @@ REVIEW_SYSTEM = (
 
 # ---- untrusted job text ----
 
-_INVISIBLE = re.compile('[​-‏‪-‮⁠-⁤⁦-⁩﻿\U000e0000-\U000e007f\x00-\x08\x0b\x0c\x0e-\x1f\x7f]')
 _INSTRUCTION = re.compile(
     r'ignore\s+(?:all\s+|any\s+)?(?:the\s+)?(?:previous|above|prior|earlier)|disregard|system\s+prompt|jailbreak'
     r'|(?:^|\s)(?:system|assistant)\s*:|you\s+are\s+now|new\s+instructions?|do\s+not\s+follow'
@@ -70,7 +70,7 @@ _INSTRUCTION = re.compile(
 
 def sanitize(text):
     """(clean text, True when a line reads like an instruction). Invisible, tag and bidi characters are removed first."""
-    clean = _INVISIBLE.sub('', str(text or ''))
+    clean = claims.visible_text(str(text or ''))
     clean = clean.replace('<', '‹').replace('>', '›') if not _INSTRUCTION.search(clean) else clean
     return clean, bool(_INSTRUCTION.search(clean))
 
@@ -182,17 +182,17 @@ def _edit_from(raw, index, by_id, requirements, sent_ids):
         return None, 'bad_fact'
     if any(i not in sent_ids for i in ids):
         return None, 'bad_fact'
-    req = requirements.get(raw.get('requirement_ref'))
+    if len(ids) != len(set(ids)):
+        return None, 'duplicate_fact'
+    ref = raw.get('requirement_ref')
+    req = requirements.get(ref) if isinstance(ref, str) else None
     if not req:
         return None, 'bad_requirement'
     after = raw.get('after')
-    if isinstance(after, list) and all(isinstance(x, str) for x in after):
-        after = '\n'.join(after)
-    if not isinstance(after, str) or not after.strip():
-        return None, 'empty_after'
-    if len(after) > MAX_AFTER:
-        return None, 'too_long'
-    ids = list(dict.fromkeys(ids))
+    bad = claims.after_error(after)
+    if bad:
+        return None, bad
+    after = after.replace('\r\n', '\n')
     why = raw.get('why') if isinstance(raw.get('why'), str) else ''
     return dict(id='a%d' % (index + 1), op='rephrase', fact_ids=[dict(id=i, version=by_id[i].get('version')) for i in ids],
                 requirement=dict(type=req['type'], value=req['value'], jd_evidence=req['jd_evidence'], ref=req['ref']),
@@ -250,7 +250,8 @@ def generate(facts, requirements, names=(), settings=None, key=None, consent=Non
     for n, raw in enumerate(raw_edits[:MAX_EDITS]):
         edit, bad = _edit_from(raw, n, by_id, by_ref, set(by_id))
         if bad:
-            rejected.append(dict(edit=raw if isinstance(raw, dict) else {'raw': str(raw)[:200]}, reason=bad, detail=[]))
+            item = dict(raw) if isinstance(raw, dict) else {'raw': str(raw)[:200]}
+            rejected.append(dict(edit=dict(item, status='rejected'), reason=bad, detail=[]))
             continue
         verdict = claims.check_rephrase(edit, by_id, jd_lines=lines, keywords=kws, synonyms=synonyms, allowed_swaps=allowed_swaps)
         if not verdict['ok']:
@@ -283,9 +284,14 @@ def _review(edits, reqs, sent, settings, key, mode, jd_digest, meter, transport,
             cache.put(review_key, reply)
     by_id = {e['id']: e for e in edits}
     for row in reply.get('reviews') if isinstance(reply.get('reviews'), list) else []:
-        if isinstance(row, dict) and row.get('id') in by_id and row.get('verdict') in VERDICTS:
-            by_id[row['id']]['checks']['reviewer'] = row['verdict']
-            if isinstance(row.get('note'), str):
-                by_id[row['id']]['checks']['reviewer_note'] = row['note'].strip()[:MAX_WHY]
+        if not isinstance(row, dict) or not isinstance(row.get('id'), str) or row.get('verdict') not in VERDICTS:
+            continue
+        edit = by_id.get(row['id'])
+        if not edit or edit['checks']['reviewer'] not in (None, 'ok'):
+            continue  # a repeated id cannot clear an earlier warning
+        edit['checks']['reviewer'] = row['verdict']
+        edit['checks'].pop('reviewer_note', None)
+        if isinstance(row.get('note'), str):
+            edit['checks']['reviewer_note'] = row['note'].strip()[:MAX_WHY]
     if any(e['checks']['reviewer'] is None for e in edits):
         notes.append('审稿人没有给出全部改写的结论')
