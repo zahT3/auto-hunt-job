@@ -3,8 +3,12 @@ import { clearFeedback, notice } from "./feedback.js";
 import { busy, render, renderPassive, setBusy, setState, state } from "./state.js";
 
 // One local action at a time: POST /api/action with the page's CSRF token, then redraw from the returned state.
+// The message of the last action that failed, for pages that show it next to the control that started it.
+export let lastActionError = "";
+
 export async function action(actionName, payload = {}, label = "正在处理…") {
   if (busy) return null;
+  lastActionError = "";
   clearFeedback("dialog[open]");
   setBusy(true, label);
   try {
@@ -26,7 +30,8 @@ export async function action(actionName, payload = {}, label = "正在处理…"
     render();
     return data;
   } catch (e) {
-    notice(e.message || "操作未完成，请检查本地运行器后重试。", true);
+    lastActionError = e.message || "操作未完成，请检查本地运行器后重试。";
+    notice(lastActionError, true);
     return null;
   } finally {
     setBusy(false);

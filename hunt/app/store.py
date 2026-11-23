@@ -57,7 +57,9 @@ class Store(WorkbenchActions, OrientActions, AiSettings, AssistActions, SearchRu
             CREATE TABLE IF NOT EXISTS packages(id TEXT PRIMARY KEY, job_id TEXT, data TEXT NOT NULL);
             CREATE TABLE IF NOT EXISTS attempts(id TEXT PRIMARY KEY, job_id TEXT NOT NULL, state TEXT, data TEXT NOT NULL);
             CREATE TABLE IF NOT EXISTS runs(id TEXT PRIMARY KEY,data TEXT NOT NULL);
-            CREATE TABLE IF NOT EXISTS interventions(id TEXT PRIMARY KEY, data TEXT NOT NULL);''')
+            CREATE TABLE IF NOT EXISTS interventions(id TEXT PRIMARY KEY, data TEXT NOT NULL);
+            CREATE TABLE IF NOT EXISTS tailored(id TEXT PRIMARY KEY, job_id TEXT, version INTEGER, data TEXT NOT NULL, created TEXT,
+                UNIQUE(job_id, version));''')
             index.migrate(c)
             from ..workbench.materials import synthetic_candidate
             for key, value in [('candidate', synthetic_candidate()), ('config', DEFAULT_CONFIG), ('control', 'running'), ('candidate_draft', None), ('encountered_companies', []), ('ai_consent', None), ('orientation', None)]:

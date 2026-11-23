@@ -33,12 +33,7 @@ class TailorActions:
 
     # ---- storage ----
 
-    def _tailor_ensure(self, c):
-        c.execute('CREATE TABLE IF NOT EXISTS tailored(id TEXT PRIMARY KEY, job_id TEXT, version INTEGER, data TEXT NOT NULL, '
-                  'created TEXT, UNIQUE(job_id, version))')
-
     def _tailor_load(self, c, job_id, version=None):
-        self._tailor_ensure(c)
         if version is None:
             row = c.execute('SELECT data FROM tailored WHERE job_id=? ORDER BY version DESC LIMIT 1', (job_id,)).fetchone()
         else:
@@ -46,7 +41,6 @@ class TailorActions:
         return json.loads(row[0]) if row else None
 
     def _tailor_versions(self, c, job_id):
-        self._tailor_ensure(c)
         return [dict(version=d['version'], by=d['by'], created_at=d['created_at'], edits=len(d['edits']))
                 for d in (json.loads(r[0]) for r in c.execute('SELECT data FROM tailored WHERE job_id=? ORDER BY version', (job_id,)))]
 
@@ -84,15 +78,9 @@ class TailorActions:
 
     @staticmethod
     def _tailor_requirements(m):
-        """Rows for the model, with the same refs the rule path writes (k = keywords, d = evidence, h = hard)."""
-        rows = []
-        for i, r in enumerate(m.get('hard') or []):
-            if r.get('status') == 'met': rows.append(dict(ref=f'h{i}', type='hard', value=r.get('requirement'), jd_evidence=r.get('jd_evidence')))
-        for i, r in enumerate(m.get('keywords') or []):
-            if r.get('coverage') in ('explicit', 'related'): rows.append(dict(ref=f'k{i}', type='keyword', value=r.get('keyword'), jd_evidence=r.get('jd_evidence')))
-        for i, r in enumerate(m.get('evidence') or []):
-            if r.get('status') in ('supported', 'related'): rows.append(dict(ref=f'd{i}', type='duty', value=r.get('requirement'), jd_evidence=r.get('jd_evidence')))
-        return [r for r in rows if isinstance(r['value'], str) and r['value']]
+        """Rows for the model: what the rule path serves plus keywords the résumé has only in other words."""
+        return [dict(ref=r['ref'], type=r['type'], value=r['value'], jd_evidence=r['jd_evidence'])
+                for r, _ in tailor.requirements(m, ('explicit', 'related')) if isinstance(r['value'], str) and r['value']]
 
     def _tailor_ai_state(self, facts, requirements, structure_now):
         a = self._assist_inputs()
@@ -149,7 +137,6 @@ class TailorActions:
         if current and structure.open_items(current)['unassigned']:
             notice = '有已确认的事实还没放进简历结构，它们不会进入定制版；到确认页补一步。'
         with self.tx() as c:
-            self._tailor_ensure(c)
             if self._tailor_load(c, job_id, version): raise Error('这个岗位刚生成了新版本，请刷新后重试')
             self._tailor_save(c, doc, insert=True)
         view = self._tailor_view(doc, current, facts, job)

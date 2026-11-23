@@ -18,11 +18,10 @@ import json
 import re
 import unicodedata
 
+from .claims import SYNONYMS
+
 OPS = ('reorder', 'hide', 'alias', 'rephrase')
 GROWTH = 1.5
-# Truly synonymous wordings only (design 5.1). "Near but different" pairs (容器编排, 深度学习, TypeScript) stay gaps.
-SYNONYMS = (('Kubernetes', 'k8s'), ('PostgreSQL', 'Postgres'), ('Go', 'Golang'), ('自然语言处理', 'NLP'),
-            ('大模型', 'LLM', '大语言模型'), ('用户研究', '用研'))
 
 _DEGREE = re.compile(r'本科|硕士|博士|学士|大专|专科|研究生|学历|学位|毕业|GPA', re.I)
 _RANGE = re.compile(r'\d{4}\s*[./年-]\s*\d{1,2}\s*月?\s*[-–—~～至到]+\s*(?:\d{4}|至今|现在|今)')
@@ -369,14 +368,16 @@ def trace(facts, rendered, edits):
 
 # ---- rule path (section 5.1) ----------------------------------------------------------------------------------
 
-def _requirements(match):
-    """(ref, requirement dict) rows in priority order, with the fact ids each one is served by."""
+def requirements(match, keywords=('explicit',)):
+    """(requirement dict, fact ids serving it) in priority order: met hard conditions, keywords whose coverage is in
+    `keywords`, supported or related duties. The refs (h<i>, k<i>, d<i>) index the match lists, so the rule path and the
+    AI path name the same requirement the same way."""
     rows = []
     for i, r in enumerate((match or {}).get('hard') or []):
         if r.get('status') == 'met':
             rows.append((dict(type='hard', value=r.get('requirement'), jd_evidence=r.get('jd_evidence'), ref=f'h{i}'), list(r.get('fact_ids') or [])))
     for i, r in enumerate((match or {}).get('keywords') or []):
-        if r.get('coverage') == 'explicit':
+        if r.get('coverage') in keywords:
             rows.append((dict(type='keyword', value=r.get('keyword'), jd_evidence=r.get('jd_evidence'), ref=f'k{i}'), list(r.get('fact_ids') or [])))
     for i, r in enumerate((match or {}).get('evidence') or []):
         if r.get('status') in ('supported', 'related'):
@@ -411,7 +412,7 @@ def propose(facts, structure, match, line_limit=None):
     skill list moves the job's named items first. alias: a fact's wording replaced by the job's word only when both
     are in SYNONYMS. hide: only when `line_limit` (max output lines) is given and exceeded, oldest zero-relevance
     bullets first. Stale entries and unassigned facts are never touched."""
-    layout, reqs = _layout(facts, structure), _requirements(match)
+    layout, reqs = _layout(facts, structure), requirements(match)
     served = {}
     for req, ids in reqs:
         for i in ids:

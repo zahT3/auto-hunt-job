@@ -1,6 +1,6 @@
 // 为这个岗位改简历 (#/tailor/<job id>): every edit with before and after, the facts behind it, one key per decision;
 // gaps are listed, never written into the résumé. Export writes local files and shows the read-back check.
-import { action } from "../shared/api.js";
+import { action, lastActionError } from "../shared/api.js";
 import { $, $$, dateOf, esc, items, replaceContent } from "../shared/dom.js";
 import { busy, render } from "../shared/state.js";
 import { kbd, mark } from "../shared/ui.js";
@@ -277,7 +277,7 @@ async function tailorRun(name, payload, label) {
   const data = await action(name, { job_id: id, ...payload }, label);
   if (!data?.result) {
     // action() already put the message in #notice; keep it next to the export bar too, so it cannot be missed.
-    if (data === null && !busy) tailorErrors.set(id, { text: $("#notice")?.textContent || "操作没有完成。", resume: false });
+    if (lastActionError) tailorErrors.set(id, { text: lastActionError, resume: false });
     render();
     return null;
   }

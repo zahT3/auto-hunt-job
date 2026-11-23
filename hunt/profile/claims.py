@@ -14,7 +14,8 @@ import unicodedata
 
 from .profile import _SKILLS
 
-# Groups of words that really mean the same thing. A later task may pass its own list through `synonyms`.
+# Groups of words that really mean the same thing; the rule path's alias edits use the same list (design 5.1).
+# "Near but different" pairs (容器编排, 深度学习, TypeScript) stay gaps. Callers may pass their own list through `synonyms`.
 SYNONYMS = (('Kubernetes', 'k8s'), ('PostgreSQL', 'Postgres'), ('Go', 'Golang'), ('自然语言处理', 'NLP'),
             ('大模型', 'LLM', '大语言模型'), ('用户研究', '用研'))
 CHINESE_TERMS = ('机器学习', '深度学习', '强化学习', '自然语言处理', '计算机视觉', '容器编排', '微服务', '大数据', '数据仓库',
