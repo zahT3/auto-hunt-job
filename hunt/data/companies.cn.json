@@ -203,15 +203,13 @@
       "id": "ctrip",
       "name": "携程",
       "careers_url": "https://job.ctrip.com/",
-      "provider": null,
+      "provider": "ctrip",
       "tags": [
         "互联网",
         "旅游",
         "数据"
       ],
-      "source": "curated",
-      "status": "needs_adapter",
-      "status_note": "2026-11-15 实测：job.ctrip.com、careers.ctrip.com 的 TLS 握手在本机超时（curl 28），在内置浏览器里 job.ctrip.com 返回空页面，未能看到岗位接口"
+      "source": "curated"
     },
     {
       "id": "mihoyo",
@@ -377,7 +375,7 @@
       ],
       "source": "career-ops-china",
       "status": "needs_adapter",
-      "status_note": "2026-11-15 实测：社招列表 GET /recruit/e/api/v1/open/positions/simple 不带 cookie 返回 HTTP 400（code 1），换 Referer 返回 code -1；官网页面自己能读，差别推测在会话 cookie 或请求头（未验证），按规则不带 cookie、不伪装"
+      "status_note": "社招列表接口要求请求签名，不带签名返回 HTTP 400。书签收件箱可用。"
     },
     {
       "id": "job-xiaohongshu-com",

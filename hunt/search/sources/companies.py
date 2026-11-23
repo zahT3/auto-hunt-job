@@ -7,7 +7,7 @@ from urllib.parse import urlsplit, urlunsplit
 
 DATA = Path(__file__).resolve().parents[2] / 'data' / 'companies.cn.json'
 # 按关键词（远端或本地）搜索整个多业务雇主的读取器优先，避免被标签排序挤出扫描范围。
-KEYWORD_PROVIDERS = ('tencent', 'alibaba', 'meituan', 'feishu', 'xiaohongshu', 'didi', 'jd', 'netease')
+KEYWORD_PROVIDERS = ('tencent', 'alibaba', 'meituan', 'feishu', 'xiaohongshu', 'didi', 'jd', 'netease', 'ctrip')
 MAX_ENCOUNTERED = 2000
 KEY = 'encountered_companies'
 # Job platforms and ATS hosts list other companies' jobs (or need a tenant path), and the keyword providers
