@@ -20,6 +20,7 @@ import unicodedata
 from collections import Counter
 
 from ..profile import directions
+from ..search.query import AI_PRODUCT, MODEL_COMPANIES, ai_product_title
 from . import jd, llm
 from ..net import network
 
@@ -32,16 +33,21 @@ SYSTEM = ('你负责把招聘岗位归到用户选定的求职方向。每个岗
           '只输出一个 JSON 对象：键是每个岗位的 id（一个不多、一个不少），值是上面某个方向的 id；岗位不属于任何一个方向时值为 null。')
 
 
-def basis(job):
+def basis(job, ids=None):
     """What a classification depends on in the job itself; a change means it must be redone."""
-    text = json.dumps([job.get('title'), job.get('jd')], ensure_ascii=False)
+    parts = [job.get('title'), job.get('jd')]
+    if ids is None:
+        ids = (job.get('direction') or {}).get('dirs') or []
+    if AI_PRODUCT in ids and ai_product_title(job.get('title'), job.get('company')):
+        parts.append([AI_PRODUCT, job.get('company') in MODEL_COMPANIES])
+    text = json.dumps(parts, ensure_ascii=False)
     return hashlib.sha256(text.encode('utf-8')).hexdigest()[:16]
 
 
 def stale(job, ids):
     """True when rules or the model must (re)classify: no result yet, or directions or job text changed. Hand-made choices never go stale."""
     d = job.get('direction') or {}
-    return d.get('by') not in ('user', 'agent') and (d.get('dirs') != ids or d.get('basis') != basis(job))
+    return d.get('by') not in ('user', 'agent') and (d.get('dirs') != ids or d.get('basis') != basis(job, ids))
 
 
 def _family(ident):
@@ -59,6 +65,10 @@ def _rules(job, allowed, families, names):
     """(direction dict, unclear) from the rules alone."""
     scores = directions.rule_match(job.get('title'), job.get('jd'), allowed)
     top = scores[0] if scores else (None, 0.0)
+    if AI_PRODUCT in allowed and ai_product_title(job.get('title'), job.get('company')) and (
+            top[1] < THRESHOLD or top[0] == 'product-manager'):
+        reason = '大模型公司的产品岗' if job.get('company') in MODEL_COMPANIES else '标题同时写明 AI 方向和产品职责'
+        return dict(id=AI_PRODUCT, by='rules', score=directions.TITLE_BASE, reason=reason), False
     tied = len(scores) > 1 and scores[1][1] == top[1]
     if top[1] >= THRESHOLD:
         reason = '标题命中「%s」（规则分 %.2f）' % (names[top[0]], top[1]) + ('，与其他方向并列' if tied else '')
@@ -107,7 +117,7 @@ def classify_jobs(jobs, dirs, settings, key, consent, meter, batch=20, transport
     for job in jobs:
         job['direction'], doubt = _rules(job, allowed, families, names)
         # unclear stays True when no model decided; an external agent picks those up (jobs export --unclassified).
-        job['direction'].update(dirs=allowed, basis=basis(job), unclear=doubt)
+        job['direction'].update(dirs=allowed, basis=basis(job, allowed), unclear=doubt)
         if doubt:
             unclear.append(job)
     errors, by_ai, capped = [], 0, 0

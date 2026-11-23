@@ -47,6 +47,30 @@ def run_classify(jobs, model, consent=CONSENT, key=KEY, budget=5.0, batch=20):
 
 
 class RulesTests(unittest.TestCase):
+    def test_ai_product_titles_require_a_role_and_company_or_topic(self):
+        ident = 'ai-product-manager'
+        cases = [
+            ('阶跃星辰', '订阅留存产品', ident), ('阶跃星辰', '商业产品运营', None),
+            ('阶跃星辰', '商业产品设计师', None), ('阶跃星辰实验室', '订阅留存产品', None),
+            ('知乎', '订阅留存产品', None), ('知乎', '多模态检索产品策划', ident),
+            ('示例公司', 'Maas 服务治理产品专家', ident), ('示例公司', '文档Agent评审产品经理', ident),
+            ('示例公司', 'DemoAgent工具产品负责人', ident), ('示例公司', 'AIGC 创作工具产品', ident),
+            ('示例公司', '智能体评测工程师', None), ('示例公司', 'Reagent 服务产品经理', None),
+            ('示例公司', '⼤模型文档产品经理', ident), ('MiniMax', '试用体验产品经理（校招）', None),
+            ('MiniMax', '品牌视觉 - 试用产品', None), ('MiniMax', 'Product Owner, Subscriptions', ident),
+        ]
+        for company, title, expected in cases:
+            with self.subTest(company=company, title=title):
+                record = job(1, title, jd='与产品团队协作', company=company)
+                classify.classify_jobs([record], [dict(id=ident)], {}, None, None, None)
+                self.assertEqual(record['direction']['id'], expected)
+        record = job(1, '会员体验产品', company='MiniMax')
+        classify.classify_jobs([record], [dict(id=ident)], {}, None, None, None)
+        record['company'] = '示例公司'
+        self.assertTrue(classify.stale(record, [ident]))
+        record['direction']['by'] = 'user'
+        self.assertFalse(classify.stale(record, [ident]))
+
     def test_title_hits_are_assigned_by_rules_and_misses_are_other_without_calling_a_model(self):
         model = FakeModel()
         jobs = [job(1, '高级后端开发工程师'), job(2, '前端开发工程师'), job(3, '中餐厨师')]

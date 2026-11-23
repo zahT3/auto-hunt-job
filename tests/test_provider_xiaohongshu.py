@@ -69,6 +69,14 @@ class XiaohongshuTests(unittest.TestCase):
             guard.start()
             self.addCleanup(guard.stop)
 
+    def test_ai_product_sweep_filters_shorthand_titles_on_the_single_list_pass(self):
+        server = Pages(page_of([post(1, positionName='多模态配音产品', duty='与算法工程师协作'),
+                                post(2, positionName='社区内容运营', duty='负责多模态配音产品')]))
+        result = run(server, keywords=['AI 产品经理'], sweep=True)
+        self.assertEqual([j['platform_id'] for j in result['jobs']], ['1'])
+        self.assertEqual(len(server.calls), 1)
+        self.assertNotIn('keyword', json.loads(server.calls[0][1]['data']))
+
     def test_registered_and_explicit_route(self):
         self.assertIs(REGISTRY['xiaohongshu'], xiaohongshu.PROVIDER)
         self.assertIs(route(dict(kind='xiaohongshu')), xiaohongshu.PROVIDER)

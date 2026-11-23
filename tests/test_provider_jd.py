@@ -32,6 +32,16 @@ def run(transport, **config):
 
 
 class JDTests(unittest.TestCase):
+    def test_literal_role_probe_keeps_only_ai_product_titles(self):
+        def search(url, **kwargs):
+            term = parse_qs(kwargs['data'].decode())['jobSearch'][0]
+            titles = ['订阅产品经理', 'DemoAgent审核产品经理'] if term == '产品经理' else []
+            if url.endswith('/job_count'):
+                return json.dumps(len(titles)).encode()
+            return json.dumps([post(i, positionNameOpen=t) for i, t in enumerate(titles)]).encode()
+        result = run(search, keywords=['AI 产品经理'], sweep=True)
+        self.assertEqual([j['title'] for j in result['jobs']], ['DemoAgent审核产品经理'])
+
     def test_detect_and_route_only_https_host(self):
         provider = REGISTRY['jd']
         self.assertIs(route(dict(careers_url=URL)), provider)
