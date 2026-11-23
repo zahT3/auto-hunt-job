@@ -869,6 +869,10 @@ mark.ev.on {
 .empty.flush {
   padding: 0;
 }
+/* An empty or loading state right under a detail page's header needs the same gap a section heading gets. */
+.detail > .d-head + .empty.flush {
+  margin-top: 28px;
+}
 .empty h2 {
   font-size: var(--fs-h2);
 }
