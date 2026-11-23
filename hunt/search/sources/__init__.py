@@ -6,6 +6,7 @@ hunt.net, hunt.search.query and each other, never the engine: it only orchestrat
 """
 import importlib
 import pkgutil
+from collections import deque
 from dataclasses import dataclass
 from typing import Callable, Iterator, Optional
 
@@ -50,34 +51,70 @@ def record_detail_error(report, platform_id, error):
         errors.append(dict(platform_id=platform_id, status='parse_error', error=str(error)))
 
 
-def paged_jobs(ctx, fetch_page, make_job, row_id, page_size):
-    """The per-keyword paging loop shared by the paged JSON providers.
+class PagedJobs(Iterator):
+    """A keyword reader's in-memory cursor. A new batch can finish a partly consumed page."""
+    def __init__(self, ctx, fetch_page, make_job, row_id, page_size):
+        self.fetch_page, self.make_job, self.row_id = fetch_page, make_job, row_id
+        self.page_size, self.keep = page_size, ctx.keep
+        self.next_page = dict.fromkeys(ctx.terms, 1)
+        self.pending = {}
+        self.seen = set()
+        self.resume(ctx.limit, ctx.pages, ctx.report)
 
-    fetch_page(term, page) -> (posts, total) does the request and sets report['search_url'];
-    make_job(row) raises SourceError('parse_error') for a bad post, which is recorded and skipped
-    (row_id(row) names it, or None). Jobs are deduped by platform_id across keywords; `truncated`
-    is set only when a further new job (or page) existed beyond ctx.limit / ctx.pages.
-    """
-    seen, count = set(), 0
-    for term in ctx.terms:
-        for page in range(1, ctx.pages + 1):
-            posts, total = fetch_page(term, page)
-            ctx.report['pages'] += 1; ctx.report['fetched'] += len(posts)
-            for row in posts:
-                try: job = make_job(row)
-                except SourceError as e:
-                    if e.status != 'parse_error': raise
-                    record_detail_error(ctx.report, row_id(row), e)
-                    continue
-                if job['platform_id'] in seen: continue
-                if ctx.keep and not ctx.keep(job):
-                    seen.add(job['platform_id']); ctx.report['filtered'] = ctx.report.get('filtered', 0) + 1
-                    continue
-                if count >= ctx.limit: ctx.report['truncated'] = True; return
-                seen.add(job['platform_id']); count += 1
-                yield job
-            if not posts or page * page_size >= total: break
-            if page == ctx.pages: ctx.report['truncated'] = True
+    def __next__(self):
+        return next(self.batch)
+
+    def has_work(self, pages):
+        return bool(self.pending) or any(page is not None and page <= pages for page in self.next_page.values())
+
+    def resume(self, limit, pages, report):
+        self.batch = self._read(limit, pages, report)
+
+    def _read(self, limit, pages, report):
+        count = 0
+        # Drain an already paid-for page even when the shared request budget has just run out.
+        for term in sorted(self.next_page, key=lambda term: term not in self.pending):
+            while True:
+                if term not in self.pending:
+                    page = self.next_page[term]
+                    if page is None: break
+                    if page > pages:
+                        report['truncated'] = True
+                        if 'truncation_reason' in report: report['truncation_reason'] = 'page_limit'
+                        break
+                    posts, total = self.fetch_page(term, page)
+                    report['pages'] += 1
+                    report['fetched'] += len(posts)
+                    self.next_page[term] = page + 1 if posts and page * self.page_size < total else None
+                    self.pending[term] = deque(posts)
+                rows = self.pending[term]
+                while rows:
+                    row = rows.popleft()
+                    try:
+                        job = self.make_job(row)
+                    except SourceError as e:
+                        if e.status != 'parse_error': raise
+                        record_detail_error(report, self.row_id(row), e)
+                        continue
+                    ident = job['platform_id']
+                    if ident in self.seen: continue
+                    if self.keep and not self.keep(job):
+                        self.seen.add(ident)
+                        report['filtered'] = report.get('filtered', 0) + 1
+                        continue
+                    if count >= limit:
+                        rows.appendleft(row)
+                        report['truncated'] = True
+                        if 'truncation_reason' in report: report['truncation_reason'] = 'job_share'
+                        return
+                    self.seen.add(ident)
+                    count += 1
+                    yield job
+                del self.pending[term]
+
+
+def paged_jobs(ctx, fetch_page, make_job, row_id, page_size):
+    return PagedJobs(ctx, fetch_page, make_job, row_id, page_size)
 
 
 def register(provider):
