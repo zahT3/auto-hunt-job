@@ -6,10 +6,12 @@ accepted edits, so a fact that changed makes its edits `stale` instead of leakin
 """
 import json
 import re
+from functools import wraps
+from unicodedata import normalize
 
 from ..ai import llm, match as ai_match, orient, tailor as ai_tailor
 from ..base import Error, digest, dumps, now
-from ..profile import claims, resume_render, structure, tailor
+from ..profile import claims, redact, resume_render, structure, tailor
 
 MAX_FORMAT_STEMS = 80
 REASONS = dict(
@@ -17,6 +19,7 @@ REASONS = dict(
     no_structure='还没有简历结构，先在确认页核对。',
     unconfirmed='简历结构还没有确认，先在确认页核对。',
     stale='简历结构需要重新核对：有条目过期或字段待确认。',
+    structure_changed='简历结构在生成这一版之后改过，请重新生成',
     empty='简历结构里还没有可导出的条目，请先在确认页把事实分到条目里。',
 )
 SECTION_TITLES = dict(basic='基本信息', education='教育背景', work='工作经历', internship='实习经历', project='项目经历', skills='专业技能',
@@ -26,6 +29,14 @@ GATE_TEXT = dict(
     duplicate_fact='重复引用同一条事实', unknown_target='这条事实不是可修改的要点', cross_entry='修改跨了多个条目',
     identity_line='身份行不允许改写', before_mismatch='原文与事实不一致', reorder_set_mismatch='调序改变了条目集合',
     alias_not_whitelisted='换词不在同义白名单里', after_missing='改写后的文字为空', conflict='和另一条已接受的修改冲突')
+
+
+def _serialized(action):
+    @wraps(action)
+    def locked(self, payload):
+        with self.tailor_lock:
+            return action(self, payload)
+    return locked
 
 
 class TailorActions:
@@ -61,14 +72,14 @@ class TailorActions:
     # ---- inputs ----
 
     def _tailor_gate(self):
-        """(structure, confirmed facts, None) when tailoring may go on, else (None, facts, why) with why = dict(code, reason)."""
+        """Read the current structure, confirmed facts and any reason to block generation or export together."""
         current, facts = self.structure_current()
         live = structure.confirmed(facts)
-        if not live: return None, [], self._tailor_need('no_facts', None)
+        if not live: return current, [], self._tailor_need('no_facts', None)
         if current is None: return None, live, self._tailor_need('no_structure', None)
-        if current.get('status') != 'confirmed': return None, live, self._tailor_need('unconfirmed', current)
+        if current.get('status') != 'confirmed': return current, live, self._tailor_need('unconfirmed', current)
         open_items = structure.open_items(current)
-        if open_items['stale'] or open_items['uncertain']: return None, live, self._tailor_need('stale', current)
+        if open_items['stale'] or open_items['uncertain']: return current, live, self._tailor_need('stale', current)
         return current, live, None
 
     @staticmethod
@@ -94,6 +105,7 @@ class TailorActions:
 
     # ---- tailor ----
 
+    @_serialized
     def tailor(self, payload):
         """Generate the next version for a job: rule-path edits, plus AI rewrites when `ai` is true and allowed.
         Without a confirmed structure the answer is `needs_structure`, nothing is generated."""
@@ -191,6 +203,7 @@ class TailorActions:
 
     # ---- review ----
 
+    @_serialized
     def tailor_review(self, payload):
         """Set edit statuses on the newest version: `accept`, `reject`, `pending` are lists of edit ids. An edit is accepted only
         if it still passes the local checks (the hard gate for AI rewrites, the four gates of apply_edits) and is not stale."""
@@ -240,6 +253,7 @@ class TailorActions:
 
     # ---- export ----
 
+    @_serialized
     def tailor_export(self, payload):
         """Write MD / PDF / DOCX and trace.json for a version into <data>/tailored/<job>/v<N>/ (0700, files 0600), re-read each file
         and return the result. Nothing is written when the trace check fails; pending edits are left out."""
@@ -252,6 +266,8 @@ class TailorActions:
             doc = self._tailor_load(c, job_id, version)
         if not doc: raise Error('没有这个版本；先生成')
         current, facts, need = self._tailor_gate()
+        if current and (doc.get('structure') or {}).get('version') != current['version']:
+            return dict(needs_structure=True, **self._tailor_need('structure_changed', current))
         if need: return dict(needs_structure=True, **need)
         edits = tailor.refresh_status(facts, doc['edits'])
         applied = tailor.apply_edits(facts, current, edits)
@@ -270,9 +286,10 @@ class TailorActions:
         render = self._tailor_render(applied['rendered'], facts, include)
         if not render['sections']:
             need = self._tailor_need('empty', current)
-            if self._tailor_withheld(applied['rendered'], facts):
+            withheld = self._tailor_withheld(applied['rendered'], facts)
+            if withheld:
                 need['reason'] = '目前只有披露范围是私密的基本信息，导出文件没有内容：勾选「这次写进导出文件」，或先在确认页把事实分到条目里。'
-            return dict(needs_structure=True, **need)
+            return dict(needs_structure=True, withheld_basic=withheld, **need)
         out_dir = self._tailor_dir(job_id, doc['version'])
         try:
             out = resume_render.export_all(render, out_dir, stem, formats=formats, version=doc['version'], job_id=job_id, explain=explain)
@@ -281,9 +298,11 @@ class TailorActions:
         ok = bool(out['files']) and all(f['check']['ok'] for f in out['files'].values()) and not out['errors']
         record = dict(at=now(), formats=list(formats), dir=str(out_dir),
                       files={k: dict(path=v['path'], sha256=v['sha256'], size=v['size'], ok=v['check']['ok']) for k, v in out['files'].items()})
-        doc = dict(doc, edits=edits, exports=(doc.get('exports') or []) + [record],
-                   checks=dict(doc.get('checks') or {}, export='pass' if ok else 'fail'))
-        with self.tx() as c: self._tailor_save(c, doc)
+        with self.tx() as c:
+            stored = self._tailor_load(c, job_id, doc['version'])
+            stored.setdefault('exports', []).append(record)
+            stored.setdefault('checks', {})['export'] = 'pass' if ok else 'fail'
+            self._tailor_save(c, stored)
         return dict(job_id=job_id, version=doc['version'], dir=str(out_dir), ok=ok, notice=resume_render.NOTICE, excluded_pending=sum(e['status'] == 'pending' for e in edits),
                     withheld_basic=[] if include else self._tailor_withheld(applied['rendered'], facts),
                     files=out['files'], errors=out['errors'], trace_path=out['trace_path'], trace_status=proof['status'])
@@ -305,9 +324,17 @@ class TailorActions:
     @staticmethod
     def _tailor_withheld(rendered, facts):
         """Basic-info lines whose disclosure scope is not `application`: the export leaves them out unless the user opts in."""
-        by_id = {f['id']: f for f in facts}
-        return [dict(id=l['fact_ids'][0]['id'], text=l['text']) for s in rendered['sections'] if s['key'] == 'basic'
-                for l in s['lines'] if l['fact_ids'] and by_id.get(l['fact_ids'][0]['id'], {}).get('disclosure') != 'application']
+        cited = {ref['id'] for section in rendered['sections'] for line in section['lines']
+                 if line['kind'] != 'title' for ref in line['fact_ids']}
+        withheld = []
+        for fact in facts:
+            if fact['id'] not in cited or fact.get('disclosure') == 'application':
+                continue
+            text = normalize('NFKC', fact['text'])
+            if (structure._BASIC_TAGS.intersection(fact.get('tags') or []) or structure._BASIC.match(text)
+                    or claims._URL.search(text) or re.search(redact._PHONE, text)):
+                withheld.append(dict(id=fact['id'], text=fact['text']))
+        return withheld
 
     def _tailor_render(self, rendered, facts, include_private_basic=False):
         """The tailor.py rendering as resume_render's input, standard section names, basic info first and without a title."""
@@ -315,6 +342,6 @@ class TailorActions:
         sections = []
         for s in self._tailor_shape(rendered)['sections']:
             lines = [dict(text=l['text'], kind='text' if s['key'] == 'basic' else l['kind'], fact_ids=l['fact_ids'], edit_ids=l['edit_ids']) for l in s['lines']
-                     if not (s['key'] == 'basic' and l['fact_ids'] and l['fact_ids'][0]['id'] in hold)]
+                     if not any(ref['id'] in hold for ref in l['fact_ids'])]
             if lines: sections.append(dict(key=s['key'], title=None if s['key'] == 'basic' else s['title'], lines=lines))
         return dict(sections=sections)

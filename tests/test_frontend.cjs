@@ -1055,3 +1055,53 @@ test('education fields are called 学校 and 学历或专业, and the preview na
  assert.match(html,/tl-title">教育背景[\s\S]*学历：本科/);assert.equal((html.match(/学历：本科/g)||[]).length,1);
  assert.match(html,/基本信息里有 2 条（姓名、邮箱）的披露范围是私密，默认不写进导出文件/);assert.match(html,/data-basic/);
 });
+
+function tailorInteractionHarness(){
+ const h=harness();
+ h.run(`location.hash='#/tailor/j1';
+   tailorViews.set('j1', ${TAILOR_VIEW});
+   tailorViews.get('j1').document.version=7;
+   const calls=[];
+   action=async(name,payload)=>{calls.push({name,...payload});return null;};`);
+ return h;
+}
+
+test('review and export use the version on screen; a structure change offers regeneration',async()=>{
+ const h=tailorInteractionHarness();
+ await h.run("tailorDecide('reject','e1')");
+ assert.equal(h.run("calls[0].name"),'tailor_review');
+ assert.equal(h.run("calls[0].version"),7);
+ h.run(`action=async(name,payload)=>{calls.push({name,...payload});return {result:{needs_structure:true,code:'structure_changed'}};};`);
+ const click=async(act)=>{
+   const target={dataset:{act},closest:s=>s==='[data-act]'?target:null};
+   for(const fn of h.document.listeners.click)fn({target});
+   await new Promise(resolve=>setImmediate(resolve));
+ };
+ await click('tailor-export');
+ assert.equal(h.run("calls[1].name"),'tailor_export');
+ assert.equal(h.run("calls[1].version"),7);
+ const html=h.run("tailorPageHtml({},tailorViews.get('j1'),false,null,'j1')");
+ assert.match(html,/简历结构在生成这一版之后改过/);
+ assert.match(html,/data-act="tailor-generate">重新生成</);
+ await click('tailor-generate');
+ assert.equal(h.run("calls[2].name"),'tailor');
+ assert.equal(h.run("calls[2].ai"),false);
+});
+
+test('a and u follow focus inside an edit card and fall back to the last focused card',async()=>{
+ const h=tailorInteractionHarness();
+ const child={closest:s=>s==='[data-edit]'?{dataset:{edit:'a1'}}:null};
+ h.document.activeElement=child;
+ for(const fn of h.document.listeners.focusin)fn({target:child});
+ assert.equal(h.run('tailorFocus'),'a1');
+ for(const [key,decision] of [['a','accept'],['u','reject']]){
+   h.run("tailorFocus='e1'");
+   for(const fn of h.document.listeners.keydown)fn({key,target:child,preventDefault(){},stopPropagation(){}});
+   await new Promise(resolve=>setImmediate(resolve));
+   assert.equal(h.run(`calls.at(-1).${decision}[0]`),'a1');
+ }
+ h.document.activeElement=null;
+ for(const fn of h.document.listeners.keydown)fn({key:'u',target:{},preventDefault(){},stopPropagation(){}});
+ await new Promise(resolve=>setImmediate(resolve));
+ assert.equal(h.run("calls.at(-1).reject[0]"),'a1');
+});

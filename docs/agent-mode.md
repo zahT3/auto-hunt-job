@@ -191,7 +191,7 @@
 | `python -m hunt structure [--set FILE [--confirm]]` | `structure_get` / `structure_save` | 读结构；`--set` 保存结构（文件是结构对象，或 `{"structure": …, "base_version": N}`），`--confirm` 同时确认，字段不能还有待核对 |
 | `python -m hunt tailor JOB_ID [--ai]` | `tailor`（`job_id`、`ai`） | 生成新版本；版本从 1 起，只增不改 |
 | `python -m hunt tailor_get JOB_ID [--version N]` | `tailor_get`（`job_id`、`version`） | 读某一版，省略取最新 |
-| `python -m hunt tailor_review JOB_ID [--accept e1,e2] [--reject e3] [--pending e4]` | `tailor_review`（`job_id`、`accept`、`reject`、`pending`，各是修改 id 的数组） | 改最新版里修改的状态；旧版只读 |
+| `python -m hunt tailor_review JOB_ID [--accept e1,e2] [--reject e3] [--pending e4]` | `tailor_review`（`job_id`、`version` 和修改 id 数组 `accept`、`reject`、`pending`） | 改最新版里修改的状态；旧版只读 |
 | `python -m hunt tailor_export JOB_ID [--format md,pdf,docx] [--version N] [--with-private-basic]` | `tailor_export`（`job_id`、`formats`、`version`、`include_private_basic`） | 写文件并读回自检 |
 
 五个动作都在 `/api/action` 里，返回的状态多一个 `result`，内容和 CLI 输出相同（CLI 另有 `schema_version`）。出错时 CLI 退出码为 1。
@@ -231,10 +231,13 @@
 - `rejected_by_gate`：被本地硬检查拒绝的提议（新数字、新工具名、新雇主等），不能接受；要用这些内容，先把它补充为已确认事实。 AI 改写入库前还要过 `apply_edits` 的四道闸，没过的也在这里，`reason` 是闸的代码（如 `unknown_target`、`cross_entry`），`text` 是中文说明。
 - `gaps`：岗位有、事实里没有的词和未满足的硬条件，只是列出，不会写进简历。
 - `--ai` 需要「简历」和「岗位原文」两类同意、当前主机的 key 和预算。只发送结构里可改写的要点，条目头、身份行和未分配的事实不发送。不满足时退回规则路径，退出码不变，看 `ai.used`（`false`）和 `ai.reason`。AI 路径最多两次模型调用，结果按岗位摘要、事实摘要、模型缓存。
+- 调用 `tailor_review`、`tailor_export` 接口时应带上当前查看的 `document.version`。省略时取最新版。如果查看后又生成了新版，审核旧版会报错，导出仍按指定版本处理。
 - `tailor_review` 接受一条 AI 改写前，服务端会重新跑硬检查；规则路径的修改接受前过四道闸（`apply_edits`）。没过就报错，状态不变。
 - 结构没确认时：`{"needs_structure": true, "code": "no_facts | no_structure | unconfirmed | stale", "reason": "...", "structure_status": "prefilled", "open": {"uncertain": 0, "stale": 0, "unassigned": 0}}`，不生成。
 
 ### tailor_export 的结果
+
+文档记录的结构版本与当前结构版本不同时，接口返回 `needs_structure: true`、`code: "structure_changed"` 和 `reason: "简历结构在生成这一版之后改过，请重新生成"`。这次导出不写文件。
 
 导出前先过两项检查：每一行都能追溯到已确认事实（`trace`），以及改写后的行不超过原文 1.5 倍、没有新数字（`check_result`）。任一项没过就报错，不写文件。
 
@@ -249,7 +252,7 @@
  "errors": {"docx": "导出 DOCX 需要 python-docx：…"}}
 ```
 
-- 导出文件按结构的章节类型写标准章节名（教育背景、工作经历、实习经历、项目经历、专业技能……），条目头只出现一次。「基本信息」（姓名、邮箱、工作经验等）放在最上面，没有标题；只写披露范围是 `application` 的事实，私密的默认不写，列在结果的 `withheld_basic` 里（`document` 视图里是 `basic_withheld`）。`include_private_basic: true` 是用户这一次的明确选择，才会把它们写进本机文件。
+- 导出文件按章节类型写标准章节名（教育背景、工作经历、实习经历、项目经历、专业技能……），条目头只出现一次。「基本信息」放在最上面，没有标题。任何章节里引用身份或联系方式的行，只要其中一条这类事实的披露范围不是 `application`，默认就整行省略。这些事实列在视图的 `basic_withheld` 和导出结果的 `withheld_basic` 里。用户本次明确选择 `include_private_basic: true` 时才会将它们写入文件。
 - 目录权限 0700、文件 0600；文件名是 `<公司>-<岗位>-v<版本>.<格式>`，同目录有 `trace.json`（每一行对应的事实 id、版本、修改 id）。
 - 导出前先跑 `trace`：有一行追溯不到已确认事实就不写任何文件并报错。待审核的修改不进导出，数量在 `excluded_pending`。
 - 读回自检用本工具自己的解析器，不代表任何招聘系统。自检不通过不阻止导出：`ok` 为 `false`，原因在各文件的 `check` 里。字体里没有的字写在 `missing_chars` 和 `warnings`（用 `HUNT_PDF_FONT` 指定完整字体后重新导出）；没装 `python-docx` 时只有 `errors.docx` 有提示，其余格式照常。
