@@ -764,15 +764,18 @@ test('bookmarklet sources and the built scripts are valid JavaScript',()=>{
 // A minimal page: dom maps a selector to its elements; querySelector answers with the first one.
 // runTimers: timer callbacks fire on the next microtask, so a script that sleeps between steps can be driven to the end.
 function runBookmarklet(name,{text='',title='页面',dom={},fetchImpl,runTimers=false}={}){
- const toasts=[],timers=[],calls=[];
+ const toasts=[],timers=[],calls=[],observers=[];
  const el=()=>({style:{},remove(){this.removed=true;},appendChild(){}});
  const document={title,body:{innerText:text,appendChild(node){toasts.push(node);}},documentElement:{},
   querySelectorAll:s=>dom[s]||[],querySelector:s=>(dom[s]||[])[0]||null,getElementById:()=>null,createElement:el,addEventListener(){}};
  const context=vm.createContext({document,location:{href:'https://careers.example.com/jobs/1?utm_source=x',pathname:'/jobs/1'},TextEncoder,JSON,Object,String,Math,Date,Array,URL,Set,
-  setTimeout:(fn,ms)=>{timers.push({fn,ms});if(runTimers)Promise.resolve().then(fn);return 1;},
+  setTimeout:(fn,ms)=>{timers.push({fn,ms});if(runTimers)Promise.resolve().then(fn);return 1;},clearTimeout:()=>{},
+  MutationObserver:class{constructor(cb){this.cb=cb;observers.push(this);}observe(target,opts){this.on=true;this.opts=opts;}disconnect(){this.on=false;}},
   fetch:async(url,init)=>{calls.push({url,init});return fetchImpl?fetchImpl(url,init):{ok:true,status:200,json:async()=>({ok:true,duplicate:false})};}});
  const code=bookmarkletSource(name).replaceAll('__INBOX_URL__','http://127.0.0.1:8771/api/inbox').replaceAll('__INBOX_TOKEN__','tok-123');
- return {toasts,timers,calls,payload:()=>JSON.parse(calls[0].init.body),run:()=>vm.runInContext(code,context)};
+ // mutate(): the page changed its DOM, as when the site renders another page of results.
+ const mutate=()=>{for(const o of observers)if(o.on)o.cb([]);};
+ return {toasts,timers,calls,observers,mutate,payload:()=>JSON.parse(calls[0].init.body),run:()=>vm.runInContext(code,context)};
 }
 const visible=text=>({innerText:text,getClientRects:()=>[1],closest:()=>null});
 const inDialog=text=>({innerText:text,getClientRects:()=>[1],closest:()=>({})});
@@ -813,7 +816,7 @@ function liepinCard(id,title,{href='https://www.liepin.com/job/'+id+'.shtml?pgRe
  return {querySelectorAll:s=>s==='a[href]'?[link]:[],querySelector:s=>nodes[s]||null};
 }
 
-test('liepin-list sends one canonical item per search card and one summary toast',async()=>{
+test('liepin-list sends one canonical item per search card and says it keeps following',async()=>{
  const cards=[liepinCard(1986324371,'衍生品定价与风控负责人'),liepinCard(1986324371,'重复卡片'),liepinCard(1990000001,'信贷风控经理',{href:'https://www.liepin.com/a/1990000001.shtml?d_sfrom=x'}),
   liepinCard(1,'外链卡片',{href:'https://evil.example/job/1.shtml'})];
  const h=runBookmarklet('liepin-list',{title:'风控招聘',dom:{'.jobCardPcContainer':cards},
@@ -828,70 +831,59 @@ test('liepin-list sends one canonical item per search card and one summary toast
  assert.match(first.extracted.raw_text,/^猎聘搜索结果卡片，不含完整职位描述。/);assert.match(first.extracted.raw_text,/银行 1000-9999人/);
  assert.doesNotMatch(first.extracted.raw_text,/华先生/);
  assert.equal(h.toasts.length,2);assert.match(h.toasts[0].textContent,/第 1 页：正在发送 2 个岗位/);
- assert.equal(h.toasts[1].textContent,'本次共 1 页 2 个岗位：新增 1，工作台已有 1。已是最后一页。');assert.equal(h.toasts[1].style.background,'#38634d');
- assert.equal(h.timers.at(-1).ms,8000);
+ assert.equal(h.toasts[1].textContent,'已收下 1 页 2 个岗位：新增 1，工作台已有 1。\n继续翻页会自动收下；再点一次书签停止。');assert.equal(h.toasts[1].style.background,'#38634d');
+ assert.equal(h.observers.length,1);assert.equal(h.observers[0].on,true);assert.equal(JSON.stringify(h.observers[0].opts),JSON.stringify({childList:true,subtree:true}));
 });
 
 test('liepin-list stops on a rejected token or a dead inbox, and says when the page has no cards',async()=>{
  const cards=[liepinCard(1,'甲'),liepinCard(2,'乙')];
  const rejected=runBookmarklet('liepin-list',{dom:{'.jobCardPcContainer':cards},fetchImpl:async()=>({ok:false,status:403,json:async()=>({error:'收件令牌无效'})})});
  await rejected.run();
- assert.equal(rejected.calls.length,1);assert.match(rejected.toasts.at(-1).textContent,/令牌无效或已重置/);
+ assert.equal(rejected.calls.length,1);assert.match(rejected.toasts.at(-1).textContent,/令牌无效或已重置/);assert.equal(rejected.observers.length,0);
  let n=0;
  const down=runBookmarklet('liepin-list',{dom:{'.jobCardPcContainer':cards},fetchImpl:async()=>{if(n++)throw new TypeError('Failed to fetch');return {ok:true,status:200,json:async()=>({ok:true,duplicate:false})};}});
  await down.run();
  assert.match(down.toasts.at(-1).textContent,/^已发送 1 个后中断。连不上本地工作台/);assert.equal(down.toasts.at(-1).style.background,'#a04841');
  const bad=runBookmarklet('liepin-list',{dom:{'.jobCardPcContainer':cards},fetchImpl:async()=>({ok:false,status:400,json:async()=>({error:'缺少页面正文'})})});
  await bad.run();
- assert.equal(bad.toasts.at(-1).textContent,'本次共 1 页 2 个岗位：新增 0，工作台已有 0，没收下 2。已是最后一页。');assert.equal(bad.toasts.at(-1).style.background,'#a04841');
+ assert.match(bad.toasts.at(-1).textContent,/^已收下 1 页 2 个岗位：新增 0，工作台已有 0，没收下 2。/);assert.equal(bad.toasts.at(-1).style.background,'#a04841');
  const empty=runBookmarklet('liepin-list',{});
  await empty.run();
- assert.equal(empty.calls.length,0);assert.match(empty.toasts[0].textContent,/没有找到猎聘岗位卡片/);
+ assert.equal(empty.calls.length,0);assert.match(empty.toasts[0].textContent,/没有找到猎聘岗位卡片/);assert.equal(empty.observers.length,0);
 });
 
-// A results listing with an Ant Design pager: clicking 下一页 swaps in the next page's cards, as 猎聘 does without navigating.
-function liepinPager(pages,{stuck=false}={}){
- let at=0;
- const dom={'.jobCardPcContainer':pages[0],'.ant-pagination-item-active':[{innerText:'1'}]};
- const li={className:'ant-pagination-next',getAttribute:n=>n==='aria-disabled'?String(at>=pages.length-1):null,
-  querySelector:s=>s==='button'?button:null};
- const button={clicks:0,click(){this.clicks++;if(stuck||at>=pages.length-1)return;at++;
-  dom['.jobCardPcContainer']=pages[at];dom['.ant-pagination-item-active']=[{innerText:String(at+1)}];}};
- dom['li.ant-pagination-next']=[li];
- return {dom,button};
-}
 const liepinPage=(n,size=2)=>Array.from({length:size},(_,i)=>liepinCard(1990000000+n*100+i,'第'+n+'页岗位'+i));
+const settle=()=>new Promise(r=>setImmediate(r));
 
-test('liepin-list pages with 下一页 at a reader pace until the last page, sending each job once',async()=>{
- // 20 pages, like the 运营 search that the old 10-page cap cut in half; page 2 repeats a card from page 1.
- const pages=[liepinPage(1),[...liepinPage(2),liepinPage(1)[0]],...Array.from({length:18},(_,i)=>liepinPage(i+3))];
- const {dom,button}=liepinPager(pages);
+test('liepin-list never clicks; it sends each new page the user turns to, once per job',async()=>{
+ const dom={'.jobCardPcContainer':liepinPage(1),'.ant-pagination-item-active':[{innerText:'1'}]};
+ const next={clicks:0,click(){this.clicks++;}};
+ dom['li.ant-pagination-next']=[{className:'ant-pagination-next',getAttribute:()=>null,querySelector:()=>next}];
  const h=runBookmarklet('liepin-list',{dom,runTimers:true});
  await h.run();
- assert.equal(button.clicks,19);
- assert.equal(h.calls.length,40);
- assert.equal(new Set(h.calls.map(c=>JSON.parse(c.init.body).url)).size,40);
- assert.equal(h.toasts.at(-1).textContent,'本次共 20 页 40 个岗位：新增 40，工作台已有 0。已是最后一页。');
- const pauses=h.timers.map(t=>t.ms).filter(ms=>ms>=3000&&ms<=6000&&ms!==3000);
- assert.equal(pauses.length,19,'one pause before each click');
+ assert.equal(h.calls.length,2);
+ h.mutate();await settle();
+ assert.equal(h.calls.length,2,'a change that is not a new listing sends nothing');
+ dom['.jobCardPcContainer']=[...liepinPage(2),liepinPage(1)[0]];dom['.ant-pagination-item-active']=[{innerText:'2'}];
+ h.mutate();await settle();
+ assert.equal(h.calls.length,4);
+ assert.equal(h.toasts.at(-1).textContent,'已收下 2 页 4 个岗位：新增 4，工作台已有 0。\n继续翻页会自动收下；再点一次书签停止。');
+ assert.equal(next.clicks,0);
+ assert.equal(new Set(h.calls.map(c=>JSON.parse(c.init.body).url)).size,4);
 });
 
-test('liepin-list stops when 下一页 changes nothing, at the safety cap, and when the bookmark is clicked again',async()=>{
- const stuck=liepinPager([liepinPage(1),liepinPage(2)],{stuck:true});
- const s=runBookmarklet('liepin-list',{dom:stuck.dom,runTimers:true});
- await s.run();
- assert.equal(s.calls.length,2);assert.match(s.toasts.at(-1).textContent,/列表没有变化，已停下/);assert.equal(s.toasts.at(-1).style.background,'#a04841');
- const many=liepinPager(Array.from({length:53},(_,i)=>liepinPage(i+1,1)));
- const m=runBookmarklet('liepin-list',{dom:many.dom,runTimers:true});
- await m.run();
- assert.equal(m.calls.length,50);assert.equal(many.button.clicks,49);assert.match(m.toasts.at(-1).textContent,/^本次共 50 页 50 个岗位.*已到安全上限 50 页。$/);
- const two=liepinPager([liepinPage(1),liepinPage(2),liepinPage(3)]);
- const t=runBookmarklet('liepin-list',{dom:two.dom,runTimers:true});
- const first=t.run();
- await t.run();
- assert.match(t.toasts.at(-1).textContent,/翻完当前这一页就停/);
- await first;
- assert.equal(two.button.clicks,0);assert.equal(t.calls.length,2);assert.match(t.toasts.at(-1).textContent,/按你的要求停在第 1 页。$/);
+test('liepin-list stops following when the bookmark is clicked again',async()=>{
+ const dom={'.jobCardPcContainer':liepinPage(1),'.ant-pagination-item-active':[{innerText:'1'}]};
+ const h=runBookmarklet('liepin-list',{dom,runTimers:true});
+ await h.run();
+ await h.run();
+ assert.equal(h.toasts.at(-1).textContent,'已停止。本次共 1 页 2 个岗位：新增 2，工作台已有 0。');
+ assert.equal(h.observers[0].on,false);
+ dom['.jobCardPcContainer']=liepinPage(2);dom['.ant-pagination-item-active']=[{innerText:'2'}];
+ h.mutate();await settle();
+ assert.equal(h.calls.length,2);
+ await h.run();
+ assert.equal(h.calls.length,4,'a third click starts a new run on the page now shown');
 });
 
 test('universal title skips a decoy h1 and prefers the h1 that appears in the page title',async()=>{

@@ -65,7 +65,7 @@ Scanned PDFs need OCR, which is not integrated yet; for mixed PDFs, the pages th
 | Beisen (`*.zhiye.com`), Dayee (`hotjob.cn`, `wintalent.cn`) | Public portal APIs | Tenants in the seed file |
 | Greenhouse, Lever, Ashby | Public job-board APIs | Configured boards only |
 | Other company career sites | Same-site crawl within budget, JobPosting data, linked ATS boards | Sites without structured data or with private APIs report limited parsing |
-| BOSS Zhipin, Liepin and other pages that need sign-in | Bookmarklets: click one while you browse, and the current page goes to the local inbox. Install them from 岗位书签 on the settings page, or open `/bookmarklets` | Only what you see when you click. Off by default as automated sources |
+| BOSS Zhipin, Liepin and other pages that need sign-in | Bookmarklets: click one while you browse, and the current page goes to the local inbox. Install them from 岗位书签 on the settings page, or open `/bookmarklets` | Only what you see. On BOSS and Liepin search pages, pages you turn to yourself are sent too; the bookmarklet never clicks or pages for you. Off by default as automated sources |
 | Web search | Optional self-hosted SearXNG JSON endpoint | Results are re-fetched from the source before use |
 
 A **sweep** (`sweep: true` in the config) scans a seed list of 124 employers (97 by default; the rest are marked as needing an adapter or dead), related sources first. Default limits are 300 companies, 1500 jobs, 3000 requests and 600 seconds; see [docs/usage.md](docs/usage.md#大范围搜索).
