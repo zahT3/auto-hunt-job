@@ -12,7 +12,7 @@ from collections import Counter
 from contextlib import nullcontext
 from urllib.parse import urlsplit
 from ..net.network import fetch, FetchError, TransientFetchError
-from .sources import Context, route
+from .sources import Context, PagedJobs, route
 from .query import expanded_terms, matches, recall_rules, search_rule, search_terms
 from .seeds import seed_for
 from .parse import SourceError, now
@@ -80,6 +80,12 @@ def source_configs(config, cap=20):
 RETRY_BACKOFF = 1.5  # seconds before the one retry of a dropped connection
 
 
+class RequestBudgetError(SourceError):
+    def __init__(self, reason, message):
+        super().__init__('budget_exhausted', message)
+        self.reason = reason
+
+
 class Budget:
     """A shared request budget, safe for several source threads; `child()` counts one source's share of it."""
     def __init__(self, transport, maximum, should_continue=None, parent=None):
@@ -87,12 +93,12 @@ class Budget:
         self.should_continue, self.parent = should_continue, parent
         self.root = parent.root if parent else self
         self.lock = self.root.lock if parent else threading.Lock()
-    def child(self):
-        return Budget(self.transport, self.maximum, self.should_continue, parent=self)
+    def child(self, maximum=None):
+        return Budget(self.transport, self.maximum if maximum is None else maximum, self.should_continue, parent=self)
     def _charge(self, retry=False):
         """Spends one request of the root budget, or returns False when none is left."""
         with self.lock:
-            if self.root.used >= self.root.maximum: return False
+            if self.used >= self.maximum or self.root.used >= self.root.maximum: return False
             node = self
             while node:
                 node.used += 1
@@ -100,7 +106,7 @@ class Budget:
                 node = node.parent
             return True
     def charge(self):
-        if not self._charge(): raise SourceError('budget_exhausted', '本轮公开请求预算已用完；保留已取得结果')
+        if not self._charge(): raise RequestBudgetError('request_limit', '本轮公开请求预算已用完；保留已取得结果')
     def get(self, url, **kwargs):
         if self.should_continue and not self.should_continue(): raise SourceError('cancelled', '扫描已停止；没有继续发起请求')
         self.charge()
@@ -108,9 +114,14 @@ class Budget:
             return self.transport(url, **kwargs)
         except TransientFetchError:
             # One retry, only for a dropped connection or timeout, never for an HTTP status or a parse problem. It costs
-            # a request of the budget; with none left (or the scan stopped) the original error stands.
-            if self.should_continue and not self.should_continue() or not self._charge(retry=True): raise
-        time.sleep(RETRY_BACKOFF)
+            # a request of the budget. Check the deadline again after the backoff.
+            if self.should_continue and not self.should_continue():
+                raise SourceError('cancelled', '扫描已停止；没有继续发起请求')
+            if self.used >= self.maximum or self.root.used >= self.root.maximum: raise
+            time.sleep(RETRY_BACKOFF)
+            if self.should_continue and not self.should_continue():
+                raise SourceError('cancelled', '扫描已停止；没有继续发起请求')
+            if not self._charge(retry=True): raise
         return self.transport(url, **kwargs)
 
 
@@ -152,14 +163,19 @@ def discover(config, profile=None, transport=None, *, browser_profile_root=None,
     sweep, started_at = sweep_limits(config), now()
     rule = search_rule(terms) if sweep else None
     timing = dict(reached=False)
+    stop = threading.local()  # One worker can observe a user stop just before another reaches the deadline.
     if sweep:
         deadline = clock() + sweep['deadline_seconds']
         user_continue = should_continue
         def should_continue():
             if timing['reached'] or clock() >= deadline:
                 timing['reached'] = True
+                stop.reason = 'deadline'
                 return False
-            return user_continue() if user_continue else True
+            if user_continue and not user_continue():
+                stop.reason = 'cancelled'
+                return False
+            return True
     jobs, reports, seen, owners = [], [], set(), {}
     lock, taken = threading.RLock(), [0]  # `taken` counts kept jobs while a pass is still running; `jobs` is filled in source order after it
     if not terms: raise ValueError('请提供 1 至 8 个岗位或技能关键词；不接受联系方式或整段简历作为搜索词')
@@ -167,7 +183,6 @@ def discover(config, profile=None, transport=None, *, browser_profile_root=None,
     if config.get('official_only') and not sources:
         raise ValueError('官网模式没有可搜索的公司来源；请选择安克、招聘看板或添加公司招聘页')
     limit = sweep['max_jobs'] if sweep else bounded(config.get('max_jobs', config.get('discovery_limit')), 30, 1, 100)
-    # In a sweep the per-source request share, not the page count, is the real bound.
     pages = sweep['max_pages'] if sweep else bounded(config.get('max_pages', config.get('discovery_pages')), 2, 1, 5)
     maximum = sweep['requests'] if sweep else bounded(config.get('discovery_requests'), 40, 1, 100)
     budget = Budget(transport or fetch, maximum, should_continue=should_continue)
@@ -177,22 +192,33 @@ def discover(config, profile=None, transport=None, *, browser_profile_root=None,
     inline_checks = bool(config.get('check_entries')) and not sweep
     entry = dict(mode='inline' if inline_checks else 'after_discovery' if config.get('check_entries') else 'off', checked=0, skipped=0, elapsed_seconds=0.0)
 
+    cursors = {}  # A reader and its Context live only for this discovery run.
+
     def new_report(source):
         return dict(source_id=source.get('id') or str(source.get('kind')), kind=source.get('kind'), company=source.get('company'), status='empty',
                     fetched=0, returned=0, filtered=0, pages=0, requests=0, retries=0, error=None, search_url=None, checked_at=now(), truncated=False,
-                    mode=source.get('mode', 'public'), passes=1)
+                    mode=source.get('mode', 'public'), passes=1, **(dict(truncation_reason=None) if sweep else {}))
 
     def run_source(source, report, quota, request_quota, pages, mine):
+        stop.reason = 'cancelled'
+        source_key = id(source)  # Provider detection may replace the configuration dict below.
         kind = source.get('kind'); sid = report['source_id']
-        began, spent, entry_spent = clock(), budget.child(), entry_budget.child()
+        began, spent, entry_spent = clock(), budget.child(request_quota if sweep else None), entry_budget.child()
         renderer = None; context = None
-        def read(url, **kwargs):
+        completed_read = False
+        failure_reason = 'source_error'
+
+        def check_share():
             if spent.used >= request_quota:
-                raise SourceError('budget_exhausted', '此渠道已用完公平分配的请求预算；其他渠道继续扫描')
+                reason = 'request_limit' if budget.used >= maximum else 'request_share'
+                raise RequestBudgetError(reason, '此渠道已用完公平分配的请求预算；其他渠道继续扫描')
+
+        def read(url, **kwargs):
+            check_share()
             return spent.get(url, **kwargs)
         try:
             if should_continue and not should_continue(): raise SourceError('cancelled', '扫描已停止；没有继续发起请求')
-            if taken[0] >= limit: raise SourceError('budget_exhausted', '已达到本轮保留岗位上限')
+            if taken[0] >= limit and not sweep: raise SourceError('budget_exhausted', '已达到本轮保留岗位上限')
             if kind in ('boss', 'liepin') and source.get('mode') == 'browser':
                 from .sources_browser import BrowserReader
                 context = BrowserReader(kind, profile_root=browser_profile_root, headless=browser_headless,
@@ -209,7 +235,7 @@ def discover(config, profile=None, transport=None, *, browser_profile_root=None,
                 if browser and kind in ('boss', 'liepin'):
                     def read(url, **kwargs):
                         if should_continue and not should_continue(): raise SourceError('cancelled', '扫描已停止；没有继续发起请求')
-                        if spent.used >= request_quota: raise SourceError('budget_exhausted', '浏览器页面请求预算已用完')
+                        check_share()
                         spent.charge()
                         return browser.read(url)
                 provider = route(source)
@@ -239,14 +265,24 @@ def discover(config, profile=None, transport=None, *, browser_profile_root=None,
                     keep = lambda job: matches(job['title'], terms)
                 else:
                     keep = None
-                generator = provider.fetch(source, Context(read, queries, quota, pages, report, renderer, keep=keep))
+                if source_key in cursors:
+                    ctx, generator = cursors[source_key]
+                    # fetch_page closes over the original Context (and sometimes provider-specific paging state).
+                    ctx.read, ctx.report, ctx.pages = read, report, pages
+                    ctx.limit = quota - report['returned']
+                    generator.resume(ctx.limit, pages, report)
+                else:
+                    ctx = Context(read, queries, quota, pages, report, renderer, keep=keep)
+                    generator = provider.fetch(source, ctx)
+                    if sweep and isinstance(generator, PagedJobs):
+                        cursors[source_key] = ctx, generator
                 for item in generator:
                     key = (item['channel'], item['platform_id'])
                     with lock:
                         if key in seen: continue
                         # A provider that ignores ctx.limit must not eat the shares of later sources.
                         if sweep and (report['returned'] >= quota or taken[0] >= limit):
-                            report['truncated'] = True
+                            report.update(truncated=True, truncation_reason='job_limit' if taken[0] >= limit else 'job_share')
                             break
                         seen.add(key); taken[0] += 1
                     item.setdefault('raw', {})['discovery'] = dict(source_id=sid, queries=queries, mode=report['mode'], checked_at=report['checked_at'], **flags)
@@ -270,12 +306,32 @@ def discover(config, profile=None, transport=None, *, browser_profile_root=None,
                 report['error'] = str(report.get('detail_error_count') or len(report['detail_errors'])) + ' 个岗位详情无法解析；已保留其余真实结果'
         except SourceError as e:
             report['status'], report['error'] = e.status, str(e)
-            if e.status == 'budget_exhausted' or e.status == 'cancelled' and timing['reached']: report['truncated'] = True
+            if e.status == 'cancelled':
+                failure_reason = stop.reason
+            elif e.status == 'budget_exhausted':
+                failure_reason = e.reason if isinstance(e, RequestBudgetError) else 'source_limit'
+            if e.status == 'budget_exhausted' or e.status == 'cancelled' and stop.reason == 'deadline':
+                report['truncated'] = True
         except FetchError as e:
             report['status'] = 'blocked' if re.search(r'HTTP (401|403|429)', str(e)) else 'fetch_error'
             report['error'] = str(e)
         except (ValueError, TypeError, KeyError, AttributeError) as e:
             report['status'], report['error'] = 'parse_error', str(e)[:400]
+        else:
+            completed_read = True
+        if sweep:
+            if report['passes'] > 1 and not completed_read:
+                report['truncated'] = True
+            report['first_page_read'] = report.get('first_page_read', False) or report['pages'] > 0
+            if report['truncated']:
+                if completed_read:
+                    reason = report['truncation_reason'] or ('job_share' if report['returned'] >= quota else 'source_limit')
+                    if reason == 'job_share' and taken[0] >= limit:
+                        reason = 'job_limit'
+                else:
+                    reason = failure_reason
+                report['truncation_reason'] = reason
+            report['continuation_deadline'] = report['truncation_reason'] == 'deadline' and report['first_page_read']
         report['requests'] = spent.used
         report['retries'] = spent.retries
         report['entry_requests'] = entry_spent.used
@@ -298,8 +354,8 @@ def discover(config, profile=None, transport=None, *, browser_profile_root=None,
 
     def run_pass(items, launch, finish):
         """Runs `items` on the sweep's worker pool, started in order; two sources with one host_key never overlap.
-        launch(position, running) -> run_source args, or None to stop, is called on this thread when the source starts, finish(position, result)
-        when it ends. A source that finds the scan stopped is still started, so it is marked cancelled."""
+        launch(position, remaining) returns run_source args or None to skip this source. finish(position)
+        returns true to queue the same source again after its peers. A source that finds the scan stopped is still started, so it is marked cancelled."""
         if not items: return
         pending, running, blocked = list(range(len(items))), {}, set()
         with ThreadPoolExecutor(max_workers=sweep['workers'] if sweep else 1) as pool:
@@ -308,11 +364,9 @@ def discover(config, profile=None, transport=None, *, browser_profile_root=None,
                     if len(running) >= (sweep['workers'] if sweep else 1): break
                     host = host_key(items[position][0]) if sweep else None
                     if host is not None and host in blocked: continue
-                    args = launch(position, len(running))
-                    if args is None:  # the scan is over; nothing further starts
-                        pending.clear()
-                        break
+                    args = launch(position, len(pending) + len(running))
                     pending.remove(position)
+                    if args is None: continue
                     if host is not None: blocked.add(host)
                     running[pool.submit(run_source, *args)] = (position, host)
                 done, _ = wait(running, return_when=FIRST_COMPLETED)
@@ -320,54 +374,99 @@ def discover(config, profile=None, transport=None, *, browser_profile_root=None,
                     position, host = running.pop(future)
                     blocked.discard(host)
                     future.result()
-                    finish(position)
+                    if finish(position): pending.append(position)
 
-    def scan(group):
+    def first_pass(group, relevant_count):
         pairs = [(source, new_report(source)) for source in group]
         reports.extend(report for _, report in pairs)
-        mines, started = [[] for _ in group], [0]
-        def launch(position, running):
+        mines = [[] for _ in pairs]
+        unfinished = [relevant_count, len(group) - relevant_count]
+        first_pages = 1 if sweep and len(group) > 1 else pages
+        # Book the whole request share at launch. Concurrent retries cannot spend a waiting source's first request.
+        shares = {}
+        available = maximum
+
+        def launch(position, _remaining):
+            nonlocal available
             source, report = pairs[position]
-            # Reserve work for later sources, so one large board cannot starve all others.
-            remaining = len(group) - started[0] + running
-            started[0] += 1
+            # Relevant boards keep their original share. A tail source also leaves room for relevant boards still running.
+            remaining = unfinished[0] if position < relevant_count else sum(unfinished)
             with lock:
-                quota, request_quota = max(1, math.ceil((limit - taken[0]) / remaining)), max(1, math.ceil((maximum - budget.used) / remaining))
-            return source, report, quota, request_quota, pages, mines[position]
+                quota = max(1, math.ceil((limit - taken[0]) / remaining))
+            waiting = len(pairs) - len(shares)
+            request_quota = max(1, math.ceil(available / waiting))
+            available -= request_quota
+            shares[position] = request_quota
+            return source, report, quota, request_quota, first_pages, mines[position]
+
         def finish(position):
+            nonlocal available
             source, report = pairs[position]
+            unfinished[int(position >= relevant_count)] -= 1
+            available += shares[position] - report['requests']
             for item in mines[position]: owners[id(item)] = report
             if on_source: on_source(dict(report))
         run_pass(pairs, launch, finish)
         for mine in mines: jobs.extend(mine)
-        if not sweep: return
-        # Shares that small sources left unused flow back to the ones cut off by their share or page cap.
-        candidates = [(s, r) for s, r in pairs if r['status'] == 'ok' and r['truncated']]
-        reruns, mines, started = {}, [[] for _ in candidates], [0]
-        def launch_again(position, running):
+        return pairs
+
+    def needs_top_up(source, report):
+        if not report['truncated'] or report['status'] not in ('ok', 'empty', 'filtered_empty', 'parse_error', 'budget_exhausted'):
+            return False
+        cursor = cursors.get(id(source))
+        return not cursor or cursor[1].has_work(pages)
+
+    def top_up(candidates):
+        reruns, mines = {}, [[] for _ in candidates]
+
+        def launch_again(position, remaining):
             source, report = candidates[position]
-            if taken[0] >= limit or budget.used >= maximum or not should_continue(): return None
-            remaining = len(candidates) - started[0] + running
-            started[0] += 1
-            again = reruns[position] = dict(new_report(source), source_id=report['source_id'], returned=report['returned'])
-            # Reruns from page 1; `seen` drops the replayed jobs, which still count towards ctx.limit.
-            return source, again, report['returned'] + math.ceil((limit - taken[0]) / remaining), math.ceil((maximum - budget.used) / remaining), pages, mines[position]
+            if taken[0] >= limit:
+                report['truncation_reason'] = 'job_limit'
+                return None
+            cursor = cursors.get(id(source))
+            if budget.used >= maximum and not (cursor and cursor[1].pending):
+                report['truncation_reason'] = 'request_limit'
+                return None
+            if not should_continue():
+                report.update(status='cancelled', error='扫描已停止；没有继续发起请求',
+                              truncation_reason=stop.reason,
+                              continuation_deadline=report['first_page_read'] and stop.reason == 'deadline')
+                return None
+            again = reruns[position] = dict(new_report(source), source_id=report['source_id'], returned=report['returned'],
+                                            first_page_read=report['first_page_read'], passes=report['passes'] + 1)
+            if cursor and report.get('detail_errors'):
+                again['detail_errors'] = list(report['detail_errors'])
+                again['detail_error_count'] = report['detail_error_count']
+            with lock:
+                quota = report['returned'] + max(1, math.ceil((limit - taken[0]) / remaining))
+            requests = max(1, math.ceil((maximum - budget.used) / remaining))
+            return source, again, quota, requests, pages, mines[position]
+
         def finish_again(position):
-            source, report = candidates[position]; again = reruns[position]
-            for item in mines[position]: owners[id(item)] = report
-            report.update(again, passes=2, search_url=report['search_url'] or again['search_url'], checked_at=report['checked_at'],
+            source, report = candidates[position]
+            again = reruns.pop(position)
+            cursor = id(source) in cursors
+            if report.get('detail_errors') and again['status'] in ('ok', 'empty', 'filtered_empty'):
+                again.update(status='parse_error', error=report['error'])
+            report.update(again, search_url=report['search_url'] or again['search_url'], checked_at=report['checked_at'],
                           **{k: report[k] + again[k] for k in SUMMED})
             report['elapsed_seconds'] = round(report['elapsed_seconds'], 2)
-        run_pass(candidates, launch_again, finish_again)
-        for mine in mines: jobs.extend(mine)
+            # Offer unused shares as soon as a worker is free, behind the continuations already waiting.
+            return cursor and report['truncation_reason'] in ('job_share', 'request_share') and needs_top_up(source, report)
 
-    # companies.select marks a sweep's sources by relevance (tier 0 keyword search, 1 matching tags, 2+ the rest).
-    # Relevant sources get both passes, sharing jobs and requests among themselves, before the unrelated tail starts,
-    # so the deadline cuts the tail instead of the big boards' top-up. Untiered sources all count as relevant.
-    tiered = sweep and any('tier' in s for s in sources)
-    for group in ([s for s in sources if s.get('tier', 1) <= 1], [s for s in sources if s.get('tier', 1) > 1]) if tiered else (sources,):
-        scan(group)
+        run_pass(candidates, launch_again, finish_again)
+        for (_, report), mine in zip(candidates, mines):
+            for item in mine: owners[id(item)] = report
+            jobs.extend(mine)
+
+    # Keep the relevant boards' first-page job shares, but visit the tail before anyone goes deep.
+    relevant = [s for s in sources if s.get('tier', 1) <= 1] if sweep else sources
+    tail = [s for s in sources if s.get('tier', 1) > 1] if sweep else []
+    pairs = first_pass(relevant + tail, len(relevant))
     if sweep:
+        for group in (pairs[:len(relevant)], pairs[len(relevant):]):
+            top_up([(s, r) for s, r in group if needs_top_up(s, r)])
         if config.get('check_entries'):
             from .entries import check_job
             began = clock()

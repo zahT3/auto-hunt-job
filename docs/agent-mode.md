@@ -19,6 +19,26 @@
 
 出错时退出码为 1，输出 `{"schema_version": 1, "error": "中文原因"}`。
 
+## 大范围搜索的 run 结果
+
+多来源 `sweep` 先按首轮份额读取各来源首页，再给截断的来源续翻，相关来源优先。飞书等使用公共关键词分页循环的读取器会保留各词的下一页页码、当前页尚未处理的行和已见岗位 ID。单个来源用完本次份额后回到队尾，有剩余额度时可以继续读。未接入这个分页循环的读取器仍从首页重读一次。每轮的实际请求和读取页数都计入 `requests` 和 `pages`，`returned` 只计保留的不同岗位。
+
+每条 `run.sources[]` 记录可查看以下字段。旧记录可能缺少这些字段。
+
+| 字段 | 含义 |
+|---|---|
+| `first_page_read` | 读取器至少记下了一页（`pages > 0`）。空页和官网入口页也可能计入。 |
+| `truncation_reason` | `truncated=false` 时为 `null`。截断时记录该来源最后一次停止的原因，见下表。 |
+| `continuation_deadline` | 来源已读过页，且继续读取或等待续翻时遇到整轮截止。此时 `status=cancelled`，`truncation_reason=deadline`。 |
+
+| `truncation_reason` | 停止条件 |
+|---|---|
+| `job_limit` / `job_share` | 整轮保留岗位名额已满 / 当前来源获分的岗位名额已满。 |
+| `request_limit` / `request_share` | 整轮请求预算用完 / 当前来源获分的请求份额用完。 |
+| `deadline` / `cancelled` | 到达整轮截止时间 / 扫描被停止。首轮还没读到一页就截止时，`continuation_deadline=false`。 |
+| `page_limit` | 公共分页循环已读到给定页数，仍有后页。 |
+| `source_limit` / `source_error` | 读取器报告了其他或未细分的限制 / 读取出错时还有未完成的工作。具体错误见 `error`。 |
+
 ## search 的输出
 
 `python -m hunt search "AI 产品经理" --city 深圳 --json` 输出：
